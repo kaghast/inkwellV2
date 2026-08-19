@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - JWT_SECRET=${JWT_SECRET:-inkwell_jwt_secret_key_2026}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@inkwell.app}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin12345}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}

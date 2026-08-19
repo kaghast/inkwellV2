@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.github
+.env
+.env.local
+*.log
+npm-debug.log*
+.DS_Store
+coverage
+test_reports
+auth_testing.md
+test_result.md
