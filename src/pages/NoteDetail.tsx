@@ -28,9 +28,16 @@ import {
   Kanban,
   Link2,
   ArrowUpRight,
+  FileText,
+  PenTool,
+  ListTree,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Note, LocationItem, NoteType, Category } from "@/types";
+import DrawingEditor from "@/components/drawing/DrawingEditor";
+import DrawingViewer from "@/components/drawing/DrawingViewer";
+import OutlineEditor from "@/components/outline/OutlineEditor";
+import OutlineViewer from "@/components/outline/OutlineViewer";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,6 +50,22 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
+export type ContentMode = "markdown" | "drawing" | "outline";
+
+function detectContentMode(content: string, customFields?: Record<string, any>): ContentMode {
+  if (customFields?.content_mode) {
+    return customFields.content_mode as ContentMode;
+  }
+  if (/```drawing\s*[\s\S]*?```/.test(content)) {
+    return "drawing";
+  }
+  const lines = (content || "").trim().split("\n").filter((l) => l.trim().length > 0);
+  if (lines.length >= 2 && lines.every((l) => /^([ \t]*[-*+]|\d+\.)/.test(l))) {
+    return "outline";
+  }
+  return "markdown";
+}
+
 export default function NoteDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -54,6 +77,7 @@ export default function NoteDetail() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [noteTypes, setNoteTypes] = useState<NoteType[]>([]);
   const [editing, setEditing] = useState(searchParams.get("edit") === "true");
+  const [contentMode, setContentMode] = useState<ContentMode>("markdown");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [dateTime, setDateTime] = useState("");
@@ -91,6 +115,7 @@ export default function NoteDetail() {
         setAllNotes(Array.isArray(allNotesRes.data) ? allNotesRes.data : []);
         setTitle(data.title || "");
         setContent(data.content || "");
+        setContentMode(detectContentMode(data.content || "", data.custom_fields));
         setDateTime(toDateTimeLocal(data.date));
         setInlineDateVal(toDateTimeLocal(data.date));
         setSlug(data.slug || "");
@@ -180,6 +205,10 @@ export default function NoteDetail() {
     if (!note) return;
     setBusy(true);
     try {
+      const updatedFields = {
+        ...customFields,
+        content_mode: contentMode,
+      };
       const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
         title,
         content,
@@ -188,13 +217,14 @@ export default function NoteDetail() {
         category_id: categoryId,
         location_id: locationId,
         note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
-        custom_fields: customFields,
+        custom_fields: updatedFields,
       });
       setNote(data);
       setDateTime(toDateTimeLocal(data.date));
       setInlineDateVal(toDateTimeLocal(data.date));
       setSlug(data.slug || "");
       setEditing(false);
+      setContentMode(detectContentMode(data.content || "", data.custom_fields));
       setLoc(locations.find((l) => l.location_id === data.location_id) || null);
       setCat(categories.find((c) => c.category_id === data.category_id) || null);
       toast.success("Not kaydedildi");
@@ -499,7 +529,71 @@ export default function NoteDetail() {
               />
             )}
 
-            <MarkdownEditor value={content} onChange={setContent} />
+            {/* 3-Mode Content Switcher in Edit Mode */}
+            <div className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-secondary/60 border border-border/80 flex-wrap">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground px-1.5">
+                <span>İçerik Düzenleme Modu:</span>
+              </div>
+              <div className="flex items-center gap-1 bg-background p-0.5 rounded-md border border-border">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContentMode("markdown");
+                    setCustomFields((prev) => ({ ...prev, content_mode: "markdown" }));
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
+                    contentMode === "markdown"
+                      ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                      : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" /> Metin (Markdown)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContentMode("drawing");
+                    setCustomFields((prev) => ({ ...prev, content_mode: "drawing" }));
+                    if (!/```drawing/.test(content)) {
+                      setContent("```drawing\n{\n  \"version\": 1,\n  \"elements\": [],\n  \"gridMode\": \"dots\"\n}\n```");
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
+                    contentMode === "drawing"
+                      ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                      : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <PenTool className="w-3.5 h-3.5" /> Çizim & Şema (Canvas)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContentMode("outline");
+                    setCustomFields((prev) => ({ ...prev, content_mode: "outline" }));
+                    if (!content.trim() || /```drawing/.test(content)) {
+                      setContent("- [ ] İlk ana madde\n  - [ ] Alt görev veya not\n- [ ] İkinci ana madde");
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
+                    contentMode === "outline"
+                      ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                      : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <ListTree className="w-3.5 h-3.5" /> Hiyerarşik Outline
+                </button>
+              </div>
+            </div>
+
+            {/* Active Editor */}
+            {contentMode === "drawing" ? (
+              <DrawingEditor initialContent={content} onChange={setContent} height={520} />
+            ) : contentMode === "outline" ? (
+              <OutlineEditor initialContent={content} onChange={setContent} />
+            ) : (
+              <MarkdownEditor value={content} onChange={setContent} />
+            )}
 
             <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-border/60">
               <div className="flex items-center gap-2">
@@ -538,6 +632,7 @@ export default function NoteDetail() {
                     setEditing(false);
                     setTitle(note.title);
                     setContent(note.content);
+                    setContentMode(detectContentMode(note.content, note.custom_fields));
                     setDateTime(toDateTimeLocal(note.date));
                     setSlug(note.slug || "");
                     setNoteTypeId(note.note_type_id || "type_plain");
@@ -634,25 +729,61 @@ export default function NoteDetail() {
               </div>
             )}
 
-            <MarkdownView
-              content={note.content}
-              onTaskToggle={async (idx, checked) => {
-                const newContent = toggleTaskInMarkdown(note.content, idx, checked);
-                try {
-                  const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
-                    title: note.title,
-                    content: newContent,
-                    date: note.date,
-                    location_id: note.location_id,
-                    note_type_id: note.note_type_id,
-                    custom_fields: note.custom_fields,
-                  });
-                  setNote(data);
-                } catch {
-                  toast.error("Güncellenemedi");
-                }
-              }}
-            />
+            {/* Content View Modes */}
+            {contentMode === "drawing" || /```drawing\s*[\s\S]*?```/.test(note.content) ? (
+              <DrawingViewer
+                content={note.content}
+                onEdit={() => {
+                  setContentMode("drawing");
+                  setEditing(true);
+                }}
+              />
+            ) : contentMode === "outline" ? (
+              <OutlineViewer
+                content={note.content}
+                onEdit={() => {
+                  setContentMode("outline");
+                  setEditing(true);
+                }}
+                onUpdateContent={async (newContent) => {
+                  try {
+                    const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
+                      title: note.title,
+                      content: newContent,
+                      date: note.date,
+                      location_id: note.location_id,
+                      note_type_id: note.note_type_id,
+                      custom_fields: note.custom_fields,
+                    });
+                    setNote(data);
+                    setContent(newContent);
+                  } catch {
+                    toast.error("Güncellenemedi");
+                  }
+                }}
+              />
+            ) : (
+              <MarkdownView
+                content={note.content}
+                onTaskToggle={async (idx, checked) => {
+                  const newContent = toggleTaskInMarkdown(note.content, idx, checked);
+                  try {
+                    const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
+                      title: note.title,
+                      content: newContent,
+                      date: note.date,
+                      location_id: note.location_id,
+                      note_type_id: note.note_type_id,
+                      custom_fields: note.custom_fields,
+                    });
+                    setNote(data);
+                    setContent(newContent);
+                  } catch {
+                    toast.error("Güncellenemedi");
+                  }
+                }}
+              />
+            )}
 
             {/* Tags and People */}
             {(note.tags?.length > 0 || note.people?.length > 0) && (
