@@ -7,6 +7,7 @@ import Sidebar from "@/components/Sidebar";
 import MarkdownView from "@/components/MarkdownView";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
@@ -74,6 +75,7 @@ export default function GraphView() {
   const [groups, setGroups] = useState<ItemGroup[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
+  const [locations, setLocations] = useState<LocationItem[]>([]);
   const [columns, setColumns] = useState<KanbanColumn[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -103,13 +105,14 @@ export default function GraphView() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [notesRes, catRes, grpRes, tagRes, pplRes, colRes] = await Promise.all([
+      const [notesRes, catRes, grpRes, tagRes, pplRes, colRes, locRes] = await Promise.all([
         api.get<Note[]>("/notes"),
         api.get<Category[]>("/categories"),
         api.get<ItemGroup[]>("/groups"),
         api.get<Tag[]>("/tags"),
         api.get<Person[]>("/people"),
         api.get<KanbanColumn[]>("/kanban/columns"),
+        api.get<LocationItem[]>("/locations"),
       ]);
 
       setNotes(Array.isArray(notesRes.data) ? notesRes.data : []);
@@ -118,6 +121,7 @@ export default function GraphView() {
       setTags(Array.isArray(tagRes.data) ? tagRes.data : []);
       setPeople(Array.isArray(pplRes.data) ? pplRes.data : []);
       setColumns(Array.isArray(colRes.data) ? colRes.data : []);
+      setLocations(Array.isArray(locRes.data) ? locRes.data : []);
     } catch (err) {
       console.warn("Failed loading graph view data:", err);
     } finally {
@@ -760,7 +764,22 @@ export default function GraphView() {
       <TopBar onLeftMenu={() => setLeftOpen(true)} />
 
       <div className="flex-1 flex overflow-hidden relative">
-        <Sidebar open={leftOpen} onClose={() => setLeftOpen(false)} />
+        {/* Mobile Left Sidebar */}
+        <Sheet open={leftOpen} onOpenChange={setLeftOpen}>
+          <SheetContent side="left" className="p-0 w-80 bg-sidebar border-border">
+            <div className="p-4 h-full overflow-y-auto">
+              <Sidebar
+                categories={categories}
+                groups={groups}
+                tags={tags}
+                people={people}
+                locations={locations}
+                onChange={fetchData}
+                onNavigate={() => setLeftOpen(false)}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
 
         {/* Main Canvas Area */}
         <main className="flex-1 relative flex flex-col overflow-hidden bg-dot-grid">
