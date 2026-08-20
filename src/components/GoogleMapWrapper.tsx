@@ -27,6 +27,7 @@ export interface GoogleMapWrapperProps {
   locations?: LocationItem[];
   selectedLocationId?: string | null;
   onSelectLocation?: (id: string) => void;
+  currentLocation?: { lat: number; lng: number } | null;
   draggableMarker?: {
     position: { lat: number; lng: number };
     onDragEnd: (coords: { lat: number; lng: number }) => void;
@@ -215,7 +216,25 @@ function LeafletMapFallback({
 
       markersLayerRef.current?.addLayer(dragMarker);
     }
-  }, [locations, selectedLocationId, draggableMarker, onSelectLocation]);
+
+    // Render current GPS Location pulsing pin
+    if (currentLocation && typeof currentLocation.lat === "number" && typeof currentLocation.lng === "number") {
+      const userIcon = L.divIcon({
+        className: "current-user-gps-marker",
+        html: `
+          <div style="position: relative; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;">
+            <div style="position: absolute; width: 100%; height: 100%; border-radius: 50%; background: #3b82f6; opacity: 0.75; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+            <div style="position: relative; width: 14px; height: 14px; border-radius: 50%; background: #2563eb; border: 2.5px solid #ffffff; box-shadow: 0 2px 6px rgba(0,0,0,0.4);"></div>
+          </div>
+        `,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11],
+      });
+      const userMarker = L.marker([currentLocation.lat, currentLocation.lng], { icon: userIcon, zIndexOffset: 1000 });
+      userMarker.bindTooltip("<b>📍 Mevcut Konumunuz</b>", { direction: "top", offset: [0, -12] });
+      markersLayerRef.current?.addLayer(userMarker);
+    }
+  }, [locations, selectedLocationId, draggableMarker, currentLocation, onSelectLocation]);
 
   return (
     <div className={`relative w-full h-full min-h-[220px] rounded-xl overflow-hidden ${className}`}>
@@ -234,6 +253,7 @@ export default function GoogleMapWrapper(props: GoogleMapWrapperProps) {
     onMapClick,
     maskTheme = "auto",
     interactive = true,
+    currentLocation,
   } = props;
 
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -284,6 +304,14 @@ export default function GoogleMapWrapper(props: GoogleMapWrapperProps) {
           }}
         >
           <MapCenterController center={center} zoom={zoom} />
+          {currentLocation && (
+            <AdvancedMarker position={currentLocation} title="Mevcut Konumunuz">
+              <div className="relative flex items-center justify-center">
+                <div className="absolute w-6 h-6 rounded-full bg-blue-500 animate-ping opacity-75" />
+                <div className="relative w-4 h-4 rounded-full bg-blue-600 border-2 border-white shadow-md" />
+              </div>
+            </AdvancedMarker>
+          )}
           {children}
         </Map>
       </APIProvider>

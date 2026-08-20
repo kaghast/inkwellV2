@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import api from "@/lib/api";
+import api, { formatApiError } from "@/lib/api";
 import type { Note, LocationItem, Category, ItemGroup, NoteType } from "@/types";
 import TopBar from "@/components/TopBar";
 import NoteCard from "@/components/NoteCard";
@@ -21,9 +21,13 @@ import {
   Compass,
   Palette,
   Eye,
+  Crosshair,
+  PenTool,
+  Boxes,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 export default function MapView() {
   const navigate = useNavigate();
@@ -36,13 +40,44 @@ export default function MapView() {
   const [loading, setLoading] = useState(true);
   const [maskTheme, setMaskTheme] = useState<MapMaskTheme>("auto");
 
-  // New location modal
+  // GPS Current Location State
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [userFocusCenter, setUserFocusCenter] = useState<{ lat: number; lng: number } | null>(null);
+
+  // New location only modal
   const [newLocModalOpen, setNewLocModalOpen] = useState(false);
   const [newLocName, setNewLocName] = useState("");
   const [newLocLat, setNewLocLat] = useState("41.0082");
   const [newLocLng, setNewLocLng] = useState("28.9784");
 
+  // Direct Note Creation at Coordinate Point Modal
+  const [pointNoteModalOpen, setPointNoteModalOpen] = useState(false);
+  const [targetCoords, setTargetCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [targetLocName, setTargetLocName] = useState("");
+  const [pointNoteTitle, setPointNoteTitle] = useState("");
+  const [pointNoteContent, setPointNoteContent] = useState("");
+  const [pointNoteTypeId, setPointNoteTypeId] = useState("type_plain");
+  const [pointCategoryId, setPointCategoryId] = useState<string | null>(null);
+  const [isSubmittingNote, setIsSubmittingNote] = useState(false);
+
   const [composerOpen, setComposerOpen] = useState(false);
+
+  // Automatically fetch current GPS location on page load
+  useEffect(() => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setCurrentLocation(coords);
+        },
+        () => {
+          /* ignore initial silent error */
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    }
+  }, []);
 
   const fetchAux = useCallback(async () => {
     try {
@@ -123,14 +158,142 @@ export default function MapView() {
 
   // Center coordinate
   const mapCenter = useMemo<{ lat: number; lng: number }>(() => {
+    if (userFocusCenter) {
+      return userFocusCenter;
+    }
     if (selectedLocation) {
       return { lat: Number(selectedLocation.lat), lng: Number(selectedLocation.lng) };
+    }
+    if (currentLocation) {
+      return currentLocation;
     }
     if (locations.length > 0) {
       return { lat: Number(locations[0].lat), lng: Number(locations[0].lng) };
     }
     return { lat: 41.0082, lng: 28.9784 }; // Istanbul default
-  }, [selectedLocation, locations]);
+  }, [userFocusCenter, selectedLocation, currentLocation, locations]);
+
+  // Move map directly to current GPS Location
+  const goToCurrentLocation = () => {
+    if ("geolocation" in navigator) {
+      setIsLocating(true);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setCurrentLocation(coords);
+          setUserFocusCenter(coords);
+          setSelectedLocationId(null);
+          setIsLocating(false);
+          toast.success("Mevcut konumunuza odaklanıldı 📍");
+        },
+        (err) => {
+          setIsLocating(false);
+          toast.error("Konum alınamadı: " + err.message);
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    } else {
+      toast.error("Tarayıcınız konum servisini desteklemiyor");
+    }
+  };
+
+  // Open note creation directly at current GPS location
+  const handleAddNoteAtCurrentLocation = () => {
+    if ("geolocation" in navigator) {
+      setIsLocating(true);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setCurrentLocation(coords);
+          setUserFocusCenter(coords);
+          setIsLocating(false);
+          setTargetCoords(coords);
+          setTargetLocName("Mevcut Konumum");
+          setPointNoteTitle("");
+          setPointNoteContent("");
+          setPointNoteModalOpen(true);
+        },
+        (err) => {
+          setIsLocating(false);
+          toast.error("Mevcut konum alınamadı: " + err.message);
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    } else {
+      toast.error("Tarayıcınız konum servisini desteklemiyor");
+    }
+  };
+
+  // Click anywhere on map -> Open Direct Note modal at that coordinate
+  const handleMapClick = (coords: { lat: number; lng: number }) => {
+    setTargetCoords(coords);
+    setTargetLocName(`Nokta (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
+    setPointNoteTitle("");
+    setPointNoteContent("");
+    setPointNoteModalOpen(true);
+  };
+
+  // Save Note and Location together in one single action
+  const handleSaveNoteAtPoint = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetCoords) return;
+    if (!pointNoteTitle.trim() && !pointNoteContent.trim()) {
+      toast.error("Lütfen bir not başlığı veya içeriği giriniz");
+      return;
+    }
+    if (!targetLocName.trim()) {
+      toast.error("Lütfen bu konuma bir isim veriniz");
+      return;
+    }
+
+    setIsSubmittingNote(true);
+    try {
+      const locName = targetLocName.trim();
+      let locId: string;
+
+      // Check if location already exists around this coordinate
+      const existing = locations.find(
+        (l) => Math.abs(Number(l.lat) - targetCoords.lat) < 0.0002 && Math.abs(Number(l.lng) - targetCoords.lng) < 0.0002
+      );
+
+      if (existing) {
+        locId = existing.location_id;
+      } else {
+        const { data: newLoc } = await api.post<LocationItem>("/locations", {
+          name: locName,
+          lat: targetCoords.lat,
+          lng: targetCoords.lng,
+        });
+        locId = newLoc.location_id;
+        setLocations((prev) => [newLoc, ...prev]);
+      }
+
+      // Create Note
+      const { data: newNote } = await api.post<Note>("/notes", {
+        title: pointNoteTitle.trim(),
+        content: pointNoteContent.trim(),
+        date: new Date().toISOString().slice(0, 10),
+        category_id: pointCategoryId,
+        location_id: locId,
+        note_type_id: pointNoteTypeId !== "type_plain" ? pointNoteTypeId : null,
+        custom_fields: {},
+      });
+
+      setNotes((prev) => [newNote, ...prev]);
+      setSelectedLocationId(locId);
+      setUserFocusCenter(targetCoords);
+      setPointNoteModalOpen(false);
+      setPointNoteTitle("");
+      setPointNoteContent("");
+      setTargetCoords(null);
+      toast.success(`Not "${locName}" konumuna başarıyla kaydedildi! 📍`);
+      fetchAux();
+    } catch (err: any) {
+      toast.error(formatApiError(err) || "Not kaydedilemedi");
+    } finally {
+      setIsSubmittingNote(false);
+    }
+  };
 
   const handleCreateLocation = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,16 +341,6 @@ export default function MapView() {
     }
   };
 
-  // Click anywhere on map to add location
-  const handleMapClick = (coords: { lat: number; lng: number }) => {
-    const lat = coords.lat;
-    const lng = coords.lng;
-    setNewLocLat(lat.toFixed(6));
-    setNewLocLng(lng.toFixed(6));
-    setNewLocName(`Harita Noktası (${lat.toFixed(3)}, ${lng.toFixed(3)})`);
-    setNewLocModalOpen(true);
-  };
-
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col antialiased">
       <TopBar />
@@ -201,14 +354,24 @@ export default function MapView() {
                 <MapPin className="w-4 h-4 text-primary" />
                 <h2 className="font-serif font-bold text-sm text-foreground">Kayıtlı Lokasyonlar</h2>
               </div>
-              <button
-                type="button"
-                onClick={() => setNewLocModalOpen(true)}
-                className="flex items-center gap-1 text-xs px-2.5 py-1 bg-primary text-primary-foreground font-medium rounded-md hover:opacity-90 transition-opacity cursor-pointer shadow-2xs"
-                data-testid="add-location-btn"
-              >
-                <Plus className="w-3 h-3" /> Yeni Ekle
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleAddNoteAtCurrentLocation}
+                  title="Mevcut GPS konumuma hemen not yaz"
+                  className="flex items-center gap-1 text-[11px] px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors cursor-pointer shadow-2xs"
+                >
+                  <Navigation className="w-3 h-3" /> Konuma Not
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewLocModalOpen(true)}
+                  className="flex items-center gap-1 text-[11px] px-2 py-1 bg-secondary hover:bg-muted text-foreground font-medium rounded-md transition-colors cursor-pointer border border-border"
+                  data-testid="add-location-btn"
+                >
+                  <Plus className="w-3 h-3" /> Ekle
+                </button>
+              </div>
             </div>
 
             <div className="relative">
@@ -242,10 +405,10 @@ export default function MapView() {
                 <p>Kayıtlı lokasyon bulunamadı.</p>
                 <button
                   type="button"
-                  onClick={() => setNewLocModalOpen(true)}
+                  onClick={handleAddNoteAtCurrentLocation}
                   className="text-primary hover:underline font-medium cursor-pointer"
                 >
-                  + Yeni bir lokasyon ekle
+                  📍 Mevcut konumuna hemen ilk notu ekle
                 </button>
               </div>
             ) : (
@@ -258,6 +421,7 @@ export default function MapView() {
                     key={loc.location_id}
                     onClick={() => {
                       setSelectedLocationId(loc.location_id);
+                      setUserFocusCenter({ lat: Number(loc.lat), lng: Number(loc.lng) });
                     }}
                     className={`flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all group ${
                       isSelected
@@ -281,7 +445,7 @@ export default function MapView() {
                           {loc.name}
                         </div>
                         <div className="text-[10px] font-mono text-muted-foreground truncate">
-                          {loc.lat.toFixed(4)}, {loc.lng.toFixed(4)}
+                          {Number(loc.lat).toFixed(4)}, {Number(loc.lng).toFixed(4)}
                         </div>
                       </div>
                     </div>
@@ -311,12 +475,17 @@ export default function MapView() {
           <div className="flex-1 relative h-full w-full">
             <GoogleMapWrapper
               center={mapCenter}
-              zoom={selectedLocation ? 14 : locations.length > 0 ? 11 : 6}
+              zoom={selectedLocation ? 14 : currentLocation ? 13 : locations.length > 0 ? 11 : 6}
               maskTheme={maskTheme}
               onMapClick={handleMapClick}
               locations={locations}
               selectedLocationId={selectedLocationId}
-              onSelectLocation={(id) => setSelectedLocationId(id)}
+              onSelectLocation={(id) => {
+                setSelectedLocationId(id);
+                const l = locationMap[id];
+                if (l) setUserFocusCenter({ lat: Number(l.lat), lng: Number(l.lng) });
+              }}
+              currentLocation={currentLocation}
               className="h-full w-full"
             >
               {locations.map((loc) => {
@@ -328,7 +497,10 @@ export default function MapView() {
                     key={loc.location_id}
                     position={{ lat: Number(loc.lat), lng: Number(loc.lng) }}
                     title={loc.name}
-                    onClick={() => setSelectedLocationId(loc.location_id)}
+                    onClick={() => {
+                      setSelectedLocationId(loc.location_id);
+                      setUserFocusCenter({ lat: Number(loc.lat), lng: Number(loc.lng) });
+                    }}
                   >
                     <Pin
                       background={isSelected ? "#e11d48" : "#2563eb"}
@@ -341,11 +513,39 @@ export default function MapView() {
               })}
             </GoogleMapWrapper>
 
+            {/* Quick Action Floating Bar: Current Location & Add Note */}
+            <div className="absolute top-3 left-3 z-10 flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleAddNoteAtCurrentLocation}
+                disabled={isLocating}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg shadow-md text-xs font-semibold cursor-pointer transition-all hover:scale-[1.02]"
+              >
+                {isLocating ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Navigation className="w-3.5 h-3.5" />
+                )}
+                <span>Mevcut Konumuma Not Yaz</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={goToCurrentLocation}
+                disabled={isLocating}
+                title="Mevcut GPS Konumuma Odaklan"
+                className="flex items-center gap-1 bg-background/90 hover:bg-background text-foreground px-2.5 py-1.5 rounded-lg border border-border shadow-md text-xs font-medium cursor-pointer transition-colors backdrop-blur-md"
+              >
+                <Crosshair className="w-3.5 h-3.5 text-blue-500" />
+                <span className="hidden sm:inline">Konumumu Bul</span>
+              </button>
+            </div>
+
             {/* Floating Map Theme Mask Selector & Controls */}
             <div className="absolute top-3 right-3 z-10 flex items-center gap-2 bg-background/90 backdrop-blur-md p-1.5 rounded-lg border border-border shadow-md text-xs">
               <div className="flex items-center gap-1 px-1.5 text-muted-foreground text-[11px] font-medium border-r border-border/60">
                 <Palette className="w-3 h-3 text-primary" />
-                <span className="hidden sm:inline">Tema Maskesi:</span>
+                <span className="hidden sm:inline">Tema:</span>
               </div>
               <select
                 value={maskTheme}
@@ -353,11 +553,11 @@ export default function MapView() {
                 className="bg-transparent text-xs font-medium text-foreground focus:outline-none cursor-pointer pr-2"
                 title="Harita Görsel Maskesini Değiştir"
               >
-                <option value="auto">Otomatik (Uygulama Teması)</option>
-                <option value="dark">Karanlık Obsidian Maskesi</option>
-                <option value="light">Sıcak Parşömen Maskesi</option>
+                <option value="auto">Otomatik</option>
+                <option value="dark">Karanlık Obsidian</option>
+                <option value="light">Sıcak Parşömen</option>
                 <option value="satellite">Uydu / Hibrit</option>
-                <option value="standard">Google Standart</option>
+                <option value="standard">Standart</option>
               </select>
 
               <button
@@ -365,6 +565,7 @@ export default function MapView() {
                 onClick={() => {
                   if (locations.length > 0) {
                     setSelectedLocationId(locations[0].location_id);
+                    setUserFocusCenter({ lat: Number(locations[0].lat), lng: Number(locations[0].lng) });
                   }
                 }}
                 title="İlk lokasyona odaklan"
@@ -377,7 +578,7 @@ export default function MapView() {
             {/* Map click hint badge */}
             <div className="absolute bottom-4 left-4 z-10 hidden sm:flex items-center gap-1.5 bg-background/90 backdrop-blur-md px-3 py-1.5 rounded-full border border-border text-[11px] text-muted-foreground shadow-sm pointer-events-none">
               <MapPin className="w-3 h-3 text-primary" />
-              <span>Harita üzerine tıklayarak o koordinata doğrudan yeni lokasyon ekleyebilirsiniz.</span>
+              <span>Harita üzerinde istediğiniz herhangi bir noktaya tıklayarak oraya doğrudan not ekleyebilirsiniz.</span>
             </div>
           </div>
 
@@ -398,7 +599,7 @@ export default function MapView() {
                       {selectedLocation.name}
                     </h3>
                     <div className="text-[11px] font-mono text-muted-foreground flex items-center gap-2">
-                      <span>{selectedLocation.lat.toFixed(4)}, {selectedLocation.lng.toFixed(4)}</span>
+                      <span>{Number(selectedLocation.lat).toFixed(4)}, {Number(selectedLocation.lng).toFixed(4)}</span>
                       <span>•</span>
                       <span className="font-bold text-foreground">{sortedSelectedNotes.length} Not</span>
                     </div>
@@ -480,7 +681,133 @@ export default function MapView() {
         </div>
       </div>
 
-      {/* New Location Dialog */}
+      {/* Direct Add Note At Coordinate Dialog */}
+      <Dialog open={pointNoteModalOpen} onOpenChange={setPointNoteModalOpen}>
+        <DialogContent className="max-w-lg bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-lg flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-blue-600" /> Bu Konuma Not Ekle
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleSaveNoteAtPoint} className="space-y-3.5 pt-2">
+            {/* Location Name & GPS Preview */}
+            <div className="p-3 bg-secondary/50 rounded-lg border border-border/70 space-y-2">
+              <div>
+                <label className="text-xs font-semibold text-foreground block mb-1">
+                  Konum İsmi
+                </label>
+                <input
+                  type="text"
+                  value={targetLocName}
+                  onChange={(e) => setTargetLocName(e.target.value)}
+                  placeholder="Örn: Mevcut Konumum, Kadıköy Kafe, Kamp Alanı..."
+                  className="w-full px-3 py-1.5 bg-background border border-border rounded-md text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+                  required
+                />
+              </div>
+
+              {targetCoords && (
+                <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
+                  <Crosshair className="w-3 h-3 text-blue-500" />
+                  <span>Koordinat: {targetCoords.lat.toFixed(6)}, {targetCoords.lng.toFixed(6)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Note Type & Category Selector */}
+            <div className="flex items-center gap-2">
+              <div className="flex-1 flex items-center gap-1.5 bg-background border border-border text-xs rounded-md px-2.5 py-1.5">
+                <Boxes className="w-3.5 h-3.5 text-primary shrink-0" />
+                <select
+                  value={pointNoteTypeId}
+                  onChange={(e) => setPointNoteTypeId(e.target.value)}
+                  className="w-full bg-transparent text-foreground text-xs outline-none cursor-pointer font-medium"
+                >
+                  <option value="type_plain">Düz Metin Not</option>
+                  {noteTypes
+                    .filter((nt) => nt.type_id !== "type_plain" && nt.type_id !== "default")
+                    .map((nt) => (
+                      <option key={nt.type_id} value={nt.type_id}>
+                        {nt.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {categories.length > 0 && (
+                <div className="flex-1 flex items-center gap-1.5 bg-background border border-border text-xs rounded-md px-2.5 py-1.5">
+                  <Layers className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                  <select
+                    value={pointCategoryId || ""}
+                    onChange={(e) => setPointCategoryId(e.target.value || null)}
+                    className="w-full bg-transparent text-foreground text-xs outline-none cursor-pointer font-medium"
+                  >
+                    <option value="">Kategori Seç (Opsiyonel)</option>
+                    {categories.map((c) => (
+                      <option key={c.category_id} value={c.category_id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Note Title */}
+            <div>
+              <label className="text-xs font-semibold text-foreground block mb-1">Not Başlığı</label>
+              <input
+                type="text"
+                value={pointNoteTitle}
+                onChange={(e) => setPointNoteTitle(e.target.value)}
+                placeholder="Örn: Buradaki toplantı notları, gezi hatırası..."
+                className="w-full px-3 py-1.5 bg-background border border-border rounded-md text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 font-medium"
+                autoFocus
+              />
+            </div>
+
+            {/* Note Content */}
+            <div>
+              <label className="text-xs font-semibold text-foreground block mb-1">Not İçeriği</label>
+              <textarea
+                value={pointNoteContent}
+                onChange={(e) => setPointNoteContent(e.target.value)}
+                placeholder="Notunuzu yazın... #etiket @kişi ve [[not-bağlantısı]] kullanabilirsiniz."
+                rows={4}
+                className="w-full px-3 py-2 bg-background border border-border rounded-md text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 resize-none font-mono"
+              />
+            </div>
+
+            <DialogFooter className="pt-2">
+              <button
+                type="button"
+                onClick={() => setPointNoteModalOpen(false)}
+                className="px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground rounded-md cursor-pointer"
+              >
+                İptal
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmittingNote}
+                className="px-4 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-md cursor-pointer shadow-sm flex items-center gap-1.5"
+              >
+                {isSubmittingNote ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Kaydediliyor...
+                  </>
+                ) : (
+                  <>
+                    <PenTool className="w-3.5 h-3.5" /> Notu ve Konumu Kaydet
+                  </>
+                )}
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Location Only Dialog */}
       <Dialog open={newLocModalOpen} onOpenChange={setNewLocModalOpen}>
         <DialogContent className="max-w-md bg-card border-border">
           <DialogHeader>
