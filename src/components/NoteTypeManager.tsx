@@ -122,8 +122,8 @@ export default function NoteTypeManager() {
   };
 
   const openEditModal = (nt: NoteType) => {
-    if (nt.is_default || nt.type_id === "type_plain" || nt.type_id === "default") {
-      toast.error("Varsayılan not tipi (Düz Metin) silinemez ve değiştirilemez.");
+    if (nt.is_default || nt.type_id === "type_plain" || nt.type_id === "type_card" || nt.type_id === "default") {
+      toast.error(`Varsayılan not tipi (${nt.name}) silinemez ve değiştirilemez.`);
       return;
     }
     setEditingTypeId(nt.type_id);

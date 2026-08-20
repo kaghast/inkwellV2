@@ -1286,6 +1286,17 @@ const DEFAULT_NOTE_TYPE = {
   fields: [],
 };
 
+const DEFAULT_CARD_NOTE_TYPE = {
+  type_id: "type_card",
+  user_id: null,
+  name: "Kart",
+  description: "Kanban panosu ve kart görünümü için özel not tipi",
+  color: "#8b5cf6",
+  icon: "Kanban",
+  is_default: true,
+  fields: [],
+};
+
 api.get("/note-types", authMiddleware, async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
   try {
@@ -1303,7 +1314,7 @@ api.get("/note-types", authMiddleware, async (req: AuthRequest, res: Response) =
       updated_at: t.updatedAt.toISOString(),
     }));
 
-    res.json([DEFAULT_NOTE_TYPE, ...userTypes]);
+    res.json([DEFAULT_NOTE_TYPE, DEFAULT_CARD_NOTE_TYPE, ...userTypes]);
   } catch (err: any) {
     res.status(500).json({ detail: "Not tipleri alınamadı", error: err.message });
   }
@@ -1370,8 +1381,8 @@ api.put("/note-types/:type_id", authMiddleware, async (req: AuthRequest, res: Re
   const typeId = req.params.type_id;
   const { name, description, color, icon, fields } = req.body || {};
 
-  if (typeId === "type_plain" || typeId === "default") {
-    return res.status(400).json({ detail: "Varsayılan 'Düz Metin' not tipi değiştirilemez veya silinemez." });
+  if (typeId === "type_plain" || typeId === "type_card" || typeId === "default") {
+    return res.status(400).json({ detail: "Varsayılan 'Düz Metin' ve 'Kart' sistem not tipleri değiştirilemez veya silinemez." });
   }
 
   try {
@@ -1435,8 +1446,8 @@ api.delete("/note-types/:type_id", authMiddleware, async (req: AuthRequest, res:
   const userId = req.user!.userId;
   const typeId = req.params.type_id;
 
-  if (typeId === "type_plain" || typeId === "default") {
-    return res.status(400).json({ detail: "Varsayılan 'Düz Metin' not tipi silinemez." });
+  if (typeId === "type_plain" || typeId === "type_card" || typeId === "default") {
+    return res.status(400).json({ detail: "Varsayılan 'Düz Metin' ve 'Kart' sistem not tipleri silinemez." });
   }
 
   try {

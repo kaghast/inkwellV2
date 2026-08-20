@@ -164,7 +164,7 @@ export default function KanbanPage() {
     fetchKanbanData();
   }, [fetchKanbanData]);
 
-  // Map notes to columns
+  // Map notes to columns (Only display notes of type 'Kart' / 'type_card')
   const columnNotesMap = useMemo(() => {
     const map: Record<string, Note[]> = {};
     const cols = Array.isArray(columns) ? columns : [];
@@ -176,6 +176,9 @@ export default function KanbanPage() {
     const fallbackColId = cols.length > 0 ? cols[0].column_id : "todo";
 
     noteList.forEach((note) => {
+      // Strictly only display notes of type "type_card" on the Kanban board
+      if (note.note_type_id !== "type_card") return;
+
       // Check search filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -184,15 +187,6 @@ export default function KanbanPage() {
         const matchesTag = note.tags.some((t) => t.toLowerCase().includes(q));
         const matchesPerson = note.people.some((p) => p.toLowerCase().includes(q));
         if (!matchesTitle && !matchesContent && !matchesTag && !matchesPerson) return;
-      }
-
-      // Check note type filter
-      if (selectedNoteType) {
-        if (selectedNoteType === "type_plain" || selectedNoteType === "default") {
-          if (note.note_type_id && note.note_type_id !== "type_plain" && note.note_type_id !== "default") return;
-        } else if (note.note_type_id !== selectedNoteType) {
-          return;
-        }
       }
 
       // Find column for note
@@ -205,7 +199,7 @@ export default function KanbanPage() {
     });
 
     return map;
-  }, [columns, notes, searchQuery, selectedNoteType]);
+  }, [columns, notes, searchQuery]);
 
   // Column CRUD
   const handleSaveColumn = async (e: React.FormEvent) => {
@@ -401,7 +395,7 @@ export default function KanbanPage() {
         title: newNoteTitle.trim(),
         content: newNoteContent.trim(),
         date: new Date().toISOString().slice(0, 10),
-        note_type_id: newNoteTypeId === "type_plain" ? undefined : newNoteTypeId,
+        note_type_id: "type_card",
         location_id: newNoteLocationId || undefined,
         category_id: newNoteCategoryId || undefined,
         custom_fields: customFields,
@@ -573,9 +567,15 @@ export default function KanbanPage() {
                 </h1>
               </div>
 
-              <span className="text-xs font-mono bg-muted text-muted-foreground px-2 py-0.5 rounded border border-border">
-                {notes.length} Kart • {columns.length} Sütun
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-mono bg-purple-500/10 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded border border-purple-500/20 font-medium flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                  Kart Tipi
+                </span>
+                <span className="text-xs font-mono bg-muted text-muted-foreground px-2 py-0.5 rounded border border-border">
+                  {Object.values(columnNotesMap).reduce((acc, list) => acc + list.length, 0)} Kart • {columns.length} Sütun
+                </span>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -590,22 +590,6 @@ export default function KanbanPage() {
                 />
                 <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2 top-2.5" />
               </div>
-
-              {/* Note Type Filter */}
-              {noteTypes.length > 0 && (
-                <select
-                  value={selectedNoteType || ""}
-                  onChange={(e) => setSelectedNoteType(e.target.value || null)}
-                  className="h-8 px-2 text-xs rounded-md border border-border bg-background text-foreground cursor-pointer font-medium"
-                >
-                  <option value="">Tüm Not Tipleri</option>
-                  {noteTypes.map((nt) => (
-                    <option key={nt.type_id} value={nt.type_id}>
-                      {nt.name}
-                    </option>
-                  ))}
-                </select>
-              )}
 
               {/* Add Column Button */}
               <button
@@ -1014,20 +998,10 @@ export default function KanbanPage() {
                 <label className="block text-xs font-medium text-foreground mb-1">
                   Not Tipi
                 </label>
-                <select
-                  value={newNoteTypeId}
-                  onChange={(e) => setNewNoteTypeId(e.target.value)}
-                  className="w-full h-9 px-2.5 text-xs bg-background rounded-md border border-border text-foreground cursor-pointer"
-                >
-                  <option value="type_plain">Düz Metin (Standart)</option>
-                  {noteTypes
-                    .filter((nt) => nt.type_id !== "type_plain")
-                    .map((nt) => (
-                      <option key={nt.type_id} value={nt.type_id}>
-                        {nt.name}
-                      </option>
-                    ))}
-                </select>
+                <div className="w-full h-9 px-3 text-xs bg-secondary/50 rounded-md border border-border text-foreground flex items-center gap-2 font-medium">
+                  <span className="w-2.5 h-2.5 rounded-full bg-purple-500 shrink-0" />
+                  <span>Kart (Kanban Tipi)</span>
+                </div>
               </div>
 
               {/* Location Selection */}
