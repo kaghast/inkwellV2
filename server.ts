@@ -52,10 +52,17 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "25mb" }));
 app.use(cookieParser());
 
+// Persistent storage directories for uploads and local data
+const DATA_DIR = process.env.DATA_DIR || path.resolve(process.cwd(), ".data");
+const UPLOADS_DIR = path.resolve(DATA_DIR, "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
 // Multer in-memory storage for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
 });
 
 function genId(prefix: string): string {
@@ -2494,6 +2501,7 @@ const handleImageUpload = async (req: AuthRequest, res: Response) => {
     const mime = req.body.contentType || "image/png";
     const buffer = Buffer.from(req.body.dataBase64.replace(/^data:image\/\w+;base64,/, ""), "base64");
     try {
+      // 1. Save to database for relational backup
       await db.insert(files).values({
         fileId,
         userId: req.user!.userId,
@@ -2503,6 +2511,14 @@ const handleImageUpload = async (req: AuthRequest, res: Response) => {
         dataBase64: buffer.toString("base64"),
         isDeleted: false,
       });
+
+      // 2. Save directly to persistent storage volume
+      try {
+        fs.writeFileSync(path.resolve(UPLOADS_DIR, fileId), buffer);
+      } catch (e) {
+        console.warn("[Uploads] Persistent disk save warning:", e);
+      }
+
       return res.json({
         file_id: fileId,
         url: `/api/files/${fileId}`,
@@ -2523,6 +2539,7 @@ const handleImageUpload = async (req: AuthRequest, res: Response) => {
 
   const fileId = genId("file");
   try {
+    // 1. Save to database
     await db.insert(files).values({
       fileId,
       userId: req.user!.userId,
@@ -2532,6 +2549,14 @@ const handleImageUpload = async (req: AuthRequest, res: Response) => {
       dataBase64: file.buffer.toString("base64"),
       isDeleted: false,
     });
+
+    // 2. Save directly to persistent storage volume
+    try {
+      fs.writeFileSync(path.resolve(UPLOADS_DIR, fileId), file.buffer);
+    } catch (e) {
+      console.warn("[Uploads] Persistent disk save warning:", e);
+    }
+
     res.json({
       file_id: fileId,
       url: `/api/files/${fileId}`,
@@ -2558,15 +2583,35 @@ api.post(
 );
 
 api.get("/files/:file_id", async (req: Request, res: Response) => {
+  const fileId = req.params.file_id;
   try {
-    const found = await db.select().from(files).where(and(eq(files.fileId, req.params.file_id), eq(files.isDeleted, false))).limit(1);
+    const diskPath = path.resolve(UPLOADS_DIR, fileId);
+    
+    // Check if file is directly available on persistent volume
+    if (fs.existsSync(diskPath)) {
+      const found = await db.select().from(files).where(and(eq(files.fileId, fileId), eq(files.isDeleted, false))).limit(1);
+      const contentType = found[0]?.contentType || "image/png";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+      return res.sendFile(diskPath);
+    }
+
+    // Fallback: Read from database and populate persistent disk cache
+    const found = await db.select().from(files).where(and(eq(files.fileId, fileId), eq(files.isDeleted, false))).limit(1);
     if (found.length === 0) {
       return res.status(404).json({ detail: "File not found" });
     }
     const file = found[0];
     const buffer = Buffer.from(file.dataBase64, "base64");
+
+    try {
+      fs.writeFileSync(diskPath, buffer);
+    } catch {
+      /* ignore */
+    }
+
     res.setHeader("Content-Type", file.contentType || "image/png");
-    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("Cache-Control", "public, max-age=86400, immutable");
     res.send(buffer);
   } catch (err: any) {
     res.status(500).json({ detail: "Dosya okunamadı", error: err.message });
