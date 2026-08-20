@@ -24,6 +24,10 @@ import {
   Copy,
   Check,
   Link as LinkIcon,
+  Network,
+  Kanban,
+  Link2,
+  ArrowUpRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Note, LocationItem, NoteType, Category } from "@/types";
@@ -44,6 +48,7 @@ export default function NoteDetail() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [note, setNote] = useState<Note | null>(null);
+  const [allNotes, setAllNotes] = useState<Note[]>([]);
   const [loc, setLoc] = useState<LocationItem | null>(null);
   const [cat, setCat] = useState<Category | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -74,14 +79,16 @@ export default function NoteDetail() {
     if (!id) return;
     (async () => {
       try {
-        const [noteRes, locsRes, typesRes, catsRes] = await Promise.all([
+        const [noteRes, locsRes, typesRes, catsRes, allNotesRes] = await Promise.all([
           api.get<Note>(`/notes/${id}`),
           api.get<LocationItem[]>("/locations"),
           api.get<NoteType[]>("/note-types"),
           api.get<Category[]>("/categories"),
+          api.get<Note[]>("/notes"),
         ]);
         const data = noteRes.data;
         setNote(data);
+        setAllNotes(Array.isArray(allNotesRes.data) ? allNotesRes.data : []);
         setTitle(data.title || "");
         setContent(data.content || "");
         setDateTime(toDateTimeLocal(data.date));
@@ -109,6 +116,61 @@ export default function NoteDetail() {
       }
     })();
   }, [id, navigate]);
+
+  // Compute backlinks and referenced notes
+  const relatedNotes = useMemo(() => {
+    if (!note || !allNotes.length) return [];
+    const currentTitle = (note.title || "").toLowerCase().trim();
+    const currentSlug = (note.slug || "").toLowerCase().trim();
+    const currentId = note.note_id.toLowerCase().trim();
+
+    // 1. Backlinks: Other notes referencing this note via [[...]]
+    const backlinks = allNotes.filter((other) => {
+      if (other.note_id === note.note_id || !other.content) return false;
+      const matches = Array.from(other.content.matchAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/gu));
+      return matches.some((m) => {
+        const target = (m[1] || "").toLowerCase().trim();
+        return (
+          (currentTitle && target === currentTitle) ||
+          (currentSlug && target === currentSlug) ||
+          target === currentId
+        );
+      });
+    });
+
+    // 2. Outgoing links: Notes referenced in this note's content via [[...]]
+    const outgoingMatches = note.content
+      ? Array.from(note.content.matchAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/gu))
+      : [];
+    const outgoingTargets = outgoingMatches.map((m) => (m[1] || "").toLowerCase().trim());
+
+    const outgoingNotes = allNotes.filter((other) => {
+      if (other.note_id === note.note_id) return false;
+      const oTitle = (other.title || "").toLowerCase().trim();
+      const oSlug = (other.slug || "").toLowerCase().trim();
+      const oId = other.note_id.toLowerCase().trim();
+      return (
+        (oTitle && outgoingTargets.includes(oTitle)) ||
+        (oSlug && outgoingTargets.includes(oSlug)) ||
+        outgoingTargets.includes(oId)
+      );
+    });
+
+    // Merge and deduplicate
+    const map = new Map<string, { note: Note; isBacklink: boolean; isOutgoing: boolean }>();
+    backlinks.forEach((n) => {
+      map.set(n.note_id, { note: n, isBacklink: true, isOutgoing: false });
+    });
+    outgoingNotes.forEach((n) => {
+      if (map.has(n.note_id)) {
+        map.get(n.note_id)!.isOutgoing = true;
+      } else {
+        map.set(n.note_id, { note: n, isBacklink: false, isOutgoing: true });
+      }
+    });
+
+    return Array.from(map.values());
+  }, [note, allNotes]);
 
   const currentType = noteTypes.find(
     (nt) => nt.type_id === (editing ? noteTypeId : note?.note_type_id || "type_plain")
@@ -615,6 +677,94 @@ export default function NoteDetail() {
                 ))}
               </div>
             )}
+
+            {/* Related Notes & Backlinks Section */}
+            <div className="mt-10 pt-6 border-t border-border/60 space-y-3.5" data-testid="related-notes-section">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Network className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <h3 className="font-serif text-base font-bold text-foreground">
+                    {note.note_type_id === "type_card"
+                      ? "İlişkili Notlar & Kart Referansları"
+                      : "İlişkili Notlar & Bağlantılar"}
+                  </h3>
+                  <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                    {relatedNotes.length} Referans
+                  </span>
+                </div>
+              </div>
+
+              {relatedNotes.length === 0 ? (
+                <div className="p-5 rounded-lg border border-dashed border-border/80 bg-muted/20 text-xs text-muted-foreground text-center space-y-1.5">
+                  <p className="font-medium text-foreground">Henüz referans verilmiş bir not bulunmuyor</p>
+                  <p className="text-[11px] text-muted-foreground max-w-md mx-auto">
+                    Herhangi bir notun içinde <code className="px-1.5 py-0.5 bg-muted rounded border border-border">[[{note.title || "Bu Not"}]]</code> yazarak veya bu not içerisinden <code className="px-1.5 py-0.5 bg-muted rounded border border-border">[[</code> ile diğer notları seçip ilişkilendirebilirsiniz.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {relatedNotes.map(({ note: rNote, isBacklink, isOutgoing }) => {
+                    const isCard = rNote.note_type_id === "type_card";
+                    const noteCat = categories.find((c) => c.category_id === rNote.category_id);
+                    const detailPath = rNote.slug ? `/${rNote.slug}` : `/note/${rNote.note_id}`;
+
+                    return (
+                      <Link
+                        key={rNote.note_id}
+                        to={detailPath}
+                        className="p-3.5 rounded-lg border border-border hover:border-purple-500/50 bg-card hover:bg-muted/20 transition-all shadow-2xs group flex flex-col justify-between gap-2.5"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <span className="font-serif font-bold text-sm text-foreground group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors truncate">
+                              {rNote.title || "Başlıksız Not"}
+                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {isCard && (
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                                  <Kanban className="w-3 h-3" /> Kart
+                                </span>
+                              )}
+                              <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground opacity-40 group-hover:opacity-100 group-hover:text-purple-600 transition-all" />
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                            {rNote.content?.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, "$1") || "İçerik yok..."}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-border/40 text-[10px] text-muted-foreground font-mono">
+                          <div className="flex items-center gap-1.5">
+                            {isBacklink && (
+                              <span
+                                className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded font-sans font-medium"
+                                title="Bu nota referans veren not"
+                              >
+                                ← Bu nota referans verdi
+                              </span>
+                            )}
+                            {isOutgoing && !isBacklink && (
+                              <span
+                                className="text-blue-600 dark:text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded font-sans font-medium"
+                                title="Bu notun bağlantı verdiği not"
+                              >
+                                → İçerikte bağlandı
+                              </span>
+                            )}
+                          </div>
+                          {noteCat && (
+                            <span className="flex items-center gap-1 text-[10px]" style={{ color: noteCat.color || "inherit" }}>
+                              ● {noteCat.name}
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </>
         )}
       </main>
