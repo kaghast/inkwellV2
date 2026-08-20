@@ -544,11 +544,11 @@ export default function MapView() {
         </aside>
 
         {/* Center / Right: Interactive Google Map & Location Notes Drawer */}
-        <div className="flex-1 flex flex-col lg:flex-row relative min-h-[450px] lg:min-h-0 h-full w-full overflow-hidden">
+        <div className="flex-1 flex flex-col lg:flex-row relative min-h-[450px] lg:min-h-0 h-full w-full">
           {/* Map Surface with Top Dedicated Control Bar */}
-          <div className="flex-1 flex flex-col h-full w-full relative overflow-hidden">
-            {/* Top Dedicated Map Controls & Realtime Search Bar */}
-            <div className="p-2.5 bg-background border-b border-border/80 flex items-center justify-between gap-2 flex-wrap z-30 shadow-2xs">
+          <div className="flex-1 flex flex-col h-full w-full relative">
+            {/* Top Dedicated Map Controls & Realtime Search Bar (z-[1000] to sit cleanly above map) */}
+            <div className="p-2.5 bg-background border-b border-border/80 flex items-center justify-between gap-2 flex-wrap relative z-[1000] shadow-xs">
               {/* Left Action Buttons */}
               <div className="flex items-center gap-2 shrink-0">
                 <button
@@ -578,7 +578,7 @@ export default function MapView() {
               </div>
 
               {/* Center: Google Maps Style Realtime Search Bar */}
-              <div className="flex-1 min-w-[240px] max-w-md relative">
+              <div className="flex-1 min-w-[240px] max-w-md relative z-[1001]">
                 <div className="relative bg-card rounded-lg border border-border shadow-xs transition-all focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary">
                   <div className="flex items-center px-2.5 py-1.5">
                     {isSearchingMap ? (
@@ -612,9 +612,9 @@ export default function MapView() {
                     )}
                   </div>
 
-                  {/* Realtime Autocomplete Results Dropdown */}
+                  {/* Realtime Autocomplete Results Dropdown with high z-index */}
                   {showSearchDropdown && mapSearchQuery.trim().length > 0 && (
-                    <div className="absolute top-full left-0 right-0 mt-1.5 bg-card rounded-xl border border-border shadow-2xl max-h-80 overflow-y-auto divide-y divide-border/40 z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="absolute top-full left-0 right-0 mt-1.5 bg-card/98 backdrop-blur-md rounded-xl border border-border shadow-2xl max-h-80 overflow-y-auto divide-y divide-border/40 z-[2000] animate-in fade-in slide-in-from-top-1 duration-150">
                       {isSearchingMap && mapSearchResults.length === 0 ? (
                         <div className="p-4 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
                           <Loader2 className="w-3.5 h-3.5 animate-spin" /> Konumlar aranıyor...
@@ -713,7 +713,7 @@ export default function MapView() {
             </div>
 
             {/* Map Canvas Surface */}
-            <div className="flex-1 relative w-full h-full min-h-[400px] overflow-hidden">
+            <div className="flex-1 relative z-0 w-full h-full min-h-[400px] overflow-hidden">
               <GoogleMapWrapper
                 center={mapCenter}
                 zoom={selectedLocation ? 14 : currentLocation ? 13 : locations.length > 0 ? 11 : 6}
