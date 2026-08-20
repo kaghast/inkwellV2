@@ -36,6 +36,7 @@ import {
   SlidersHorizontal,
   X,
   Palette,
+  Network,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -821,8 +822,25 @@ export default function KanbanPage() {
                               </div>
                             )}
 
-                            {/* Metadata Pills: Location, Tags, People */}
+                            {/* Metadata Pills: Location, Tags, People, Wiki-links */}
                             <div className="flex flex-wrap items-center gap-1 pt-1 border-t border-border/40 text-[10px]">
+                              {(() => {
+                                const wikiMatches = note.content ? note.content.match(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g) : null;
+                                const wikiCount = wikiMatches ? wikiMatches.length : 0;
+                                if (wikiCount === 0) return null;
+                                return (
+                                  <Link
+                                    to="/graph"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="inline-flex items-center gap-0.5 text-primary bg-primary/10 hover:bg-primary/20 px-1.5 py-0.5 rounded font-mono font-medium transition-colors"
+                                    title={`${wikiCount} ilişkili not (Ağ Görünümünde Aç)`}
+                                  >
+                                    <Network className="w-2.5 h-2.5" />
+                                    <span>{wikiCount} bağ</span>
+                                  </Link>
+                                );
+                              })()}
+
                               {noteLoc && (
                                 <span className="inline-flex items-center gap-0.5 text-blue-600 dark:text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded font-mono font-medium">
                                   <MapPin className="w-2.5 h-2.5" />

@@ -16,6 +16,7 @@ import {
   MapPin,
   Kanban as KanbanIcon,
   LayoutGrid,
+  Network,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -60,6 +61,12 @@ export default function TopBar({ onLeftMenu, onRightMenu }: Props) {
       path: "/all-notes",
       icon: FileText,
       testId: "nav-all-notes",
+    },
+    {
+      label: "Ağ Görünümü",
+      path: "/graph",
+      icon: Network,
+      testId: "nav-graph",
     },
     {
       label: "Harita",

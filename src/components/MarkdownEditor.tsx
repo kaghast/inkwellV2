@@ -15,13 +15,31 @@ import {
   Link as LinkIcon,
   Heading,
   Quote,
+  FileText,
+  Network,
 } from "lucide-react";
 
 type SuggestionItem = Tag | Person;
 
+export interface NoteSuggestionItem {
+  note_id: string;
+  title: string;
+  slug?: string;
+  date?: string;
+  snippet?: string;
+}
+
 interface TokenPopup {
   kind: "tag" | "person";
   items: SuggestionItem[];
+  start: number;
+  query: string;
+  selected: number;
+}
+
+interface WikilinkPopup {
+  kind: "wikilink";
+  items: NoteSuggestionItem[];
   start: number;
   query: string;
   selected: number;
@@ -35,7 +53,7 @@ interface SlashPopup {
   selected: number;
 }
 
-type Popup = TokenPopup | SlashPopup;
+type Popup = TokenPopup | WikilinkPopup | SlashPopup;
 
 interface Props {
   value: string;
@@ -66,39 +84,64 @@ export default function MarkdownEditor({
   async function fetchSuggestions(type: "tag" | "person", query: string): Promise<SuggestionItem[]> {
     const url = type === "tag" ? "/tags" : "/people";
     const { data } = await api.get<SuggestionItem[]>(url, { params: { q: query } });
-    return data || [];
+    return Array.isArray(data) ? data : [];
   }
 
-  // Return either a token (#tag, @person) or a slash-command context
+  async function fetchNoteSuggestions(query: string): Promise<NoteSuggestionItem[]> {
+    try {
+      const { data } = await api.get<any[]>("/notes", { params: { q: query || undefined } });
+      const notes = Array.isArray(data) ? data : [];
+      return notes.map((n) => ({
+        note_id: n.note_id,
+        title: n.title || "İsimsiz Not",
+        slug: n.slug,
+        date: n.date,
+        snippet: (n.content || "").slice(0, 60).replace(/\n/g, " "),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  // Return token (#tag, @person), slash-command (/), or wikilink ([[]) context
   function getActiveContext(
     text: string,
     caret: number
-  ): { type: "tag" | "person" | "slash"; start: number; query: string } | null {
+  ): { type: "tag" | "person" | "slash" | "wikilink"; start: number; query: string } | null {
     let i = caret - 1;
     const chars: string[] = [];
     while (i >= 0) {
       const ch = text[i];
-      if (ch === " " || ch === "\n" || ch === "\t" || ch === "\r") break;
-      if (ch === "#" || ch === "@") {
-        const query = chars.reverse().join("");
-        // Check if '#' is at the start of a line with empty query (user is typing a markdown heading like '# Title')
-        const prev = i > 0 ? text[i - 1] : "\n";
-        const isLineStart = prev === "\n" || prev === "\r" || i === 0;
+      if (ch === "\n" || ch === "\r") break;
 
-        if (ch === "#" && isLineStart && query.length === 0) {
-          // Do not hijack heading creation
-          return null;
+      // Check [[ wikilink
+      if (ch === "[" && i > 0 && text[i - 1] === "[") {
+        const query = chars.slice().reverse().join("");
+        if (!query.includes("]")) {
+          return { type: "wikilink", start: i - 1, query };
         }
+      }
 
-        return { type: ch === "#" ? "tag" : "person", start: i, query };
-      }
-      if (ch === "/") {
-        const prev = i > 0 ? text[i - 1] : "\n";
-        if (prev === "\n" || prev === " " || prev === "\t" || i === 0) {
-          return { type: "slash", start: i, query: chars.reverse().join("") };
+      if (ch === " " || ch === "\t") {
+        // Space stops #tag, @person, /slash, but continues inside [[ wikilink
+      } else {
+        if (ch === "#" || ch === "@") {
+          const query = chars.slice().reverse().join("");
+          const prev = i > 0 ? text[i - 1] : "\n";
+          const isLineStart = prev === "\n" || prev === "\r" || i === 0;
+
+          if (!(ch === "#" && isLineStart && query.length === 0)) {
+            return { type: ch === "#" ? "tag" : "person", start: i, query };
+          }
         }
-        break;
+        if (ch === "/") {
+          const prev = i > 0 ? text[i - 1] : "\n";
+          if (prev === "\n" || prev === " " || prev === "\t" || i === 0) {
+            return { type: "slash", start: i, query: chars.slice().reverse().join("") };
+          }
+        }
       }
+
       chars.push(ch);
       i--;
     }
@@ -125,6 +168,11 @@ export default function MarkdownEditor({
       });
       return;
     }
+    if (ctx.type === "wikilink") {
+      const items = await fetchNoteSuggestions(ctx.query);
+      setPopup({ kind: "wikilink", items, start: ctx.start, query: ctx.query, selected: 0 });
+      return;
+    }
     const items = await fetchSuggestions(ctx.type, ctx.query);
     setPopup({ kind: ctx.type, items, start: ctx.start, query: ctx.query, selected: 0 });
   }
@@ -143,11 +191,21 @@ export default function MarkdownEditor({
   }
 
   function applyTokenSuggestion(name: string) {
-    if (!popup || popup.kind === "slash" || !ref.current) return;
+    if (!popup || popup.kind === "slash" || popup.kind === "wikilink" || !ref.current) return;
     const el = ref.current;
     const caret = el.selectionStart;
     const symbol = popup.kind === "tag" ? "#" : "@";
     const inserted = `${symbol}${name} `;
+    replaceRange(popup.start, caret, inserted);
+    setPopup(null);
+  }
+
+  function applyWikilinkSuggestion(item: NoteSuggestionItem) {
+    if (!popup || popup.kind !== "wikilink" || !ref.current) return;
+    const el = ref.current;
+    const caret = el.selectionStart;
+    const insertedTitle = item.title.trim() || item.slug || "Not";
+    const inserted = `[[${insertedTitle}]] `;
     replaceRange(popup.start, caret, inserted);
     setPopup(null);
   }
@@ -270,8 +328,13 @@ export default function MarkdownEditor({
         }
         if (e.key === "Enter" || e.key === "Tab") {
           e.preventDefault();
-          if (popup.kind === "slash") applyBlockOption(popup.options[popup.selected]);
-          else applyTokenSuggestion((popup.items[popup.selected] as any).name);
+          if (popup.kind === "slash") {
+            applyBlockOption(popup.options[popup.selected]);
+          } else if (popup.kind === "wikilink") {
+            applyWikilinkSuggestion(popup.items[popup.selected] as NoteSuggestionItem);
+          } else {
+            applyTokenSuggestion((popup.items[popup.selected] as any).name);
+          }
           return;
         }
       }
@@ -300,7 +363,7 @@ export default function MarkdownEditor({
     const before = value.slice(0, from);
     const needsNl = before.length > 0 && !before.endsWith("\n");
     const prefix = needsNl ? "\n" : "";
-    replaceRange(from, to, prefix + markdown + "\n");
+    replaceRange(from, to, prefix + markdown);
     setPendingBlock(null);
   }
 
@@ -332,28 +395,31 @@ export default function MarkdownEditor({
     setPendingBlock(null);
   }
 
-  function insertQuickBlock(type: "image" | "reminder" | "task" | "link" | "heading" | "quote") {
+  function insertQuickBlock(kind: "image" | "reminder" | "task" | "link" | "heading" | "quote" | "wikilink") {
     const el = ref.current;
     const caret = el ? el.selectionStart : value.length;
+    const before = value.slice(0, caret);
+    const needsNl = before.length > 0 && !before.endsWith("\n");
+    const prefix = needsNl ? "\n" : "";
+
+    if (kind === "wikilink") {
+      replaceRange(caret, caret, prefix + "[[");
+      return;
+    }
+
     setPendingBlock({ start: caret, end: caret });
 
-    if (type === "image") setImageOpen(true);
-    else if (type === "reminder") setReminderOpen(true);
-    else if (type === "link") setLinkOpen(true);
-    else if (type === "task") {
-      const before = value.slice(0, caret);
-      const needsNl = before.length > 0 && !before.endsWith("\n");
-      replaceRange(caret, caret, (needsNl ? "\n" : "") + "- [ ] ");
+    if (kind === "image") setImageOpen(true);
+    else if (kind === "reminder") setReminderOpen(true);
+    else if (kind === "link") setLinkOpen(true);
+    else if (kind === "task") {
+      replaceRange(caret, caret, prefix + "- [ ] ");
       setPendingBlock(null);
-    } else if (type === "heading") {
-      const before = value.slice(0, caret);
-      const needsNl = before.length > 0 && !before.endsWith("\n");
-      replaceRange(caret, caret, (needsNl ? "\n" : "") + "## ");
+    } else if (kind === "heading") {
+      replaceRange(caret, caret, prefix + "## ");
       setPendingBlock(null);
-    } else if (type === "quote") {
-      const before = value.slice(0, caret);
-      const needsNl = before.length > 0 && !before.endsWith("\n");
-      replaceRange(caret, caret, (needsNl ? "\n" : "") + "> ");
+    } else if (kind === "quote") {
+      replaceRange(caret, caret, prefix + "> ");
       setPendingBlock(null);
     }
   }
@@ -375,6 +441,17 @@ export default function MarkdownEditor({
       {/* Editor Quick Action Toolbar */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-muted/40 border-x border-b border-border rounded-b-md text-xs text-muted-foreground select-none">
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => insertQuickBlock("wikilink")}
+            data-testid="toolbar-btn-wikilink"
+            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1"
+            title="Not Bağlantısı Ekle"
+          >
+            <Network className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline text-[11px]">[[</span>
+          </button>
+
           <button
             type="button"
             onClick={() => insertQuickBlock("image")}
@@ -446,15 +523,15 @@ export default function MarkdownEditor({
         </div>
       </div>
 
-      {/* Slash / token popup */}
+      {/* Slash / token / wikilink popup */}
       {popup && (popup.kind === "slash" ? popup.options.length > 0 : popup.items.length > 0) && (
         <div
           className="absolute z-50 min-w-[240px] max-w-[320px] rounded-md border border-border bg-popover/98 backdrop-blur-xl shadow-lg"
           style={{ top: "calc(100% + 4px)", left: 8 }}
-          data-testid={popup.kind === "slash" ? "block-picker-popup" : "autocomplete-popup"}
+          data-testid={popup.kind === "slash" ? "block-picker-popup" : popup.kind === "wikilink" ? "wikilink-popup" : "autocomplete-popup"}
         >
           <div className="px-3 py-1.5 text-[10px] tracking-[0.2em] uppercase text-muted-foreground border-b border-border">
-            {popup.kind === "slash" ? "Blok tipi" : popup.kind === "tag" ? "Etiketler" : "Kişiler"}
+            {popup.kind === "slash" ? "Blok tipi" : popup.kind === "wikilink" ? "İlişkili notlar" : popup.kind === "tag" ? "Etiketler" : "Kişiler"}
           </div>
           <ul className="max-h-72 overflow-auto py-1">
             {popup.kind === "slash"
@@ -480,6 +557,23 @@ export default function MarkdownEditor({
                     </li>
                   );
                 })
+              : popup.kind === "wikilink"
+              ? (popup.items as NoteSuggestionItem[]).slice(0, 8).map((it, idx) => (
+                  <li
+                    key={it.note_id}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      applyWikilinkSuggestion(it);
+                    }}
+                    className={`px-3 py-1.5 cursor-pointer text-sm flex items-center gap-2 ${
+                      idx === popup.selected ? "bg-accent" : ""
+                    }`}
+                    data-testid={`wikilink-item-${idx}`}
+                  >
+                    <FileText className="w-3.5 h-3.5 text-muted-foreground" />
+                    {it.title}
+                  </li>
+                ))
               : (popup.items as SuggestionItem[]).slice(0, 8).map((it, idx) => (
                   <li
                     key={(it as any).tag_id || (it as any).person_id}

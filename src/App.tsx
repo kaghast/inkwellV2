@@ -11,6 +11,7 @@ import Dashboard from "@/pages/Dashboard";
 import AllNotes from "@/pages/AllNotes";
 import MapView from "@/pages/MapView";
 import KanbanPage from "@/pages/KanbanPage";
+import GraphView from "@/pages/GraphView";
 import NoteDetail from "@/pages/NoteDetail";
 import SettingsPage from "@/pages/SettingsPage";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -26,6 +27,8 @@ function AppRoutes() {
       <Route path="/" element={<ProtectedRoute><Dashboard mode="day" /></ProtectedRoute>} />
       <Route path="/all-notes" element={<ProtectedRoute><AllNotes /></ProtectedRoute>} />
       <Route path="/notes" element={<ProtectedRoute><AllNotes /></ProtectedRoute>} />
+      <Route path="/graph" element={<ProtectedRoute><GraphView /></ProtectedRoute>} />
+      <Route path="/network" element={<ProtectedRoute><GraphView /></ProtectedRoute>} />
       <Route path="/map" element={<ProtectedRoute><MapView /></ProtectedRoute>} />
       <Route path="/kanban" element={<ProtectedRoute><KanbanPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />

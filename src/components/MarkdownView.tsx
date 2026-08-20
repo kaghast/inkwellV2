@@ -15,6 +15,24 @@ import {
 
 const TAG_RE = /(?<!\S)#([a-zA-Z0-9_\-ğüşıöçĞÜŞİÖÇ]+)(?!\S)/gu;
 const MEN_RE = /(?<!\S)@([a-zA-Z0-9_\-ğüşıöçĞÜŞİÖÇ]+)(?!\S)/gu;
+const WIKI_RE = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/gu;
+
+function WikiLink({ target, label }: { target: string; label?: string }) {
+  const displayText = label || target;
+  const encoded = encodeURIComponent(target.trim());
+  return (
+    <Link
+      to={`/note/${encoded}`}
+      className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-primary/10 hover:bg-primary/20 text-primary font-medium text-[0.92em] border border-primary/25 transition-all no-underline align-baseline cursor-pointer"
+      title={`İlişkili Not: ${displayText}`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span className="opacity-60 text-[0.8em]">[[</span>
+      <span className="underline decoration-primary/40 underline-offset-2">{displayText}</span>
+      <span className="opacity-60 text-[0.8em]">]]</span>
+    </Link>
+  );
+}
 
 function TagLink({ name }: { name: string }) {
   const { tryAddFilter } = useFilter();
@@ -55,6 +73,26 @@ function transformChildren(children: ReactNode, highlight?: string): ReactNode[]
       return;
     }
     let pieces: ReactNode[] = [child];
+
+    // 1. [[Wiki-Links]]
+    pieces = pieces.flatMap((p, i) => {
+      if (typeof p !== "string") return [p];
+      const parts: ReactNode[] = [];
+      let last = 0;
+      const re = new RegExp(WIKI_RE.source, "gu");
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(p)) !== null) {
+        if (m.index > last) parts.push(p.slice(last, m.index));
+        const target = m[1].trim();
+        const label = m[2] ? m[2].trim() : target;
+        parts.push(<WikiLink key={`w-${idx}-${i}-${m.index}`} target={target} label={label} />);
+        last = m.index + m[0].length;
+      }
+      if (last < p.length) parts.push(p.slice(last));
+      return parts;
+    });
+
+    // 2. #Tags
     pieces = pieces.flatMap((p, i) => {
       if (typeof p !== "string") return [p];
       const parts: ReactNode[] = [];
@@ -70,6 +108,8 @@ function transformChildren(children: ReactNode, highlight?: string): ReactNode[]
       if (last < p.length) parts.push(p.slice(last));
       return parts;
     });
+
+    // 3. @Mentions
     pieces = pieces.flatMap((p, i) => {
       if (typeof p !== "string") return [p];
       const parts: ReactNode[] = [];
@@ -85,6 +125,8 @@ function transformChildren(children: ReactNode, highlight?: string): ReactNode[]
       if (last < p.length) parts.push(p.slice(last));
       return parts;
     });
+
+    // 4. Highlight query
     if (highlight && highlight.trim()) {
       pieces = pieces.flatMap((p, i) => {
         if (typeof p !== "string") return [p];
