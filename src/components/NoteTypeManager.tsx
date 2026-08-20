@@ -308,7 +308,7 @@ export default function NoteTypeManager() {
         <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
         <div>
           <span className="font-semibold text-foreground">Varsayılan Not Tipi Koruması: </span>
-          Sistemde yer alan <strong>"Düz Metin"</strong> tipi silinemez veya yapısı değiştirilemez. Oluşturduğunuz yeni not tiplerini not yazarken veya düzenlerken tek tıkla seçebilirsiniz.
+          Sistemde yer alan <strong>"Düz Metin"</strong> ve <strong>"Kart"</strong> tipleri silinemez veya yapısı değiştirilemez. Oluşturduğunuz yeni not tiplerini not yazarken veya düzenlerken tek tıkla seçebilirsiniz.
         </div>
       </div>
 
@@ -320,15 +320,15 @@ export default function NoteTypeManager() {
       ) : (
         <div className="grid grid-cols-1 gap-4">
           {noteTypes.map((nt) => {
-            const isPlainDefault =
-              nt.is_default || nt.type_id === "type_plain" || nt.type_id === "default";
+            const isProtected =
+              nt.is_default || nt.type_id === "type_plain" || nt.type_id === "type_card" || nt.type_id === "default";
             const fieldCount = nt.fields?.length || 0;
 
             return (
               <div
                 key={nt.type_id}
                 className={`p-5 rounded-xl border transition-all ${
-                  isPlainDefault
+                  isProtected
                     ? "bg-card/70 border-border/80"
                     : "bg-card border-border hover:border-primary/40 shadow-2xs"
                 }`}
@@ -347,12 +347,12 @@ export default function NoteTypeManager() {
                         <h3 className="font-serif text-lg font-bold text-foreground">
                           {nt.name}
                         </h3>
-                        {isPlainDefault && (
+                        {isProtected && (
                           <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-600 dark:text-slate-300 border border-slate-500/20">
                             <Lock className="w-3 h-3" /> Varsayılan (Korumalı)
                           </span>
                         )}
-                        {!isPlainDefault && (
+                        {!isProtected && (
                           <span className="text-[11px] font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded">
                             {fieldCount} Parametre
                           </span>

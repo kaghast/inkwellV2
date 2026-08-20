@@ -150,7 +150,7 @@ export default function NoteComposer({
             >
               <option value="type_plain">Düz Metin (Varsayılan)</option>
               {noteTypes
-                .filter((nt) => nt.type_id !== "type_plain" && nt.type_id !== "default" && !nt.is_default)
+                .filter((nt) => nt.type_id !== "type_plain" && nt.type_id !== "default")
                 .map((nt) => (
                   <option key={nt.type_id} value={nt.type_id}>
                     {nt.name}

@@ -1745,6 +1745,11 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
 
   try {
     const effectiveNoteTypeId = (note_type_id && note_type_id !== "type_plain" && note_type_id !== "default") ? note_type_id : null;
+    const finalCustomFields = custom_fields && typeof custom_fields === "object" ? { ...custom_fields } : {};
+    if (effectiveNoteTypeId === "type_card" && !finalCustomFields.kanban_column) {
+      finalCustomFields.kanban_column = "todo";
+    }
+
     const values: any = {
       noteId,
       userId,
@@ -1757,7 +1762,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       categoryId: category_id || null,
       locationId: location_id || null,
       noteTypeId: effectiveNoteTypeId,
-      customFields: custom_fields && typeof custom_fields === "object" ? custom_fields : {},
+      customFields: finalCustomFields,
       pinned: false,
     };
     if (embedding) {
@@ -2007,6 +2012,12 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       newSlug = generateSlugForNote(noteTitle, newDate, noteId);
     }
 
+    const baseCustomFields = custom_fields !== undefined ? (custom_fields || {}) : (current.customFields || {});
+    const finalCustomFields = typeof baseCustomFields === "object" ? { ...baseCustomFields } : {};
+    if (effectiveNoteTypeId === "type_card" && !finalCustomFields.kanban_column) {
+      finalCustomFields.kanban_column = "todo";
+    }
+
     const updateData: any = {
       slug: newSlug,
       title: noteTitle,
@@ -2017,7 +2028,7 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       categoryId: category_id !== undefined ? (category_id || null) : current.categoryId,
       locationId: location_id !== undefined ? (location_id || null) : current.locationId,
       noteTypeId: effectiveNoteTypeId,
-      customFields: custom_fields !== undefined ? (custom_fields || {}) : (current.customFields || {}),
+      customFields: finalCustomFields,
       updatedAt: new Date(),
     };
     if (embedding) {

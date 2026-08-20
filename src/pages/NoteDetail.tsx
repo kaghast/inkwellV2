@@ -362,8 +362,7 @@ export default function NoteDetail() {
                     .filter(
                       (nt) =>
                         nt.type_id !== "type_plain" &&
-                        nt.type_id !== "default" &&
-                        !nt.is_default
+                        nt.type_id !== "default"
                     )
                     .map((nt) => (
                       <option key={nt.type_id} value={nt.type_id}>

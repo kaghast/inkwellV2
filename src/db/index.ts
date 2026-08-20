@@ -178,17 +178,40 @@ export async function initDatabaseSchema() {
     );
   `;
 
+  const seedSystemTypes = `
+    INSERT INTO note_types (type_id, user_id, name, description, color, icon, is_default, fields)
+    VALUES
+      ('type_plain', NULL, 'Düz Metin', 'Standart sade metin ve Markdown notları', '#64748b', 'FileText', true, '[]'::jsonb),
+      ('type_card', NULL, 'Kart', 'Kanban panosu ve kart görünümü için özel not tipi', '#8b5cf6', 'Kanban', true, '[]'::jsonb)
+    ON CONFLICT (type_id) DO UPDATE SET
+      name = EXCLUDED.name,
+      description = EXCLUDED.description,
+      color = EXCLUDED.color,
+      icon = EXCLUDED.icon,
+      is_default = true;
+  `;
+
   try {
     if (global._pgliteClient) {
       await global._pgliteClient.exec(ddl);
       try {
         await global._pgliteClient.exec(`ALTER TABLE notes ALTER COLUMN embedding TYPE TEXT;`);
       } catch {}
+      try {
+        await global._pgliteClient.exec(seedSystemTypes);
+      } catch (e) {
+        console.warn('Seed note types note:', e);
+      }
     } else if (db.execute) {
       await db.execute(sql.raw(ddl));
       try {
         await db.execute(sql.raw(`ALTER TABLE notes ALTER COLUMN embedding TYPE TEXT;`));
       } catch {}
+      try {
+        await db.execute(sql.raw(seedSystemTypes));
+      } catch (e) {
+        console.warn('Seed note types note:', e);
+      }
     }
   } catch (err) {
     console.warn('Init database schema note:', err);
