@@ -237,6 +237,7 @@ export default function GoogleMapWrapper(props: GoogleMapWrapperProps) {
   } = props;
 
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [gmapError, setGmapError] = useState(false);
 
   useEffect(() => {
     const checkDark = () => {
@@ -248,30 +249,29 @@ export default function GoogleMapWrapper(props: GoogleMapWrapperProps) {
     return () => observer.disconnect();
   }, []);
 
-  if (!hasValidKey) {
+  if (!hasValidKey || gmapError) {
     return <LeafletMapFallback {...props} />;
   }
 
-  // Determine active styles based on maskTheme
-  let activeStyles: google.maps.MapTypeStyle[] | undefined;
   let mapTypeId = "roadmap";
-
   if (maskTheme === "satellite") {
     mapTypeId = "satellite";
-  } else if (maskTheme === "dark" || (maskTheme === "auto" && isDarkMode)) {
-    activeStyles = DARK_MAP_STYLES;
-  } else if (maskTheme === "light" || maskTheme === "paper" || (maskTheme === "auto" && !isDarkMode)) {
-    activeStyles = LIGHT_MAP_STYLES;
   }
 
   return (
     <div className={`relative w-full h-full min-h-[220px] rounded-xl overflow-hidden ${className}`}>
-      <APIProvider apiKey={GOOGLE_MAPS_API_KEY} version="weekly">
+      <APIProvider
+        apiKey={GOOGLE_MAPS_API_KEY}
+        version="weekly"
+        onError={(err) => {
+          console.warn("[GoogleMaps] Failed loading Google Maps, falling back to OpenStreetMap:", err);
+          setGmapError(true);
+        }}
+      >
         <Map
           defaultCenter={center}
           defaultZoom={zoom}
           mapTypeId={mapTypeId}
-          styles={activeStyles}
           mapId="DEMO_MAP_ID"
           internalUsageAttributionIds={["gmp_mcp_codeassist_v1_aistudio"]}
           style={{ width: "100%", height: "100%", ...style }}
