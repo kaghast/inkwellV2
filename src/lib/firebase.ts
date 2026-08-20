@@ -54,6 +54,10 @@ export async function connectGoogleServices(): Promise<{ user: FirebaseUser; acc
     };
   } catch (error: any) {
     console.error("Google services connection error:", error);
+    if (error?.code === "auth/unauthorized-domain" || error?.message?.includes("unauthorized-domain")) {
+      const currentHost = typeof window !== "undefined" ? window.location.hostname : "bu alan adı";
+      throw new Error(`'${currentHost}' adresi Firebase Console > Authentication > Settings > Authorized Domains listesine eklenmelidir.`);
+    }
     throw error;
   }
 }
