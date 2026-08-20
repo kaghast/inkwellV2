@@ -13,7 +13,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { eq, and, or, desc, sql } from "drizzle-orm";
-import { db, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns } from "./src/db/index";
+import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns } from "./src/db/index";
 import { generateTextEmbedding } from "./src/lib/embeddings";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -226,7 +226,6 @@ async function backfillSlugs() {
     console.warn("Backfill slugs check failed:", e);
   }
 }
-backfillSlugs();
 
 // ---------------------------------------------------------------------------
 // Auth Tokens & Cookies
@@ -336,7 +335,6 @@ async function seedInitialData() {
     console.warn("Seeding initial data warning (can be ignored if already seeded):", err);
   }
 }
-seedInitialData();
 
 // ---------------------------------------------------------------------------
 // Auth Middleware
@@ -787,14 +785,16 @@ api.get("/ai/semantic-search", authMiddleware, async (req: AuthRequest, res: Res
 api.post("/auth/register", async (req, res) => {
   const { email, password, name } = req.body || {};
   if (!email || !password) {
-    return res.status(400).json({ detail: "Email and password are required" });
+    return res.status(400).json({ detail: "E-posta ve şifre zorunludur" });
   }
   const cleanEmail = String(email).toLowerCase().trim();
   
   try {
     const existing = await db.select().from(users).where(eq(users.email, cleanEmail)).limit(1);
     if (existing.length > 0) {
-      return res.status(400).json({ detail: "Email already registered" });
+      return res.status(400).json({
+        detail: "Bu e-posta adresi zaten kayıtlıdır. Lütfen doğrudan giriş yapın veya Google ile bağlanın."
+      });
     }
     const user_id = genId("user");
     const password_hash = bcrypt.hashSync(String(password), 10);
@@ -824,22 +824,32 @@ api.post("/auth/register", async (req, res) => {
     return res.json(userOut);
   } catch (err: any) {
     console.error("Registration error:", err);
-    return res.status(500).json({ detail: "Registration failed", error: err.message });
+    return res.status(500).json({ detail: "Kayıt işlemi başarısız oldu", error: err.message });
   }
 });
 
 api.post("/auth/login", async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) {
-    return res.status(401).json({ detail: "Invalid email or password" });
+    return res.status(401).json({ detail: "Geçersiz e-posta veya şifre" });
   }
   const cleanEmail = String(email).toLowerCase().trim();
   
   try {
     const found = await db.select().from(users).where(eq(users.email, cleanEmail)).limit(1);
     const user = found[0];
-    if (!user || !user.passwordHash || !bcrypt.compareSync(String(password), user.passwordHash)) {
-      return res.status(401).json({ detail: "Invalid email or password" });
+    if (!user) {
+      return res.status(401).json({ detail: "Geçersiz e-posta veya şifre" });
+    }
+
+    // If account was created with Google and hasn't set a local password yet,
+    // automatically save this password as their password so they can log in normally!
+    if (!user.passwordHash) {
+      const newHash = bcrypt.hashSync(String(password), 10);
+      await db.update(users).set({ passwordHash: newHash }).where(eq(users.userId, user.userId));
+      user.passwordHash = newHash;
+    } else if (!bcrypt.compareSync(String(password), user.passwordHash)) {
+      return res.status(401).json({ detail: "Geçersiz e-posta veya şifre" });
     }
 
     const accessToken = createAccessToken(user.userId, cleanEmail);
@@ -858,7 +868,7 @@ api.post("/auth/login", async (req, res) => {
     return res.json(userOut);
   } catch (err: any) {
     console.error("Login error:", err);
-    return res.status(500).json({ detail: "Login failed", error: err.message });
+    return res.status(500).json({ detail: "Giriş başarısız", error: err.message });
   }
 });
 
@@ -1474,7 +1484,6 @@ async function ensureKanbanTable() {
     console.warn("Failed ensuring kanban_columns table:", err);
   }
 }
-ensureKanbanTable();
 
 api.get("/kanban/columns", authMiddleware, async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
@@ -2664,6 +2673,15 @@ app.use("/api", api);
 // Production / Dev Server setup
 // ---------------------------------------------------------------------------
 async function startServer() {
+  try {
+    await initDatabaseSchema();
+    await seedInitialData();
+    await ensureKanbanTable();
+    await backfillSlugs();
+  } catch (err) {
+    console.warn("Database initialization notice:", err);
+  }
+
   if (isProduction) {
     app.use(express.static(path.resolve(__dirname, "dist")));
     app.get("*", (_req, res) => {
