@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+import fs from "fs";
 import express, { Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -22,7 +23,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const HOST = process.env.HOST || "0.0.0.0";
-const isProduction = process.env.NODE_ENV === "production";
+const isProduction = process.env.NODE_ENV === "production" || fs.existsSync(path.resolve(__dirname, "dist", "index.html"));
 
 const JWT_SECRET = process.env.JWT_SECRET || "inkwell_jwt_secret_key_2026";
 const ACCESS_TOKEN_MIN = 60 * 24; // 1 day
@@ -2689,6 +2690,14 @@ api.post("/reminders/:reminder_id/fire", authMiddleware, async (req: AuthRequest
   }
 });
 
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 app.use("/api", api);
 
 // ---------------------------------------------------------------------------
@@ -2705,9 +2714,13 @@ async function startServer() {
   }
 
   if (isProduction) {
-    app.use(express.static(path.resolve(__dirname, "dist")));
-    app.get("*", (_req, res) => {
-      res.sendFile(path.resolve(__dirname, "dist", "index.html"));
+    const distPath = path.resolve(__dirname, "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith("/api/")) {
+        return next();
+      }
+      res.sendFile(path.resolve(distPath, "index.html"));
     });
   } else {
     const vite = await createViteServer({

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
-    "start": "NODE_ENV=production tsx server.ts",
+    "start": "tsx server.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -82,6 +82,8 @@
     "swr": "^2.2.5",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
+    "tsx": "^4.19.1",
+    "typescript": "^5.5.4",
     "vaul": "^0.9.3",
     "zod": "^3.23.8"
   },
@@ -101,8 +103,6 @@
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.11",
-    "tsx": "^4.19.1",
-    "typescript": "^5.5.4",
     "vite": "^5.4.6"
   }
 }

@@ -15,6 +15,8 @@ services:
       - JWT_SECRET=${JWT_SECRET:-inkwell_jwt_secret_key_2026}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@inkwell.app}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin12345}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}
+    volumes:
+      - inkwell_data:/app/.data
+
+volumes:
+  inkwell_data:
