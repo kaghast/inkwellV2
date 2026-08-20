@@ -52,10 +52,10 @@ export default function MapView() {
         api.get<NoteType[]>("/note-types"),
         api.get<Note[]>("/notes"),
       ]);
-      setLocations(l.data || []);
-      setCategories(c.data || []);
-      setNoteTypes(nt.data || []);
-      setNotes(n.data || []);
+      setLocations(Array.isArray(l.data) ? l.data : []);
+      setCategories(Array.isArray(c.data) ? c.data : []);
+      setNoteTypes(Array.isArray(nt.data) ? nt.data : []);
+      setNotes(Array.isArray(n.data) ? n.data : []);
     } catch (err) {
       console.warn("Failed fetching map data:", err);
     } finally {
@@ -70,8 +70,8 @@ export default function MapView() {
   // Group notes count by location_id
   const notesByLocation = useMemo(() => {
     const map: Record<string, Note[]> = {};
-    notes.forEach((n) => {
-      if (n.location_id) {
+    (Array.isArray(notes) ? notes : []).forEach((n) => {
+      if (n && n.location_id) {
         if (!map[n.location_id]) map[n.location_id] = [];
         map[n.location_id].push(n);
       }
@@ -81,27 +81,34 @@ export default function MapView() {
 
   const locationMap = useMemo(() => {
     const m: Record<string, LocationItem> = {};
-    locations.forEach((l) => (m[l.location_id] = l));
+    (Array.isArray(locations) ? locations : []).forEach((l) => {
+      if (l && l.location_id) m[l.location_id] = l;
+    });
     return m;
   }, [locations]);
 
   const categoryMap = useMemo(() => {
     const m: Record<string, Category> = {};
-    categories.forEach((c) => (m[c.category_id] = c));
+    (Array.isArray(categories) ? categories : []).forEach((c) => {
+      if (c && c.category_id) m[c.category_id] = c;
+    });
     return m;
   }, [categories]);
 
   const noteTypeMap = useMemo(() => {
     const m: Record<string, NoteType> = {};
-    noteTypes.forEach((nt) => (m[nt.type_id] = nt));
+    (Array.isArray(noteTypes) ? noteTypes : []).forEach((nt) => {
+      if (nt && nt.type_id) m[nt.type_id] = nt;
+    });
     return m;
   }, [noteTypes]);
 
   // Filtered locations
   const filteredLocations = useMemo(() => {
-    if (!searchQuery.trim()) return locations;
+    const list = Array.isArray(locations) ? locations : [];
+    if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase().trim();
-    return locations.filter((l) => l.name.toLowerCase().includes(q));
+    return list.filter((l) => l && l.name && l.name.toLowerCase().includes(q));
   }, [locations, searchQuery]);
 
   const selectedLocation = selectedLocationId ? locationMap[selectedLocationId] : null;

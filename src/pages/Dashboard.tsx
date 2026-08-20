@@ -95,19 +95,25 @@ export default function Dashboard({ mode }: Props) {
 
   const locationMap = useMemo(() => {
     const m: Record<string, LocationItem> = {};
-    locations.forEach((l) => (m[l.location_id] = l));
+    (Array.isArray(locations) ? locations : []).forEach((l) => {
+      if (l && l.location_id) m[l.location_id] = l;
+    });
     return m;
   }, [locations]);
 
   const categoryMap = useMemo(() => {
     const m: Record<string, Category> = {};
-    categories.forEach((c) => (m[c.category_id] = c));
+    (Array.isArray(categories) ? categories : []).forEach((c) => {
+      if (c && c.category_id) m[c.category_id] = c;
+    });
     return m;
   }, [categories]);
 
   const noteTypeMap = useMemo(() => {
     const m: Record<string, NoteType> = {};
-    noteTypes.forEach((nt) => (m[nt.type_id] = nt));
+    (Array.isArray(noteTypes) ? noteTypes : []).forEach((nt) => {
+      if (nt && nt.type_id) m[nt.type_id] = nt;
+    });
     return m;
   }, [noteTypes]);
 
@@ -121,12 +127,12 @@ export default function Dashboard({ mode }: Props) {
         api.get<LocationItem[]>("/locations"),
         api.get<NoteType[]>("/note-types"),
       ]);
-      setCategories(c.data || []);
-      setGroups(g.data || []);
-      setTags(t.data || []);
-      setPeople(p.data || []);
-      setLocations(l.data || []);
-      setNoteTypes(nt.data || []);
+      setCategories(Array.isArray(c.data) ? c.data : []);
+      setGroups(Array.isArray(g.data) ? g.data : []);
+      setTags(Array.isArray(t.data) ? t.data : []);
+      setPeople(Array.isArray(p.data) ? p.data : []);
+      setLocations(Array.isArray(l.data) ? l.data : []);
+      setNoteTypes(Array.isArray(nt.data) ? nt.data : []);
     } catch (err) {
       console.warn("Failed fetching aux data:", err);
     }
@@ -180,7 +186,7 @@ export default function Dashboard({ mode }: Props) {
 
     try {
       const { data } = await api.get<Note[]>("/notes", { params: queryParams });
-      let resNotes = data || [];
+      let resNotes = Array.isArray(data) ? data : [];
       if (extras.categoryIds.length > 0) {
         resNotes = resNotes.filter((n) => n.category_id && extras.categoryIds.includes(n.category_id));
       }
@@ -303,7 +309,7 @@ export default function Dashboard({ mode }: Props) {
   // Chips for SearchBar
   const chips: FilterChip[] = useMemo(() => {
     const list: FilterChip[] = [];
-    extras.tags.forEach((t) =>
+    (Array.isArray(extras?.tags) ? extras.tags : []).forEach((t) =>
       list.push({
         id: `tag-${t}`,
         type: "tag",
@@ -311,7 +317,7 @@ export default function Dashboard({ mode }: Props) {
         label: `#${t}`,
       })
     );
-    extras.people.forEach((p) =>
+    (Array.isArray(extras?.people) ? extras.people : []).forEach((p) =>
       list.push({
         id: `person-${p}`,
         type: "person",
@@ -319,7 +325,7 @@ export default function Dashboard({ mode }: Props) {
         label: `@${p}`,
       })
     );
-    extras.locationIds.forEach((locId) =>
+    (Array.isArray(extras?.locationIds) ? extras.locationIds : []).forEach((locId) =>
       list.push({
         id: `loc-${locId}`,
         type: "location",
@@ -327,7 +333,7 @@ export default function Dashboard({ mode }: Props) {
         label: locationMap[locId]?.name || "Konum",
       })
     );
-    extras.categoryIds.forEach((catId) =>
+    (Array.isArray(extras?.categoryIds) ? extras.categoryIds : []).forEach((catId) =>
       list.push({
         id: `cat-${catId}`,
         type: "category",

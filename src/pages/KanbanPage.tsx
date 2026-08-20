@@ -107,19 +107,25 @@ export default function KanbanPage() {
 
   const locationMap = useMemo(() => {
     const m: Record<string, LocationItem> = {};
-    locations.forEach((l) => (m[l.location_id] = l));
+    (Array.isArray(locations) ? locations : []).forEach((l) => {
+      if (l && l.location_id) m[l.location_id] = l;
+    });
     return m;
   }, [locations]);
 
   const categoryMap = useMemo(() => {
     const m: Record<string, Category> = {};
-    categories.forEach((c) => (m[c.category_id] = c));
+    (Array.isArray(categories) ? categories : []).forEach((c) => {
+      if (c && c.category_id) m[c.category_id] = c;
+    });
     return m;
   }, [categories]);
 
   const noteTypeMap = useMemo(() => {
     const m: Record<string, NoteType> = {};
-    noteTypes.forEach((nt) => (m[nt.type_id] = nt));
+    (Array.isArray(noteTypes) ? noteTypes : []).forEach((nt) => {
+      if (nt && nt.type_id) m[nt.type_id] = nt;
+    });
     return m;
   }, [noteTypes]);
 
@@ -137,14 +143,14 @@ export default function KanbanPage() {
           api.get<NoteType[]>("/note-types"),
         ]);
 
-      setColumns(colRes.data || []);
-      setNotes(noteRes.data || []);
-      setCategories(catRes.data || []);
-      setGroups(grpRes.data || []);
-      setTags(tagRes.data || []);
-      setPeople(pplRes.data || []);
-      setLocations(locRes.data || []);
-      setNoteTypes(ntRes.data || []);
+      setColumns(Array.isArray(colRes.data) ? colRes.data : []);
+      setNotes(Array.isArray(noteRes.data) ? noteRes.data : []);
+      setCategories(Array.isArray(catRes.data) ? catRes.data : []);
+      setGroups(Array.isArray(grpRes.data) ? grpRes.data : []);
+      setTags(Array.isArray(tagRes.data) ? tagRes.data : []);
+      setPeople(Array.isArray(pplRes.data) ? pplRes.data : []);
+      setLocations(Array.isArray(locRes.data) ? locRes.data : []);
+      setNoteTypes(Array.isArray(ntRes.data) ? ntRes.data : []);
     } catch (err) {
       console.warn("Failed fetching kanban data:", err);
       toast.error("Kanban verileri yüklenemedi");
@@ -160,11 +166,15 @@ export default function KanbanPage() {
   // Map notes to columns
   const columnNotesMap = useMemo(() => {
     const map: Record<string, Note[]> = {};
-    columns.forEach((c) => (map[c.column_id] = []));
+    const cols = Array.isArray(columns) ? columns : [];
+    const noteList = Array.isArray(notes) ? notes : [];
+    cols.forEach((c) => {
+      if (c && c.column_id) map[c.column_id] = [];
+    });
 
-    const fallbackColId = columns.length > 0 ? columns[0].column_id : "todo";
+    const fallbackColId = cols.length > 0 ? cols[0].column_id : "todo";
 
-    notes.forEach((note) => {
+    noteList.forEach((note) => {
       // Check search filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();

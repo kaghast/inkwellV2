@@ -218,14 +218,14 @@ export function ReminderProvider({ children }: { children: ReactNode }) {
 
   const markAllAsRead = useCallback(() => {
     const readSet = getStoredSet(STORAGE_READ_KEY);
-    reminders.forEach((r) => readSet.add(r.id));
+    (Array.isArray(reminders) ? reminders : []).forEach((r) => readSet.add(r.id));
     saveStoredSet(STORAGE_READ_KEY, readSet);
 
-    setReminders((prev) => prev.map((r) => ({ ...r, read: true })));
+    setReminders((prev) => (Array.isArray(prev) ? prev : []).map((r) => ({ ...r, read: true })));
     toast.success("Tüm bildirimler okundu olarak işaretlendi");
   }, [reminders]);
 
-  const unreadCount = reminders.filter((r) => {
+  const unreadCount = (Array.isArray(reminders) ? reminders : []).filter((r) => {
     const targetTime = new Date(r.targetIso).getTime();
     return !r.read && Date.now() >= targetTime;
   }).length;

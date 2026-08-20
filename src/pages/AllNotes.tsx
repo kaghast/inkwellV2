@@ -46,19 +46,25 @@ export default function AllNotes() {
 
   const locationMap = useMemo(() => {
     const m: Record<string, LocationItem> = {};
-    locations.forEach((l) => (m[l.location_id] = l));
+    (Array.isArray(locations) ? locations : []).forEach((l) => {
+      if (l && l.location_id) m[l.location_id] = l;
+    });
     return m;
   }, [locations]);
 
   const categoryMap = useMemo(() => {
     const m: Record<string, Category> = {};
-    categories.forEach((c) => (m[c.category_id] = c));
+    (Array.isArray(categories) ? categories : []).forEach((c) => {
+      if (c && c.category_id) m[c.category_id] = c;
+    });
     return m;
   }, [categories]);
 
   const noteTypeMap = useMemo(() => {
     const m: Record<string, NoteType> = {};
-    noteTypes.forEach((nt) => (m[nt.type_id] = nt));
+    (Array.isArray(noteTypes) ? noteTypes : []).forEach((nt) => {
+      if (nt && nt.type_id) m[nt.type_id] = nt;
+    });
     return m;
   }, [noteTypes]);
 
@@ -72,12 +78,12 @@ export default function AllNotes() {
         api.get<LocationItem[]>("/locations"),
         api.get<NoteType[]>("/note-types"),
       ]);
-      setCategories(c.data || []);
-      setGroups(g.data || []);
-      setTags(t.data || []);
-      setPeople(p.data || []);
-      setLocations(l.data || []);
-      setNoteTypes(nt.data || []);
+      setCategories(Array.isArray(c.data) ? c.data : []);
+      setGroups(Array.isArray(g.data) ? g.data : []);
+      setTags(Array.isArray(t.data) ? t.data : []);
+      setPeople(Array.isArray(p.data) ? p.data : []);
+      setLocations(Array.isArray(l.data) ? l.data : []);
+      setNoteTypes(Array.isArray(nt.data) ? nt.data : []);
     } catch (err) {
       console.warn("Failed fetching aux data:", err);
     }
@@ -87,7 +93,7 @@ export default function AllNotes() {
     setLoading(true);
     try {
       const { data } = await api.get<Note[]>("/notes");
-      setNotes(data || []);
+      setNotes(Array.isArray(data) ? data : []);
     } catch (err: any) {
       toast.error("Notlar yüklenirken bir hata oluştu");
     } finally {
@@ -102,7 +108,7 @@ export default function AllNotes() {
 
   // Filter and sort notes
   const filteredNotes = useMemo(() => {
-    let list = [...notes];
+    let list = Array.isArray(notes) ? [...notes] : [];
 
     // Search query
     if (searchQuery.trim()) {
