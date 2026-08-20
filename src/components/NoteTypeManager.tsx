@@ -322,6 +322,8 @@ export default function NoteTypeManager() {
           {noteTypes.map((nt) => {
             const isProtected =
               nt.is_default || nt.type_id === "type_plain" || nt.type_id === "type_card" || nt.type_id === "default";
+            const isPlainDefault =
+              nt.is_default || nt.type_id === "type_plain" || nt.type_id === "default";
             const fieldCount = nt.fields?.length || 0;
 
             return (
@@ -362,6 +364,8 @@ export default function NoteTypeManager() {
                         {nt.description ||
                           (isPlainDefault
                             ? "Standart sade metin ve Markdown notları"
+                            : nt.type_id === "type_card"
+                            ? "Kanban panosu kartları ve ilişkili notlar"
                             : "Açıklama belirtilmemiş")}
                       </p>
                     </div>
@@ -380,37 +384,39 @@ export default function NoteTypeManager() {
                         <Edit2 className="w-3.5 h-3.5 mr-1" /> Düzenle
                       </Button>
 
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 cursor-pointer"
-                            data-testid={`delete-note-type-${nt.type_id}`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent className="bg-card border-border">
-                          <AlertDialogHeader>
-                            <AlertDialogTitle className="font-serif">
-                              "{nt.name}" not tipini sil?
-                            </AlertDialogTitle>
-                            <AlertDialogDescription className="text-xs">
-                              Bu not tipi silindiğinde, bu tipi kullanan mevcut notlarınız korunur ancak standart düz metin tipine dönüştürülür. Bu işlem geri alınamaz.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>İptal</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => handleDelete(nt.type_id, nt.name)}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      {!isProtected && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                              data-testid={`delete-note-type-${nt.type_id}`}
                             >
-                              Sil
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent className="bg-card border-border">
+                            <AlertDialogHeader>
+                              <AlertDialogTitle className="font-serif">
+                                "{nt.name}" not tipini sil?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription className="text-xs">
+                                Bu not tipi silindiğinde, bu tipi kullanan mevcut notlarınız korunur ancak standart düz metin tipine dönüştürülür. Bu işlem geri alınamaz.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>İptal</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDelete(nt.type_id, nt.name)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Sil
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
                     </div>
                   )}
                 </div>
