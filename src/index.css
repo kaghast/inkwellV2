@@ -107,17 +107,28 @@ body {
   text-decoration: none;
 }
 
+.prose-paper {
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
+}
+.prose-paper p, .prose-paper div, .prose-paper span, .prose-paper li, .prose-paper h1, .prose-paper h2, .prose-paper h3, .prose-paper h4, .prose-paper h5, .prose-paper h6 {
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+  word-break: break-word;
+}
 .prose-paper h1 { font-family: 'Bricolage Grotesque', sans-serif; font-size: 1.75rem; font-weight: 600; margin: 1rem 0 0.5rem; letter-spacing: -0.025em; }
 .prose-paper h2 { font-family: 'Bricolage Grotesque', sans-serif; font-size: 1.4rem; font-weight: 600; margin: 0.875rem 0 0.5rem; letter-spacing: -0.02em; }
 .prose-paper h3 { font-family: 'Bricolage Grotesque', sans-serif; font-size: 1.15rem; font-weight: 600; margin: 0.75rem 0 0.4rem; letter-spacing: -0.015em; }
 .prose-paper p { margin: 0.5rem 0; line-height: 1.65; }
 .prose-paper ul, .prose-paper ol { margin: 0.5rem 0; padding-left: 1.5rem; }
 .prose-paper li { margin: 0.25rem 0; }
-.prose-paper code { font-family: 'JetBrains Mono', monospace; background: hsl(var(--muted)); padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.88em; }
+.prose-paper code { font-family: 'JetBrains Mono', monospace; background: hsl(var(--muted)); padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.88em; overflow-wrap: anywhere; word-break: break-all; }
 .prose-paper pre { background: hsl(var(--muted)); padding: 1rem; border-radius: 6px; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; }
 .prose-paper pre code { background: transparent; padding: 0; }
 .prose-paper blockquote { border-left: 2px solid hsl(var(--accent-tag)); padding-left: 1rem; color: hsl(var(--muted-foreground)); margin: 0.75rem 0; }
-.prose-paper a { color: hsl(var(--accent-tag)); text-decoration: underline; text-underline-offset: 2px; }
+.prose-paper a { color: hsl(var(--accent-tag)); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; word-break: break-all; }
 .prose-paper hr { border: none; border-top: 1px solid hsl(var(--border)); margin: 1.5rem 0; }
 
 /* Modern note card */

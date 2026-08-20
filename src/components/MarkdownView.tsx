@@ -17,6 +17,7 @@ import {
 const TAG_RE = /(?<!\S)#([a-zA-Z0-9_\-ğüşıöçĞÜŞİÖÇ]+)(?!\S)/gu;
 const MEN_RE = /(?<!\S)@([a-zA-Z0-9_\-ğüşıöçĞÜŞİÖÇ]+)(?!\S)/gu;
 const WIKI_RE = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/gu;
+const URL_RE = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/gu;
 
 function WikiLink({ target, label }: { target: string; label?: string }) {
   const displayText = label || target;
@@ -24,7 +25,7 @@ function WikiLink({ target, label }: { target: string; label?: string }) {
   return (
     <Link
       to={`/note/${encoded}`}
-      className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-primary/10 hover:bg-primary/20 text-primary font-medium text-[0.92em] border border-primary/25 transition-all no-underline align-baseline cursor-pointer"
+      className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-primary/10 hover:bg-primary/20 text-primary font-medium text-[0.92em] border border-primary/25 transition-all no-underline align-baseline cursor-pointer break-all [overflow-wrap:anywhere]"
       title={`İlişkili Not: ${displayText}`}
       onClick={(e) => e.stopPropagation()}
     >
@@ -127,7 +128,35 @@ function transformChildren(children: ReactNode, highlight?: string): ReactNode[]
       return parts;
     });
 
-    // 4. Highlight query
+    // 4. Raw http/https URLs (Format plain links)
+    pieces = pieces.flatMap((p, i) => {
+      if (typeof p !== "string") return [p];
+      const parts: ReactNode[] = [];
+      let last = 0;
+      const re = new RegExp(URL_RE.source, "gu");
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(p)) !== null) {
+        if (m.index > last) parts.push(p.slice(last, m.index));
+        const rawUrl = m[1];
+        parts.push(
+          <a
+            key={`u-${idx}-${i}-${m.index}`}
+            href={rawUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary hover:underline font-medium break-all [overflow-wrap:anywhere]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {rawUrl}
+          </a>
+        );
+        last = m.index + m[0].length;
+      }
+      if (last < p.length) parts.push(p.slice(last));
+      return parts;
+    });
+
+    // 5. Highlight query
     if (highlight && highlight.trim()) {
       pieces = pieces.flatMap((p, i) => {
         if (typeof p !== "string") return [p];
@@ -387,7 +416,7 @@ function AuthImage({ src, alt }: { src?: string; alt?: string }) {
   );
 }
 
-// Custom paragraph: detect a raw YouTube/GMap URL alone inside → replace with embed
+// Custom paragraph: detect a raw YouTube/GMap/HTTP URL alone inside → replace with embed or clean link
 function ParagraphRenderer({ children }: { children: ReactNode }) {
   const arr = Array.isArray(children) ? children : [children];
   if (arr.length === 1) {
@@ -396,6 +425,21 @@ function ParagraphRenderer({ children }: { children: ReactNode }) {
       const s = only.trim();
       if (isYoutube(s)) return <YouTubeEmbed url={s} />;
       if (isGmap(s)) return <GmapEmbed url={s} />;
+      if (/^https?:\/\//i.test(s)) {
+        return (
+          <p className="my-1.5 break-words [overflow-wrap:anywhere] [word-break:break-word]">
+            <a
+              href={s}
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary hover:underline font-medium break-all [overflow-wrap:anywhere]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {s}
+            </a>
+          </p>
+        );
+      }
     }
     if (React.isValidElement(only) && only.type === "a") {
       const href = (only.props as any).href as string;
@@ -403,7 +447,7 @@ function ParagraphRenderer({ children }: { children: ReactNode }) {
       if (href && isGmap(href)) return <GmapEmbed url={href} />;
     }
   }
-  return <p>{transformChildren(children)}</p>;
+  return <p className="break-words [overflow-wrap:anywhere] [word-break:break-word]">{transformChildren(children)}</p>;
 }
 
 // Code fence: render `reminder\n<iso>\n<text>` or `drawing` fenced block
@@ -443,7 +487,7 @@ function CodeRenderer(props: any) {
     );
   }
 
-  return <code {...props} />;
+  return <code {...props} className={`${cls} break-all [overflow-wrap:anywhere]`} />;
 }
 
 interface Props {
@@ -478,7 +522,7 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
   }
 
   return (
-    <div className="prose-paper" data-testid="markdown-view">
+    <div className="prose-paper break-words [overflow-wrap:anywhere] [word-break:break-word] max-w-full" data-testid="markdown-view">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -501,12 +545,12 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
               const isPending = pendingIdx === myIdx;
               const disabled = pendingIdx !== null;
               return (
-                <li className="flex items-start gap-2 list-none -ml-6" data-testid={`task-item-${myIdx}`}>
+                <li className="flex items-start gap-2 list-none -ml-6 break-words [overflow-wrap:anywhere]" data-testid={`task-item-${myIdx}`}>
                   <button
                     type="button"
                     onClick={() => handleTaskClick(myIdx, !checked)}
                     disabled={disabled}
-                    className={`mt-1 w-4 h-4 rounded-sm border flex items-center justify-center transition-colors ${
+                    className={`mt-1 w-4 h-4 rounded-sm border flex items-center justify-center transition-colors shrink-0 ${
                       checked
                         ? "bg-[hsl(var(--accent-tag))] border-[hsl(var(--accent-tag))]"
                         : "border-border hover:border-foreground/40"
@@ -524,24 +568,24 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
                       <Check className="w-3 h-3 text-white" strokeWidth={3} />
                     ) : null}
                   </button>
-                  <span className={checked ? "line-through text-muted-foreground" : ""}>
+                  <span className={`break-words [overflow-wrap:anywhere] min-w-0 flex-1 ${checked ? "line-through text-muted-foreground" : ""}`}>
                     {transformChildren(rest_children)}
                   </span>
                 </li>
               );
             }
             return (
-              <li {...rest} className={className}>
+              <li {...rest} className={`${className || ""} break-words [overflow-wrap:anywhere]`}>
                 {transformChildren(children)}
               </li>
             );
           },
-          h1: ({ children }: any) => <h1>{transformChildren(children)}</h1>,
-          h2: ({ children }: any) => <h2>{transformChildren(children)}</h2>,
-          h3: ({ children }: any) => <h3>{transformChildren(children)}</h3>,
-          h4: ({ children }: any) => <h4>{transformChildren(children)}</h4>,
-          h5: ({ children }: any) => <h5>{transformChildren(children)}</h5>,
-          h6: ({ children }: any) => <h6>{transformChildren(children)}</h6>,
+          h1: ({ children }: any) => <h1 className="break-words [overflow-wrap:anywhere]">{transformChildren(children)}</h1>,
+          h2: ({ children }: any) => <h2 className="break-words [overflow-wrap:anywhere]">{transformChildren(children)}</h2>,
+          h3: ({ children }: any) => <h3 className="break-words [overflow-wrap:anywhere]">{transformChildren(children)}</h3>,
+          h4: ({ children }: any) => <h4 className="break-words [overflow-wrap:anywhere]">{transformChildren(children)}</h4>,
+          h5: ({ children }: any) => <h5 className="break-words [overflow-wrap:anywhere]">{transformChildren(children)}</h5>,
+          h6: ({ children }: any) => <h6 className="break-words [overflow-wrap:anywhere]">{transformChildren(children)}</h6>,
           img: ({ src, alt }: any) => <AuthImage src={src} alt={alt} />,
           pre: ({ children }: any) => {
             const first = Array.isArray(children) ? children[0] : children;
@@ -551,15 +595,27 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
                 return <>{first}</>;
               }
             }
-            return <pre>{children}</pre>;
+            return <pre className="max-w-full overflow-x-auto">{children}</pre>;
           },
           code: CodeRenderer,
           a: ({ href, children }: any) => {
             if (href && isYoutube(href)) return <YouTubeEmbed url={href} />;
             if (href && isGmap(href)) return <GmapEmbed url={href} />;
+            
+            // Clean up label: prevent "undefined" or empty string
+            let label = children;
+            if (!label || label === "undefined" || (Array.isArray(label) && (label.length === 0 || label[0] === "undefined" || !label[0]))) {
+              label = href;
+            }
             return (
-              <a href={href} target="_blank" rel="noreferrer">
-                {children}
+              <a
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary hover:underline font-medium break-all [overflow-wrap:anywhere]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {label}
               </a>
             );
           },
