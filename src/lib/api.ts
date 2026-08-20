@@ -1,10 +1,19 @@
 import axios, { AxiosError } from "axios";
 
-const BASE =
+const rawBase =
   (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_BACKEND_URL) ||
   (typeof process !== "undefined" && process.env?.REACT_APP_BACKEND_URL) ||
   "";
-export const API = BASE ? `${BASE}/api` : "/api";
+
+// Clean base URL: remove whitespace and any trailing slashes
+const cleanBase = rawBase ? String(rawBase).trim().replace(/\/+$/, "") : "";
+
+// If cleanBase is provided and already ends with /api, use it as is; otherwise append /api
+export const API = cleanBase
+  ? cleanBase.endsWith("/api")
+    ? cleanBase
+    : `${cleanBase}/api`
+  : "/api";
 
 const api = axios.create({
   baseURL: API,
@@ -15,6 +24,10 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
+  if (config.url && typeof config.url === "string") {
+    // Normalize path to prevent leading double slashes like //auth/login
+    config.url = config.url.replace(/^\/+/, "/");
+  }
   if (typeof window !== "undefined") {
     const token = localStorage.getItem("inkwell_token");
     if (token && config.headers) {
