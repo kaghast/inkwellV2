@@ -545,215 +545,220 @@ export default function MapView() {
 
         {/* Center / Right: Interactive Google Map & Location Notes Drawer */}
         <div className="flex-1 flex flex-col lg:flex-row relative min-h-[450px] lg:min-h-0 h-full w-full overflow-hidden">
-          {/* Google Map Surface */}
-          <div className="flex-1 relative w-full h-full min-h-[450px] overflow-hidden">
-            <GoogleMapWrapper
-              center={mapCenter}
-              zoom={selectedLocation ? 14 : currentLocation ? 13 : locations.length > 0 ? 11 : 6}
-              maskTheme={maskTheme}
-              onMapClick={handleMapClick}
-              locations={locations}
-              selectedLocationId={selectedLocationId}
-              onSelectLocation={(id) => {
-                setSelectedLocationId(id);
-                const l = locationMap[id];
-                if (l) setUserFocusCenter({ lat: Number(l.lat), lng: Number(l.lng) });
-              }}
-              currentLocation={currentLocation}
-              className="h-full w-full"
-            >
-              {locations.map((loc) => {
-                const count = (notesByLocation[loc.location_id] || []).length;
-                const isSelected = selectedLocationId === loc.location_id;
-
-                return (
-                  <AdvancedMarker
-                    key={loc.location_id}
-                    position={{ lat: Number(loc.lat), lng: Number(loc.lng) }}
-                    title={loc.name}
-                    onClick={() => {
-                      setSelectedLocationId(loc.location_id);
-                      setUserFocusCenter({ lat: Number(loc.lat), lng: Number(loc.lng) });
-                    }}
-                  >
-                    <Pin
-                      background={isSelected ? "#e11d48" : "#2563eb"}
-                      borderColor={isSelected ? "#ffe4e6" : "#dbeafe"}
-                      glyphColor="#ffffff"
-                      scale={isSelected ? 1.25 : 1.0}
-                    />
-                  </AdvancedMarker>
-                );
-              })}
-            </GoogleMapWrapper>
-
-            {/* Top Center: Realtime Google Maps Style Search Bar */}
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 w-[92%] sm:w-[380px] md:w-[440px]">
-              <div className="relative bg-background/95 backdrop-blur-md rounded-xl border border-border shadow-lg transition-all focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary">
-                <div className="flex items-center px-3 py-2">
-                  {isSearchingMap ? (
-                    <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0 mr-2" />
+          {/* Map Surface with Top Dedicated Control Bar */}
+          <div className="flex-1 flex flex-col h-full w-full relative overflow-hidden">
+            {/* Top Dedicated Map Controls & Realtime Search Bar */}
+            <div className="p-2.5 bg-background border-b border-border/80 flex items-center justify-between gap-2 flex-wrap z-30 shadow-2xs">
+              {/* Left Action Buttons */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleAddNoteAtCurrentLocation}
+                  disabled={isLocating}
+                  className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg shadow-sm text-xs font-semibold cursor-pointer transition-all hover:scale-[1.02]"
+                >
+                  {isLocating ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : (
-                    <Search className="w-4 h-4 text-muted-foreground shrink-0 mr-2" />
+                    <Navigation className="w-3.5 h-3.5" />
                   )}
-                  <input
-                    type="text"
-                    value={mapSearchQuery}
-                    onChange={(e) => {
-                      setMapSearchQuery(e.target.value);
-                      setShowSearchDropdown(true);
-                    }}
-                    onFocus={() => setShowSearchDropdown(true)}
-                    placeholder="Konum arayın (örn. Kadıköy, Taksim, Ankara)..."
-                    className="w-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none font-medium"
-                  />
-                  {mapSearchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMapSearchQuery("");
-                        setMapSearchResults([]);
-                        setShowSearchDropdown(false);
-                      }}
-                      className="p-1 text-muted-foreground hover:text-foreground cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
+                  <span>Mevcut Konumuma Not Yaz</span>
+                </button>
 
-                {/* Realtime Autocomplete Results Dropdown */}
-                {showSearchDropdown && mapSearchQuery.trim().length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-1.5 bg-background/98 backdrop-blur-md rounded-xl border border-border shadow-xl max-h-80 overflow-y-auto divide-y divide-border/40 z-40 animate-in fade-in slide-in-from-top-1 duration-150">
-                    {isSearchingMap && mapSearchResults.length === 0 ? (
-                      <div className="p-4 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Konumlar aranıyor...
-                      </div>
-                    ) : mapSearchResults.length === 0 ? (
-                      <div className="p-4 text-center text-xs text-muted-foreground">
-                        "{mapSearchQuery}" ile eşleşen bir yer bulunamadı.
-                      </div>
+                <button
+                  type="button"
+                  onClick={goToCurrentLocation}
+                  disabled={isLocating}
+                  title="Mevcut GPS Konumuma Odaklan"
+                  className="flex items-center gap-1.5 bg-secondary hover:bg-muted text-foreground px-2.5 py-1.5 rounded-lg border border-border text-xs font-medium cursor-pointer transition-colors"
+                >
+                  <Crosshair className="w-3.5 h-3.5 text-blue-500" />
+                  <span className="hidden sm:inline">Konumumu Bul</span>
+                </button>
+              </div>
+
+              {/* Center: Google Maps Style Realtime Search Bar */}
+              <div className="flex-1 min-w-[240px] max-w-md relative">
+                <div className="relative bg-card rounded-lg border border-border shadow-xs transition-all focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary">
+                  <div className="flex items-center px-2.5 py-1.5">
+                    {isSearchingMap ? (
+                      <Loader2 className="w-3.5 h-3.5 text-primary animate-spin shrink-0 mr-2" />
                     ) : (
-                      mapSearchResults.map((res) => (
-                        <div
-                          key={res.id}
-                          onClick={() => {
-                            setUserFocusCenter({ lat: res.lat, lng: res.lng });
-                            setShowSearchDropdown(false);
-                            if (res.isExisting && res.locationId) {
-                              setSelectedLocationId(res.locationId);
-                              toast.success(`"${res.name}" lokasyonuna odaklanıldı`);
-                            } else {
-                              // Open quick add note modal for this newly searched place
-                              setTargetCoords({ lat: res.lat, lng: res.lng });
-                              setTargetLocName(res.name);
-                              setPointNoteTitle("");
-                              setPointNoteContent("");
-                              setPointNoteModalOpen(true);
-                            }
-                          }}
-                          className="flex items-start gap-2.5 p-2.5 hover:bg-muted/60 cursor-pointer transition-colors text-left"
-                        >
-                          <div
-                            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                              res.isExisting
-                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                                : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                            }`}
-                          >
-                            <MapPin className="w-3.5 h-3.5" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="text-xs font-semibold text-foreground truncate">{res.name}</span>
-                              <span
-                                className={`text-[10px] font-mono font-medium px-1.5 py-0.2 rounded-full shrink-0 ${
-                                  res.isExisting
-                                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                                    : "bg-blue-500/15 text-blue-600 dark:text-blue-400"
-                                }`}
-                              >
-                                {res.isExisting ? `Kayıtlı (${res.noteCount || 0} not)` : "Yeni Konum"}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5">
-                              {res.display_name}
-                            </p>
-                          </div>
-                        </div>
-                      ))
+                      <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0 mr-2" />
+                    )}
+                    <input
+                      type="text"
+                      value={mapSearchQuery}
+                      onChange={(e) => {
+                        setMapSearchQuery(e.target.value);
+                        setShowSearchDropdown(true);
+                      }}
+                      onFocus={() => setShowSearchDropdown(true)}
+                      placeholder="Haritada bir yer arayın (örn. Kadıköy, Taksim, Ankara)..."
+                      className="w-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none font-medium"
+                    />
+                    {mapSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMapSearchQuery("");
+                          setMapSearchResults([]);
+                          setShowSearchDropdown(false);
+                        }}
+                        className="p-0.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     )}
                   </div>
-                )}
+
+                  {/* Realtime Autocomplete Results Dropdown */}
+                  {showSearchDropdown && mapSearchQuery.trim().length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1.5 bg-card rounded-xl border border-border shadow-2xl max-h-80 overflow-y-auto divide-y divide-border/40 z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+                      {isSearchingMap && mapSearchResults.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Konumlar aranıyor...
+                        </div>
+                      ) : mapSearchResults.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-muted-foreground">
+                          "{mapSearchQuery}" ile eşleşen bir yer bulunamadı.
+                        </div>
+                      ) : (
+                        mapSearchResults.map((res) => (
+                          <div
+                            key={res.id}
+                            onClick={() => {
+                              setUserFocusCenter({ lat: res.lat, lng: res.lng });
+                              setShowSearchDropdown(false);
+                              if (res.isExisting && res.locationId) {
+                                setSelectedLocationId(res.locationId);
+                                toast.success(`"${res.name}" lokasyonuna odaklanıldı`);
+                              } else {
+                                setTargetCoords({ lat: res.lat, lng: res.lng });
+                                setTargetLocName(res.name);
+                                setPointNoteTitle("");
+                                setPointNoteContent("");
+                                setPointNoteModalOpen(true);
+                              }
+                            }}
+                            className="flex items-start gap-2.5 p-2.5 hover:bg-muted/60 cursor-pointer transition-colors text-left"
+                          >
+                            <div
+                              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                                res.isExisting
+                                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                  : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                              }`}
+                            >
+                              <MapPin className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-xs font-semibold text-foreground truncate">{res.name}</span>
+                                <span
+                                  className={`text-[10px] font-mono font-medium px-1.5 py-0.2 rounded-full shrink-0 ${
+                                    res.isExisting
+                                      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                      : "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                                  }`}
+                                >
+                                  {res.isExisting ? `Kayıtlı (${res.noteCount || 0} not)` : "Yeni Konum"}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5">
+                                {res.display_name}
+                              </p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right: Map Theme Mask Selector & Controls */}
+              <div className="flex items-center gap-1.5 bg-secondary/80 p-1 rounded-lg border border-border text-xs shrink-0">
+                <div className="flex items-center gap-1 px-1 text-muted-foreground text-[11px] font-medium border-r border-border/60">
+                  <Palette className="w-3.5 h-3.5 text-primary" />
+                  <span className="hidden xl:inline">Tema:</span>
+                </div>
+                <select
+                  value={maskTheme}
+                  onChange={(e) => setMaskTheme(e.target.value as MapMaskTheme)}
+                  className="bg-transparent text-xs font-medium text-foreground focus:outline-none cursor-pointer pr-1"
+                  title="Harita Görsel Maskesini Değiştir"
+                >
+                  <option value="auto">Otomatik</option>
+                  <option value="dark">Karanlık Obsidian</option>
+                  <option value="light">Sıcak Parşömen</option>
+                  <option value="satellite">Uydu / Hibrit</option>
+                  <option value="standard">Standart</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (locations.length > 0) {
+                      setSelectedLocationId(locations[0].location_id);
+                      setUserFocusCenter({ lat: Number(locations[0].lat), lng: Number(locations[0].lng) });
+                    }
+                  }}
+                  title="İlk lokasyona odaklan"
+                  className="p-1 hover:bg-muted text-muted-foreground hover:text-foreground rounded cursor-pointer transition-colors"
+                >
+                  <Compass className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
 
-            {/* Quick Action Floating Bar: Current Location & Add Note */}
-            <div className="absolute top-16 sm:top-3 left-3 z-10 flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={handleAddNoteAtCurrentLocation}
-                disabled={isLocating}
-                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg shadow-md text-xs font-semibold cursor-pointer transition-all hover:scale-[1.02]"
-              >
-                {isLocating ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Navigation className="w-3.5 h-3.5" />
-                )}
-                <span>Mevcut Konumuma Not Yaz</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={goToCurrentLocation}
-                disabled={isLocating}
-                title="Mevcut GPS Konumuma Odaklan"
-                className="flex items-center gap-1 bg-background/90 hover:bg-background text-foreground px-2.5 py-1.5 rounded-lg border border-border shadow-md text-xs font-medium cursor-pointer transition-colors backdrop-blur-md"
-              >
-                <Crosshair className="w-3.5 h-3.5 text-blue-500" />
-                <span className="hidden sm:inline">Konumumu Bul</span>
-              </button>
-            </div>
-
-            {/* Floating Map Theme Mask Selector & Controls */}
-            <div className="absolute top-16 sm:top-3 right-3 z-10 flex items-center gap-2 bg-background/90 backdrop-blur-md p-1.5 rounded-lg border border-border shadow-md text-xs">
-              <div className="flex items-center gap-1 px-1.5 text-muted-foreground text-[11px] font-medium border-r border-border/60">
-                <Palette className="w-3 h-3 text-primary" />
-                <span className="hidden sm:inline">Tema:</span>
-              </div>
-              <select
-                value={maskTheme}
-                onChange={(e) => setMaskTheme(e.target.value as MapMaskTheme)}
-                className="bg-transparent text-xs font-medium text-foreground focus:outline-none cursor-pointer pr-2"
-                title="Harita Görsel Maskesini Değiştir"
-              >
-                <option value="auto">Otomatik</option>
-                <option value="dark">Karanlık Obsidian</option>
-                <option value="light">Sıcak Parşömen</option>
-                <option value="satellite">Uydu / Hibrit</option>
-                <option value="standard">Standart</option>
-              </select>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (locations.length > 0) {
-                    setSelectedLocationId(locations[0].location_id);
-                    setUserFocusCenter({ lat: Number(locations[0].lat), lng: Number(locations[0].lng) });
-                  }
+            {/* Map Canvas Surface */}
+            <div className="flex-1 relative w-full h-full min-h-[400px] overflow-hidden">
+              <GoogleMapWrapper
+                center={mapCenter}
+                zoom={selectedLocation ? 14 : currentLocation ? 13 : locations.length > 0 ? 11 : 6}
+                maskTheme={maskTheme}
+                onMapClick={handleMapClick}
+                locations={locations}
+                selectedLocationId={selectedLocationId}
+                onSelectLocation={(id) => {
+                  setSelectedLocationId(id);
+                  const l = locationMap[id];
+                  if (l) setUserFocusCenter({ lat: Number(l.lat), lng: Number(l.lng) });
                 }}
-                title="İlk lokasyona odaklan"
-                className="p-1 hover:bg-muted text-muted-foreground hover:text-foreground rounded cursor-pointer transition-colors ml-1"
+                currentLocation={currentLocation}
+                className="h-full w-full"
               >
-                <Compass className="w-3.5 h-3.5" />
-              </button>
-            </div>
+                {locations.map((loc) => {
+                  const count = (notesByLocation[loc.location_id] || []).length;
+                  const isSelected = selectedLocationId === loc.location_id;
 
-            {/* Map click hint badge */}
-            <div className="absolute bottom-4 left-4 z-10 hidden sm:flex items-center gap-1.5 bg-background/90 backdrop-blur-md px-3 py-1.5 rounded-full border border-border text-[11px] text-muted-foreground shadow-sm pointer-events-none">
-              <MapPin className="w-3 h-3 text-primary" />
-              <span>Harita üzerinde istediğiniz herhangi bir noktaya tıklayarak oraya doğrudan not ekleyebilirsiniz.</span>
+                  return (
+                    <AdvancedMarker
+                      key={loc.location_id}
+                      position={{ lat: Number(loc.lat), lng: Number(loc.lng) }}
+                      title={loc.name}
+                      onClick={() => {
+                        setSelectedLocationId(loc.location_id);
+                        setUserFocusCenter({ lat: Number(loc.lat), lng: Number(loc.lng) });
+                      }}
+                    >
+                      <Pin
+                        background={isSelected ? "#e11d48" : "#2563eb"}
+                        borderColor={isSelected ? "#ffe4e6" : "#dbeafe"}
+                        glyphColor="#ffffff"
+                        scale={isSelected ? 1.25 : 1.0}
+                      />
+                    </AdvancedMarker>
+                  );
+                })}
+              </GoogleMapWrapper>
+
+              {/* Map click hint badge */}
+              <div className="absolute bottom-4 left-4 z-20 hidden sm:flex items-center gap-1.5 bg-background/90 backdrop-blur-md px-3 py-1.5 rounded-full border border-border text-[11px] text-muted-foreground shadow-sm pointer-events-none">
+                <MapPin className="w-3 h-3 text-primary" />
+                <span>Harita üzerinde istediğiniz herhangi bir noktaya tıklayarak oraya doğrudan not ekleyebilirsiniz.</span>
+              </div>
             </div>
           </div>
 
