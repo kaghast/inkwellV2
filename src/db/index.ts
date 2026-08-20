@@ -12,11 +12,10 @@ declare global {
   var _pgliteClient: PGlite | undefined;
 }
 
+const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 const isCloudSqlConfigured = Boolean(
-  process.env.SQL_HOST &&
-  process.env.SQL_DB_NAME &&
-  process.env.SQL_USER &&
-  process.env.SQL_PASSWORD
+  dbUrl ||
+  (process.env.SQL_HOST && process.env.SQL_DB_NAME && process.env.SQL_USER && process.env.SQL_PASSWORD)
 );
 
 export const createPool = () => {
@@ -24,34 +23,49 @@ export const createPool = () => {
     return undefined;
   }
   if (!global._postgresPool) {
-    const host = process.env.SQL_HOST;
-    const database = process.env.SQL_DB_NAME;
-    const user = process.env.SQL_USER;
-    const password = process.env.SQL_PASSWORD;
-    const port = Number(process.env.SQL_PORT) || 5432;
+    if (dbUrl) {
+      console.log("[Database] Connecting to PostgreSQL via DATABASE_URL");
+      global._postgresPool = new Pool({
+        connectionString: dbUrl,
+        ssl: dbUrl.includes("sslmode=require") || dbUrl.includes("supabase.co") || dbUrl.includes("neon.tech")
+          ? { rejectUnauthorized: false }
+          : false,
+        max: 10,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 5000,
+      });
+    } else {
+      const host = process.env.SQL_HOST;
+      const database = process.env.SQL_DB_NAME;
+      const user = process.env.SQL_USER;
+      const password = process.env.SQL_PASSWORD;
+      const port = Number(process.env.SQL_PORT) || 5432;
 
-    global._postgresPool = new Pool({
-      host,
-      port,
-      database,
-      user,
-      password,
-      ssl: false,
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-    });
+      console.log(`[Database] Connecting to PostgreSQL at ${host}:${port}/${database}`);
+      global._postgresPool = new Pool({
+        host,
+        port,
+        database,
+        user,
+        password,
+        ssl: process.env.SQL_SSL === "true" ? { rejectUnauthorized: false } : false,
+        max: 10,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 5000,
+      });
+    }
   }
   return global._postgresPool;
 };
 
 export const getPgliteClient = () => {
   if (!global._pgliteClient) {
-    const dataDir = path.resolve(process.cwd(), '.data');
+    const dataDir = process.env.DATA_DIR || path.resolve(process.cwd(), '.data');
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
     const dbPath = path.resolve(dataDir, 'pgdb');
+    console.log(`[Database] Using persistent embedded PGlite storage at: ${dbPath}`);
     global._pgliteClient = new PGlite(dbPath);
   }
   return global._pgliteClient;
