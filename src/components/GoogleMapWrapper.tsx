@@ -57,6 +57,7 @@ function LeafletMapFallback({
   selectedLocationId,
   onSelectLocation,
   draggableMarker,
+  currentLocation,
 }: GoogleMapWrapperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
