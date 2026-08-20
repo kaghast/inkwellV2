@@ -32,9 +32,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const checkAuth = useCallback(async () => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("inkwell_token") : null;
+    if (!token) {
+      setUserState(false);
+      setLoading(false);
+      return;
+    }
+
     try {
       const { data } = await api.get<User>("/auth/me");
-      setUser(data);
+      if (data && (data.user_id || data.email)) {
+        setUser(data);
+      } else {
+        setUser(false);
+      }
     } catch {
       setUser(false);
     } finally {

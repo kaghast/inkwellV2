@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { BellRing, Calendar, Clock, ArrowRight, Check } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 export interface ActiveReminder {
   id: string; // unique key combining noteId and iso
@@ -30,45 +31,19 @@ interface ReminderContextType {
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
   refreshReminders: () => Promise<void>;
+  activePopup: ActiveReminder | null;
+  dismissPopup: () => void;
 }
 
-const ReminderContext = createContext<ReminderContextType | null>(null);
-
-// Web Audio API notification sound generator
-function playNotificationChime() {
-  try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12); // A5
-    osc.frequency.setValueAtTime(1174.66, ctx.currentTime + 0.24); // D6
-
-    gain.gain.setValueAtTime(0, ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.05);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start();
-    osc.stop(ctx.currentTime + 0.65);
-  } catch {
-    /* ignore audio errors if blocked by browser policy */
-  }
-}
-
-const STORAGE_TRIGGERED_KEY = "inkwell_triggered_reminders";
-const STORAGE_READ_KEY = "inkwell_read_reminders";
+const STORAGE_TRIGGERED_KEY = "inkwell_reminders_triggered";
+const STORAGE_READ_KEY = "inkwell_reminders_read";
 
 function getStoredSet(key: string): Set<string> {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? new Set(JSON.parse(raw)) : new Set();
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr : []);
   } catch {
     return new Set();
   }
@@ -82,13 +57,44 @@ function saveStoredSet(key: string, set: Set<string>) {
   }
 }
 
+function playNotificationChime() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
+    osc.frequency.exponentialRampToValueAtTime(1174.66, ctx.currentTime + 0.35); // D6
+
+    gain.gain.setValueAtTime(0.001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.65);
+  } catch {
+    /* ignore */
+  }
+}
+
+const ReminderContext = createContext<ReminderContextType | null>(null);
+
 export function ReminderProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [reminders, setReminders] = useState<ActiveReminder[]>([]);
   const [activePopup, setActivePopup] = useState<ActiveReminder | null>(null);
 
   // Parse reminders from all notes
   const refreshReminders = useCallback(async () => {
+    if (!user) {
+      setReminders([]);
+      return;
+    }
     try {
       const { data } = await api.get<Note[]>("/notes");
       if (!Array.isArray(data)) return;
@@ -132,7 +138,7 @@ export function ReminderProvider({ children }: { children: ReactNode }) {
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [user]);
 
   // Request browser desktop notification permission on mount
   useEffect(() => {
@@ -145,10 +151,11 @@ export function ReminderProvider({ children }: { children: ReactNode }) {
 
   // Initial load and periodic refresh
   useEffect(() => {
+    if (!user) return;
     refreshReminders();
     const interval = setInterval(refreshReminders, 30000);
     return () => clearInterval(interval);
-  }, [refreshReminders]);
+  }, [refreshReminders, user]);
 
   // Real-time reminder checker (every 2 seconds)
   useEffect(() => {

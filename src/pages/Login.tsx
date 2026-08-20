@@ -13,12 +13,19 @@ import type { User } from "@/types";
 type Tab = "login" | "register";
 
 export default function Login() {
-  const { user, setUser } = useAuth();
+  const { user, setUser, loading } = useAuth();
   const nav = useNavigate();
   const location = useLocation();
   const [tab, setTab] = useState<Tab>("login");
   const [form, setForm] = useState({ email: "", password: "", name: "" });
   const [busy, setBusy] = useState(false);
+
+  // If user is already authenticated, redirect to root or intended page
+  if (!loading && user) {
+    const from = (location.state as { from?: { pathname: string } | string } | null)?.from;
+    const dest = typeof from === "string" ? from : from?.pathname || "/";
+    return <Navigate to={dest} replace />;
+  }
 
   React.useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
