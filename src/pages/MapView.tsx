@@ -45,6 +45,21 @@ export default function MapView() {
   const [isLocating, setIsLocating] = useState(false);
   const [userFocusCenter, setUserFocusCenter] = useState<{ lat: number; lng: number } | null>(null);
 
+  // Realtime Map Search Bar State (Google Maps Style)
+  const [mapSearchQuery, setMapSearchQuery] = useState("");
+  const [mapSearchResults, setMapSearchResults] = useState<{
+    id: string;
+    name: string;
+    display_name: string;
+    lat: number;
+    lng: number;
+    isExisting: boolean;
+    locationId?: string;
+    noteCount?: number;
+  }[]>([]);
+  const [isSearchingMap, setIsSearchingMap] = useState(false);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+
   // New location only modal
   const [newLocModalOpen, setNewLocModalOpen] = useState(false);
   const [newLocName, setNewLocName] = useState("");
@@ -58,7 +73,6 @@ export default function MapView() {
   const [pointNoteTitle, setPointNoteTitle] = useState("");
   const [pointNoteContent, setPointNoteContent] = useState("");
   const [pointNoteTypeId, setPointNoteTypeId] = useState("type_plain");
-  const [pointCategoryId, setPointCategoryId] = useState<string | null>(null);
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
 
   const [composerOpen, setComposerOpen] = useState(false);
@@ -78,6 +92,67 @@ export default function MapView() {
       );
     }
   }, []);
+
+  // Realtime Geocoding Search Effect (OpenStreetMap + Local Locations)
+  useEffect(() => {
+    if (!mapSearchQuery.trim()) {
+      setMapSearchResults([]);
+      setIsSearchingMap(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingMap(true);
+      const q = mapSearchQuery.trim().toLowerCase();
+
+      // 1. Local locations in Inkwell
+      const localMatches = locations
+        .filter((l) => l.name.toLowerCase().includes(q))
+        .map((l) => ({
+          id: `local_${l.location_id}`,
+          name: l.name,
+          display_name: `Kayıtlı Lokasyon (${Number(l.lat).toFixed(4)}, ${Number(l.lng).toFixed(4)})`,
+          lat: Number(l.lat),
+          lng: Number(l.lng),
+          isExisting: true,
+          locationId: l.location_id,
+          noteCount: (notesByLocation[l.location_id] || []).length,
+        }));
+
+      // 2. Realtime Global OpenStreetMap Nominatim geocoder
+      let globalMatches: any[] = [];
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+            mapSearchQuery.trim()
+          )}&limit=5&addressdetails=1`,
+          {
+            headers: {
+              "Accept-Language": "tr,en",
+            },
+          }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          globalMatches = data.map((item: any) => ({
+            id: `global_${item.place_id}`,
+            name: item.name || item.display_name.split(",")[0],
+            display_name: item.display_name,
+            lat: parseFloat(item.lat),
+            lng: parseFloat(item.lon),
+            isExisting: false,
+          }));
+        }
+      } catch (e) {
+        console.warn("Geocoding failed", e);
+      }
+
+      setMapSearchResults([...localMatches, ...globalMatches]);
+      setIsSearchingMap(false);
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [mapSearchQuery, locations]);
 
   const fetchAux = useCallback(async () => {
     try {
@@ -469,9 +544,9 @@ export default function MapView() {
         </aside>
 
         {/* Center / Right: Interactive Google Map & Location Notes Drawer */}
-        <div className="flex-1 flex flex-col lg:flex-row relative h-2/3 lg:h-full overflow-hidden">
+        <div className="flex-1 flex flex-col lg:flex-row relative min-h-[450px] lg:min-h-0 h-full w-full overflow-hidden">
           {/* Google Map Surface */}
-          <div className="flex-1 relative h-full w-full">
+          <div className="flex-1 relative w-full h-full min-h-[450px] overflow-hidden">
             <GoogleMapWrapper
               center={mapCenter}
               zoom={selectedLocation ? 14 : currentLocation ? 13 : locations.length > 0 ? 11 : 6}
@@ -512,8 +587,109 @@ export default function MapView() {
               })}
             </GoogleMapWrapper>
 
+            {/* Top Center: Realtime Google Maps Style Search Bar */}
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 w-[92%] sm:w-[380px] md:w-[440px]">
+              <div className="relative bg-background/95 backdrop-blur-md rounded-xl border border-border shadow-lg transition-all focus-within:ring-2 focus-within:ring-primary/40 focus-within:border-primary">
+                <div className="flex items-center px-3 py-2">
+                  {isSearchingMap ? (
+                    <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0 mr-2" />
+                  ) : (
+                    <Search className="w-4 h-4 text-muted-foreground shrink-0 mr-2" />
+                  )}
+                  <input
+                    type="text"
+                    value={mapSearchQuery}
+                    onChange={(e) => {
+                      setMapSearchQuery(e.target.value);
+                      setShowSearchDropdown(true);
+                    }}
+                    onFocus={() => setShowSearchDropdown(true)}
+                    placeholder="Konum arayın (örn. Kadıköy, Taksim, Ankara)..."
+                    className="w-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none font-medium"
+                  />
+                  {mapSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMapSearchQuery("");
+                        setMapSearchResults([]);
+                        setShowSearchDropdown(false);
+                      }}
+                      className="p-1 text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Realtime Autocomplete Results Dropdown */}
+                {showSearchDropdown && mapSearchQuery.trim().length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1.5 bg-background/98 backdrop-blur-md rounded-xl border border-border shadow-xl max-h-80 overflow-y-auto divide-y divide-border/40 z-40 animate-in fade-in slide-in-from-top-1 duration-150">
+                    {isSearchingMap && mapSearchResults.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Konumlar aranıyor...
+                      </div>
+                    ) : mapSearchResults.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-muted-foreground">
+                        "{mapSearchQuery}" ile eşleşen bir yer bulunamadı.
+                      </div>
+                    ) : (
+                      mapSearchResults.map((res) => (
+                        <div
+                          key={res.id}
+                          onClick={() => {
+                            setUserFocusCenter({ lat: res.lat, lng: res.lng });
+                            setShowSearchDropdown(false);
+                            if (res.isExisting && res.locationId) {
+                              setSelectedLocationId(res.locationId);
+                              toast.success(`"${res.name}" lokasyonuna odaklanıldı`);
+                            } else {
+                              // Open quick add note modal for this newly searched place
+                              setTargetCoords({ lat: res.lat, lng: res.lng });
+                              setTargetLocName(res.name);
+                              setPointNoteTitle("");
+                              setPointNoteContent("");
+                              setPointNoteModalOpen(true);
+                            }
+                          }}
+                          className="flex items-start gap-2.5 p-2.5 hover:bg-muted/60 cursor-pointer transition-colors text-left"
+                        >
+                          <div
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                              res.isExisting
+                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                            }`}
+                          >
+                            <MapPin className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-semibold text-foreground truncate">{res.name}</span>
+                              <span
+                                className={`text-[10px] font-mono font-medium px-1.5 py-0.2 rounded-full shrink-0 ${
+                                  res.isExisting
+                                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                    : "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                                }`}
+                              >
+                                {res.isExisting ? `Kayıtlı (${res.noteCount || 0} not)` : "Yeni Konum"}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5">
+                              {res.display_name}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Quick Action Floating Bar: Current Location & Add Note */}
-            <div className="absolute top-3 left-3 z-10 flex items-center gap-2 flex-wrap">
+            <div className="absolute top-16 sm:top-3 left-3 z-10 flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={handleAddNoteAtCurrentLocation}
@@ -541,7 +717,7 @@ export default function MapView() {
             </div>
 
             {/* Floating Map Theme Mask Selector & Controls */}
-            <div className="absolute top-3 right-3 z-10 flex items-center gap-2 bg-background/90 backdrop-blur-md p-1.5 rounded-lg border border-border shadow-md text-xs">
+            <div className="absolute top-16 sm:top-3 right-3 z-10 flex items-center gap-2 bg-background/90 backdrop-blur-md p-1.5 rounded-lg border border-border shadow-md text-xs">
               <div className="flex items-center gap-1 px-1.5 text-muted-foreground text-[11px] font-medium border-r border-border/60">
                 <Palette className="w-3 h-3 text-primary" />
                 <span className="hidden sm:inline">Tema:</span>

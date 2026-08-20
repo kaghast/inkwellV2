@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { APIProvider, Map, AdvancedMarker, Pin, InfoWindow, useMap } from "@vis.gl/react-google-maps";
 import { DARK_MAP_STYLES, LIGHT_MAP_STYLES } from "@/lib/mapThemes";
 import type { LocationItem } from "@/types";
@@ -113,7 +114,27 @@ function LeafletMapFallback({
     markersLayerRef.current = markersLayer;
     mapRef.current = map;
 
+    // Trigger invalidateSize to prevent blank rendering
+    const t1 = setTimeout(() => map.invalidateSize(), 50);
+    const t2 = setTimeout(() => map.invalidateSize(), 250);
+    const t3 = setTimeout(() => map.invalidateSize(), 600);
+
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    const handleResize = () => map.invalidateSize();
+    window.addEventListener("resize", handleResize);
+
     return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", handleResize);
       map.remove();
       mapRef.current = null;
       markersLayerRef.current = null;
@@ -124,6 +145,7 @@ function LeafletMapFallback({
     if (mapRef.current && center && typeof center.lat === "number" && typeof center.lng === "number") {
       mapRef.current.panTo([center.lat, center.lng], { animate: true, duration: 0.5 });
       if (zoom) mapRef.current.setZoom(zoom);
+      mapRef.current.invalidateSize();
     }
   }, [center.lat, center.lng, zoom]);
 
@@ -238,8 +260,8 @@ function LeafletMapFallback({
   }, [locations, selectedLocationId, draggableMarker, currentLocation, onSelectLocation]);
 
   return (
-    <div className={`relative w-full h-full min-h-[220px] rounded-xl overflow-hidden ${className}`}>
-      <div ref={containerRef} style={{ width: "100%", height: "100%", ...style }} className="w-full h-full" />
+    <div className={`relative w-full h-full min-h-[350px] overflow-hidden ${className}`}>
+      <div ref={containerRef} style={{ width: "100%", height: "100%", minHeight: "350px", ...style }} className="w-full h-full" />
     </div>
   );
 }
