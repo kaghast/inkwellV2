@@ -15,13 +15,22 @@ import {
   ChevronRight,
   GripVertical,
   ArrowRightLeft,
+  MoveRight,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import { useFilter } from "@/contexts/FilterContext";
 import api, { formatApiError } from "@/lib/api";
 import { toast } from "sonner";
-import type { Tag, Person, LocationItem, Category, ItemGroup, GroupType } from "@/types";
+import type { Tag, Person, LocationItem, ItemGroup } from "@/types";
 
-type RowFilterType = "tag" | "person" | "location" | "category";
+type RowFilterType = "tag" | "person" | "location";
 export type SidebarTab = "tags" | "people" | "locations";
 
 interface EditableRowProps {
@@ -32,11 +41,12 @@ interface EditableRowProps {
   filterValue: string;
   itemId: string;
   groupId?: string | null;
+  groups: ItemGroup[];
   iconColor?: string;
   onRename: (newName: string) => Promise<void>;
   onDelete: () => Promise<void>;
+  onMoveToGroup: (targetGroupId: string | null) => Promise<void>;
   onDragStart?: (e: React.DragEvent) => void;
-  onRemoveFromGroup?: () => void;
   testIdPrefix?: string;
 }
 
@@ -48,11 +58,12 @@ function EditableRow({
   filterValue,
   itemId,
   groupId,
+  groups,
   iconColor,
   onRename,
   onDelete,
+  onMoveToGroup,
   onDragStart,
-  onRemoveFromGroup,
   testIdPrefix = "sidebar-item",
 }: EditableRowProps) {
   const [editing, setEditing] = useState(false);
@@ -147,16 +158,18 @@ function EditableRow({
           "application/json",
           JSON.stringify({ itemId, filterType, sourceGroupId: groupId || null })
         );
+        e.dataTransfer.setData("text/plain", itemId);
+        e.dataTransfer.effectAllowed = "move";
         onDragStart?.(e);
       }}
-      className={`group flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-all cursor-grab active:cursor-grabbing ${
+      className={`group flex items-center justify-between px-2 py-1.5 rounded-md text-xs transition-all cursor-grab active:cursor-grabbing select-none ${
         isActive
           ? "bg-foreground/10 text-foreground font-semibold"
           : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
       }`}
     >
       <div className="flex items-center gap-1.5 min-w-0 flex-1">
-        <GripVertical className="w-3 h-3 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 cursor-grab" />
+        <GripVertical className="w-3 h-3 text-muted-foreground/30 group-hover:text-muted-foreground transition-colors shrink-0 cursor-grab" />
         <Link
           to={to}
           onClick={(e) => {
@@ -173,20 +186,59 @@ function EditableRow({
       </div>
 
       <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 ml-1 transition-opacity">
-        {groupId && onRemoveFromGroup && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onRemoveFromGroup();
-            }}
-            className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-background/80 transition-colors cursor-pointer"
-            title="Gruptan Çıkar (Serbest Bırak)"
-          >
-            <ArrowRightLeft className="w-3 h-3" />
-          </button>
-        )}
+        {/* Move to Group Dropdown Menu (Accessible 1-Click Grouping) */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-background/80 transition-colors cursor-pointer"
+              title="Gruba Taşı"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Folder className="w-3 h-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48 text-xs">
+            <DropdownMenuLabel className="text-[11px] font-semibold text-muted-foreground">
+              Gruba Taşı
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {groups.length === 0 ? (
+              <div className="p-2 text-center text-muted-foreground text-[11px] italic">
+                Henüz grup yok
+              </div>
+            ) : (
+              groups.map((g) => (
+                <DropdownMenuItem
+                  key={g.group_id}
+                  onClick={() => onMoveToGroup(g.group_id)}
+                  className={`flex items-center gap-2 cursor-pointer ${
+                    groupId === g.group_id ? "font-bold text-primary bg-primary/10" : ""
+                  }`}
+                >
+                  <Folder
+                    className="w-3.5 h-3.5 shrink-0"
+                    style={g.color ? { color: g.color } : { color: "hsl(var(--primary))" }}
+                  />
+                  <span className="truncate">{g.name}</span>
+                  {groupId === g.group_id && <Check className="w-3 h-3 ml-auto text-primary" />}
+                </DropdownMenuItem>
+              ))
+            )}
+            {groupId && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => onMoveToGroup(null)}
+                  className="text-muted-foreground hover:text-foreground cursor-pointer flex items-center gap-1.5"
+                >
+                  <ArrowRightLeft className="w-3 h-3" /> Gruptan Çıkar (Serbest Bırak)
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         <button
           type="button"
           onClick={(e) => {
@@ -218,18 +270,17 @@ interface SidebarProps {
   tags: Tag[];
   people: Person[];
   locations: LocationItem[];
-  categories?: Category[];
   groups: ItemGroup[];
   onChange?: () => void;
   defaultTab?: SidebarTab;
   onNavigate?: () => void;
+  categories?: any[];
 }
 
 export default function Sidebar({
   tags,
   people,
   locations,
-  categories = [],
   groups = [],
   onChange,
   defaultTab = "tags",
@@ -298,7 +349,30 @@ export default function Sidebar({
     }
   };
 
-  // Item move (Drag & Drop)
+  // Direct move handler
+  const handleMoveItemToGroup = async (itemId: string, itemType: string, targetGroupId: string | null) => {
+    try {
+      const typeMap: Record<string, string> = {
+        tag: "tags",
+        person: "people",
+        location: "locations",
+      };
+      const apiType = typeMap[itemType] || activeTab;
+
+      await api.patch("/groups/assign", {
+        type: apiType,
+        item_id: itemId,
+        group_id: targetGroupId,
+      });
+
+      toast.success(targetGroupId ? "Öğe gruba taşındı" : "Öğe serbest bırakıldı");
+      onChange?.();
+    } catch (err: any) {
+      toast.error(formatApiError(err) || "Taşıma başarısız oldu");
+    }
+  };
+
+  // Drag and drop drop handler
   const handleDropItem = async (e: React.DragEvent, targetGroupId: string | null) => {
     e.preventDefault();
     setDragOverGroupId(null);
@@ -309,22 +383,7 @@ export default function Sidebar({
       const { itemId, filterType } = data;
 
       if (!itemId) return;
-
-      const typeMap: Record<string, string> = {
-        tag: "tags",
-        person: "people",
-        location: "locations",
-      };
-      const apiType = typeMap[filterType] || activeTab;
-
-      await api.patch("/groups/assign", {
-        type: apiType,
-        item_id: itemId,
-        group_id: targetGroupId,
-      });
-
-      toast.success(targetGroupId ? "Öğe gruba taşındı" : "Öğe serbest bırakıldı");
-      onChange?.();
+      await handleMoveItemToGroup(itemId, filterType, targetGroupId);
     } catch (err: any) {
       toast.error(formatApiError(err) || "Taşıma başarısız oldu");
     }
@@ -372,9 +431,9 @@ export default function Sidebar({
   const currentGroups = groups.filter((g) => g.type === activeTab);
 
   return (
-    <aside className="w-full h-full flex flex-col p-4 select-none overflow-hidden" data-testid="sidebar-component">
+    <aside className="w-full h-full flex flex-col p-3.5 select-none overflow-hidden" data-testid="sidebar-component">
       {/* 3-Tab Header Switcher: Etiketler, Kişiler, Konumlar */}
-      <div className="grid grid-cols-3 p-1 bg-muted/60 rounded-md border border-border/60 mb-3 shrink-0 gap-0.5">
+      <div className="grid grid-cols-3 p-1 bg-muted/60 rounded-md border border-border/60 mb-2.5 shrink-0 gap-0.5">
         <button
           type="button"
           onClick={() => {
@@ -488,13 +547,13 @@ export default function Sidebar({
           className="mb-2.5 p-2 bg-muted/70 rounded-md border border-border/80 text-xs space-y-2 shrink-0 animate-in fade-in duration-150"
         >
           <div className="flex items-center justify-between text-[11px] font-medium text-foreground">
-            <span className="flex items-center gap-1">
-              <Folder className="w-3 h-3 text-primary" /> Yeni Grup ({activeTab === "tags" ? "Etiketler" : activeTab === "people" ? "Kişiler" : "Konumlar"})
+            <span className="flex items-center gap-1 font-semibold">
+              <Folder className="w-3.5 h-3.5 text-primary" /> Yeni Grup ({activeTab === "tags" ? "Etiketler" : activeTab === "people" ? "Kişiler" : "Konumlar"})
             </span>
             <button
               type="button"
               onClick={() => setIsCreatingGroup(false)}
-              className="text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground cursor-pointer"
             >
               <X className="w-3 h-3" />
             </button>
@@ -550,9 +609,10 @@ export default function Sidebar({
                 filterValue={tag.name}
                 itemId={tag.tag_id}
                 groupId={group.group_id}
+                groups={currentGroups}
                 onRename={(newName) => handleRenameTag(tag.tag_id, newName)}
                 onDelete={() => handleDeleteTag(tag.tag_id)}
-                onRemoveFromGroup={() => handleDropItem({ dataTransfer: { getData: () => JSON.stringify({ itemId: tag.tag_id, filterType: "tag" }) }, preventDefault: () => {} } as any, null)}
+                onMoveToGroup={(tId) => handleMoveItemToGroup(tag.tag_id, "tag", tId)}
                 testIdPrefix={`tag-${tag.name}`}
               />
             ));
@@ -569,9 +629,10 @@ export default function Sidebar({
                 filterValue={p.name}
                 itemId={p.person_id}
                 groupId={group.group_id}
+                groups={currentGroups}
                 onRename={(newName) => handleRenamePerson(p.person_id, newName)}
                 onDelete={() => handleDeletePerson(p.person_id)}
-                onRemoveFromGroup={() => handleDropItem({ dataTransfer: { getData: () => JSON.stringify({ itemId: p.person_id, filterType: "person" }) }, preventDefault: () => {} } as any, null)}
+                onMoveToGroup={(tId) => handleMoveItemToGroup(p.person_id, "person", tId)}
                 testIdPrefix={`person-${p.name}`}
               />
             ));
@@ -588,9 +649,10 @@ export default function Sidebar({
                 filterValue={loc.location_id}
                 itemId={loc.location_id}
                 groupId={group.group_id}
+                groups={currentGroups}
                 onRename={(newName) => handleRenameLocation(loc.location_id, newName)}
                 onDelete={() => handleDeleteLocation(loc.location_id)}
-                onRemoveFromGroup={() => handleDropItem({ dataTransfer: { getData: () => JSON.stringify({ itemId: loc.location_id, filterType: "location" }) }, preventDefault: () => {} } as any, null)}
+                onMoveToGroup={(tId) => handleMoveItemToGroup(loc.location_id, "location", tId)}
                 testIdPrefix={`location-${loc.location_id}`}
               />
             ));
@@ -601,6 +663,7 @@ export default function Sidebar({
               key={group.group_id}
               onDragOver={(e) => {
                 e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
                 setDragOverGroupId(group.group_id);
               }}
               onDragLeave={() => setDragOverGroupId(null)}
@@ -708,6 +771,7 @@ export default function Sidebar({
         <div
           onDragOver={(e) => {
             e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
             setDragOverGroupId("ungrouped");
           }}
           onDragLeave={() => setDragOverGroupId(null)}
@@ -744,8 +808,10 @@ export default function Sidebar({
                       filterType="tag"
                       filterValue={tag.name}
                       itemId={tag.tag_id}
+                      groups={currentGroups}
                       onRename={(newName) => handleRenameTag(tag.tag_id, newName)}
                       onDelete={() => handleDeleteTag(tag.tag_id)}
+                      onMoveToGroup={(tId) => handleMoveItemToGroup(tag.tag_id, "tag", tId)}
                       testIdPrefix={`tag-${tag.name}`}
                     />
                   ))
@@ -772,8 +838,10 @@ export default function Sidebar({
                       filterType="person"
                       filterValue={p.name}
                       itemId={p.person_id}
+                      groups={currentGroups}
                       onRename={(newName) => handleRenamePerson(p.person_id, newName)}
                       onDelete={() => handleDeletePerson(p.person_id)}
+                      onMoveToGroup={(tId) => handleMoveItemToGroup(p.person_id, "person", tId)}
                       testIdPrefix={`person-${p.name}`}
                     />
                   ))
@@ -800,8 +868,10 @@ export default function Sidebar({
                       filterType="location"
                       filterValue={loc.location_id}
                       itemId={loc.location_id}
+                      groups={currentGroups}
                       onRename={(newName) => handleRenameLocation(loc.location_id, newName)}
                       onDelete={() => handleDeleteLocation(loc.location_id)}
+                      onMoveToGroup={(tId) => handleMoveItemToGroup(loc.location_id, "location", tId)}
                       testIdPrefix={`location-${loc.location_id}`}
                     />
                   ))
@@ -813,7 +883,7 @@ export default function Sidebar({
 
       {/* Tip footer */}
       <div className="pt-3 mt-2 border-t border-border/50 text-[10px] text-muted-foreground/80 flex items-center justify-between shrink-0">
-        <span>İpucu: Öğeleri gruplara sürükleyip bırakabilirsiniz</span>
+        <span>İpucu: Öğeleri gruplara sürükleyip bırakabilir veya klasör simgesine tıklayabilirsiniz</span>
       </div>
     </aside>
   );

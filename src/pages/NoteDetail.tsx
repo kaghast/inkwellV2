@@ -73,8 +73,6 @@ export default function NoteDetail() {
   const [note, setNote] = useState<Note | null>(null);
   const [allNotes, setAllNotes] = useState<Note[]>([]);
   const [loc, setLoc] = useState<LocationItem | null>(null);
-  const [cat, setCat] = useState<Category | null>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [noteTypes, setNoteTypes] = useState<NoteType[]>([]);
   const [editing, setEditing] = useState(searchParams.get("edit") === "true");
   const [contentMode, setContentMode] = useState<ContentMode>("markdown");
@@ -83,7 +81,6 @@ export default function NoteDetail() {
   const [dateTime, setDateTime] = useState("");
   const [slug, setSlug] = useState("");
   const [locationId, setLocationId] = useState<string | null>(null);
-  const [categoryId, setCategoryId] = useState<string | null>(null);
   const [noteTypeId, setNoteTypeId] = useState<string>("type_plain");
   const [customFields, setCustomFields] = useState<Record<string, any>>({});
   const [locations, setLocations] = useState<LocationItem[]>([]);
@@ -103,11 +100,10 @@ export default function NoteDetail() {
     if (!id) return;
     (async () => {
       try {
-        const [noteRes, locsRes, typesRes, catsRes, allNotesRes] = await Promise.all([
+        const [noteRes, locsRes, typesRes, allNotesRes] = await Promise.all([
           api.get<Note>(`/notes/${id}`),
           api.get<LocationItem[]>("/locations"),
           api.get<NoteType[]>("/note-types"),
-          api.get<Category[]>("/categories"),
           api.get<Note[]>("/notes"),
         ]);
         const data = noteRes.data;
@@ -120,20 +116,14 @@ export default function NoteDetail() {
         setInlineDateVal(toDateTimeLocal(data.date));
         setSlug(data.slug || "");
         setLocationId(data.location_id || null);
-        setCategoryId(data.category_id || null);
         setNoteTypeId(data.note_type_id || "type_plain");
         setCustomFields(data.custom_fields || {});
         setLocations(locsRes.data || []);
         setNoteTypes(typesRes.data || []);
-        setCategories(catsRes.data || []);
 
         if (data.location_id) {
           const found = (locsRes.data || []).find((l) => l.location_id === data.location_id);
           setLoc(found || null);
-        }
-        if (data.category_id) {
-          const foundCat = (catsRes.data || []).find((c) => c.category_id === data.category_id);
-          setCat(foundCat || null);
         }
       } catch {
         toast.error("Not bulunamadı");
@@ -214,7 +204,6 @@ export default function NoteDetail() {
         content,
         date: dateTime,
         slug: slug.trim() || undefined,
-        category_id: categoryId,
         location_id: locationId,
         note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
         custom_fields: updatedFields,
@@ -226,7 +215,6 @@ export default function NoteDetail() {
       setEditing(false);
       setContentMode(detectContentMode(data.content || "", data.custom_fields));
       setLoc(locations.find((l) => l.location_id === data.location_id) || null);
-      setCat(categories.find((c) => c.category_id === data.category_id) || null);
       toast.success("Not kaydedildi");
 
       if (data.slug && data.slug !== id) {
@@ -396,26 +384,6 @@ export default function NoteDetail() {
           )}
 
           <div className="flex items-center gap-2">
-            {/* Category Badge */}
-            {cat && (
-              <Link
-                to={`/category/${cat.category_id}`}
-                className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded border"
-                style={
-                  cat.color
-                    ? {
-                        color: cat.color,
-                        borderColor: `${cat.color}40`,
-                        backgroundColor: `${cat.color}15`,
-                      }
-                    : undefined
-                }
-              >
-                <Layers className="w-3 h-3" />
-                <span>{cat.name}</span>
-              </Link>
-            )}
-
             {/* Note Type Badge in View Mode */}
             {!editing &&
               currentType &&
@@ -438,8 +406,8 @@ export default function NoteDetail() {
 
         {editing ? (
           <div className="space-y-4">
-            {/* Note Type, Category & Date Selectors in Edit Mode */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-2.5 rounded-md bg-secondary/50 border border-border/80 text-xs">
+            {/* Note Type & Date Selectors in Edit Mode */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2.5 rounded-md bg-secondary/50 border border-border/80 text-xs">
               {/* Note Type */}
               <div className="flex items-center gap-1.5">
                 <Boxes className="w-4 h-4 text-primary shrink-0" />
@@ -461,23 +429,6 @@ export default function NoteDetail() {
                         {nt.name}
                       </option>
                     ))}
-                </select>
-              </div>
-
-              {/* Category */}
-              <div className="flex items-center gap-1.5">
-                <Layers className="w-4 h-4 text-indigo-500 shrink-0" />
-                <select
-                  value={categoryId || ""}
-                  onChange={(e) => setCategoryId(e.target.value || null)}
-                  className="w-full bg-background border border-border text-xs rounded px-2 py-1 text-foreground cursor-pointer"
-                >
-                  <option value="">— Kategori Yok —</option>
-                  {categories.map((c) => (
-                    <option key={c.category_id} value={c.category_id}>
-                      {c.name}
-                    </option>
-                  ))}
                 </select>
               </div>
 
@@ -636,7 +587,6 @@ export default function NoteDetail() {
                     setDateTime(toDateTimeLocal(note.date));
                     setSlug(note.slug || "");
                     setNoteTypeId(note.note_type_id || "type_plain");
-                    setCategoryId(note.category_id || null);
                     setCustomFields(note.custom_fields || {});
                   }}
                 >

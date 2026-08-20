@@ -6,6 +6,7 @@ import { useFilter } from "@/contexts/FilterContext";
 import { BellRing, MapPin, Youtube, Check, Loader2, Maximize2, X, Clock, Calendar } from "lucide-react";
 import { isGmap, isYoutube, extractYoutubeId } from "@/lib/blocks";
 import { highlightText } from "@/lib/highlight";
+import DrawingViewer from "@/components/drawing/DrawingViewer";
 import {
   Dialog,
   DialogContent,
@@ -405,11 +406,13 @@ function ParagraphRenderer({ children }: { children: ReactNode }) {
   return <p>{transformChildren(children)}</p>;
 }
 
-// Code fence: render `reminder\n<iso>\n<text>` fenced block as a live countdown card
+// Code fence: render `reminder\n<iso>\n<text>` or `drawing` fenced block
 function CodeRenderer(props: any) {
   const cls: string = props.className || "";
   const info = cls.replace(/^language-/, "").trim();
   const looksReminder = info === "reminder" || info.startsWith("reminder");
+  const looksDrawing = info === "drawing" || info.startsWith("drawing");
+
   if (looksReminder) {
     let raw = "";
     const walk = (c: any) => {
@@ -423,6 +426,23 @@ function CodeRenderer(props: any) {
     const text = lines.slice(1).join("\n").trim();
     return <ReminderCard iso={iso} text={text} />;
   }
+
+  if (looksDrawing) {
+    let raw = "";
+    const walk = (c: any) => {
+      if (typeof c === "string") raw += c;
+      else if (Array.isArray(c)) c.forEach(walk);
+      else if (React.isValidElement(c)) walk((c as any).props?.children);
+    };
+    walk(props.children);
+    const drawingMd = "```drawing\n" + raw.trim() + "\n```";
+    return (
+      <div className="my-2 not-prose">
+        <DrawingViewer content={drawingMd} height={220} />
+      </div>
+    );
+  }
+
   return <code {...props} />;
 }
 

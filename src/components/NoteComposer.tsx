@@ -14,7 +14,6 @@ interface Props {
   defaultDate: string;
   defaultLocationId?: string;
   locations: LocationItem[];
-  categories?: Category[];
   noteTypes?: NoteType[];
   onCreated: (n: Note) => void;
   onLocationsChanged?: () => void;
@@ -24,7 +23,6 @@ export default function NoteComposer({
   defaultDate,
   defaultLocationId,
   locations,
-  categories = [],
   noteTypes: initialNoteTypes,
   onCreated,
   onLocationsChanged,
@@ -33,7 +31,6 @@ export default function NoteComposer({
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [noteDateTime, setNoteDateTime] = useState(toDateTimeLocal(defaultDate));
-  const [categoryId, setCategoryId] = useState<string | null>(null);
   const [locationId, setLocationId] = useState<string | null>(defaultLocationId || null);
   const [noteTypes, setNoteTypes] = useState<NoteType[]>(initialNoteTypes || []);
   const [noteTypeId, setNoteTypeId] = useState<string>("type_plain");
@@ -63,7 +60,6 @@ export default function NoteComposer({
   function reset() {
     setTitle("");
     setContent("");
-    setCategoryId(null);
     setLocationId(null);
     setNoteTypeId("type_plain");
     setCustomFields({});
@@ -90,7 +86,6 @@ export default function NoteComposer({
         title,
         content,
         date: noteDateTime || defaultDate,
-        category_id: categoryId,
         location_id: locationId,
         note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
         custom_fields: customFields,
@@ -133,7 +128,7 @@ export default function NoteComposer({
 
   return (
     <div className="border border-border rounded-sm p-5 bg-card space-y-3" data-testid="note-composer">
-      {/* Note Type, Category & DateTime Top Selectors */}
+      {/* Note Type & DateTime Top Selectors */}
       <div className="flex items-center justify-between flex-wrap gap-2 pb-1 border-b border-border/40">
         <div className="flex items-center gap-2 flex-wrap">
           {/* Note Type Selector */}
@@ -158,26 +153,6 @@ export default function NoteComposer({
                 ))}
             </select>
           </div>
-
-          {/* Category Selector */}
-          {categories.length > 0 && (
-            <div className="flex items-center gap-1 bg-secondary/70 border border-border text-xs rounded-sm px-2 py-1">
-              <Layers className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-              <select
-                value={categoryId || ""}
-                onChange={(e) => setCategoryId(e.target.value || null)}
-                className="bg-transparent text-foreground text-xs outline-none cursor-pointer"
-                data-testid="composer-category-select"
-              >
-                <option value="">— Kategori Seçin —</option>
-                {categories.map((c) => (
-                  <option key={c.category_id} value={c.category_id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
 
           {/* DateTime Picker */}
           <div className="flex items-center gap-1 bg-secondary/70 border border-border text-xs rounded-sm px-2 py-1">

@@ -32,8 +32,6 @@ import { toast } from "sonner";
 
 interface Props {
   note: Note;
-  categoryMap?: Record<string, Category>;
-  categories?: Category[];
   noteTypeMap?: Record<string, NoteType>;
   noteTypes?: NoteType[];
   locationMap: Record<string, LocationItem>;
@@ -45,8 +43,6 @@ interface Props {
 
 export default function NoteCard({
   note,
-  categoryMap = {},
-  categories = [],
   noteTypeMap = {},
   noteTypes = [],
   locationMap,
@@ -59,7 +55,6 @@ export default function NoteCard({
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
   const [date, setDate] = useState(note.date);
-  const [categoryId, setCategoryId] = useState<string | null>(note.category_id || null);
   const [locationId, setLocationId] = useState<string | null>(note.location_id || null);
   const [noteTypeId, setNoteTypeId] = useState<string>(note.note_type_id || "type_plain");
   const [customFields, setCustomFields] = useState<Record<string, any>>(note.custom_fields || {});
@@ -68,7 +63,6 @@ export default function NoteCard({
   const [inlineDateTimeVal, setInlineDateTimeVal] = useState(toDateTimeLocal(note.date));
 
   const loc = note.location_id ? locationMap[note.location_id] : null;
-  const cat = note.category_id ? categoryMap[note.category_id] : null;
   const currentType = (editing ? noteTypeMap[noteTypeId] : noteTypeMap[note.note_type_id || "type_plain"]) ||
     noteTypes.find((nt) => nt.type_id === (editing ? noteTypeId : (note.note_type_id || "type_plain")));
 
@@ -95,7 +89,6 @@ export default function NoteCard({
         title: title.trim() || undefined,
         content,
         date,
-        category_id: categoryId,
         location_id: locationId,
         note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
         custom_fields: customFields,
@@ -250,17 +243,6 @@ export default function NoteCard({
               </span>
             )}
 
-            {cat && (
-              <Link
-                to={`/category/${cat.category_id}`}
-                className="flex items-center gap-1 font-sans font-medium px-1.5 py-0.5 rounded text-[11px] border border-border/80 hover:border-foreground transition-colors"
-                style={cat.color ? { color: cat.color, borderColor: `${cat.color}40`, backgroundColor: `${cat.color}10` } : undefined}
-              >
-                <Layers className="w-3 h-3 shrink-0" />
-                {cat.name}
-              </Link>
-            )}
-
             {loc && (
               <Link
                 to={`/location/${loc.location_id}`}
@@ -374,22 +356,6 @@ export default function NoteCard({
                 data-testid="edit-datetime-input"
               />
 
-              {/* Edit Category */}
-              {categories.length > 0 && (
-                <select
-                  value={categoryId || ""}
-                  onChange={(e) => setCategoryId(e.target.value || null)}
-                  className="bg-muted/70 border border-border px-2 py-1 rounded text-xs text-foreground"
-                >
-                  <option value="">— Kategori Yok —</option>
-                  {categories.map((c) => (
-                    <option key={c.category_id} value={c.category_id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-
               {/* Edit Location */}
               {locations.length > 0 && (
                 <select
@@ -416,7 +382,6 @@ export default function NoteCard({
                   setTitle(note.title);
                   setContent(note.content);
                   setDate(note.date);
-                  setCategoryId(note.category_id || null);
                   setLocationId(note.location_id || null);
                   setNoteTypeId(note.note_type_id || "type_plain");
                   setCustomFields(note.custom_fields || {});

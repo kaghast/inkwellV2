@@ -273,7 +273,6 @@ export default function MapView() {
         title: pointNoteTitle.trim(),
         content: pointNoteContent.trim(),
         date: new Date().toISOString().slice(0, 10),
-        category_id: pointCategoryId,
         location_id: locId,
         note_type_id: pointNoteTypeId !== "type_plain" ? pointNoteTypeId : null,
         custom_fields: {},
@@ -734,24 +733,6 @@ export default function MapView() {
                     ))}
                 </select>
               </div>
-
-              {categories.length > 0 && (
-                <div className="flex-1 flex items-center gap-1.5 bg-background border border-border text-xs rounded-md px-2.5 py-1.5">
-                  <Layers className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                  <select
-                    value={pointCategoryId || ""}
-                    onChange={(e) => setPointCategoryId(e.target.value || null)}
-                    className="w-full bg-transparent text-foreground text-xs outline-none cursor-pointer font-medium"
-                  >
-                    <option value="">Kategori Seç (Opsiyonel)</option>
-                    {categories.map((c) => (
-                      <option key={c.category_id} value={c.category_id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </div>
 
             {/* Note Title */}
