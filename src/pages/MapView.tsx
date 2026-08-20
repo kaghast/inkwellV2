@@ -314,6 +314,9 @@ export default function MapView() {
               zoom={selectedLocation ? 14 : locations.length > 0 ? 11 : 6}
               maskTheme={maskTheme}
               onMapClick={handleMapClick}
+              locations={locations}
+              selectedLocationId={selectedLocationId}
+              onSelectLocation={(id) => setSelectedLocationId(id)}
               className="h-full w-full"
             >
               {locations.map((loc) => {

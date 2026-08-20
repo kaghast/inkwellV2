@@ -88,6 +88,10 @@ export default function LocationPicker({ open, onOpenChange, onSave }: Props) {
               center={coords}
               zoom={13}
               onMapClick={handleMapClick}
+              draggableMarker={{
+                position: coords,
+                onDragEnd: (c) => setCoords(c),
+              }}
               className="h-full w-full"
             >
               <AdvancedMarker
