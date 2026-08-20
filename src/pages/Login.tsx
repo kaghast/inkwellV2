@@ -35,23 +35,36 @@ export default function Login() {
     return () => window.removeEventListener("message", handleMessage);
   }, [nav, setUser, location.state]);
 
-  function handleGoogleLogin() {
+  async function handleGoogleLogin() {
     try {
-      const clientId =
-        (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || "";
       const redirectUri = `${window.location.origin}/api/auth/google/callback`;
+      let authUrl = "";
 
-      const params = new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        response_type: "code",
-        scope: "openid email profile",
-        access_type: "offline",
-        prompt: "select_account",
-        state: JSON.stringify({ redirectUri }),
-      });
+      try {
+        const { data } = await api.get<{ url: string }>(`/auth/google/url?redirect_uri=${encodeURIComponent(redirectUri)}`);
+        if (data?.url) {
+          authUrl = data.url;
+        }
+      } catch {}
 
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+      if (!authUrl) {
+        const clientId =
+          (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || "";
+        if (!clientId) {
+          toast.error("Google Client ID tanımlanmamış. Lütfen .env dosyasını kontrol edin.");
+          return;
+        }
+        const params = new URLSearchParams({
+          client_id: clientId,
+          redirect_uri: redirectUri,
+          response_type: "code",
+          scope: "openid email profile",
+          access_type: "offline",
+          prompt: "select_account",
+          state: JSON.stringify({ redirectUri }),
+        });
+        authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+      }
 
       const width = 520;
       const height = 640;

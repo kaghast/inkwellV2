@@ -950,7 +950,7 @@ api.post("/auth/google/session", async (req, res) => {
 
 // Google OAuth 2.0 Start URL
 api.get("/auth/google/url", (req, res) => {
-  const clientId = process.env.GOOGLE_CLIENT_ID || "";
+  const clientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || "";
   const requestedRedirect = req.query.redirect_uri as string;
 
   let redirectUri = requestedRedirect;
@@ -998,7 +998,7 @@ async function handleGoogleOAuthCallback(req: Request, res: Response) {
     return res.status(400).send("Geçersiz yetkilendirme kodu (Authorization code is missing)");
   }
 
-  const clientId = process.env.GOOGLE_CLIENT_ID || "";
+  const clientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
 
   const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000";
