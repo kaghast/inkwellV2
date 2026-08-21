@@ -129,6 +129,7 @@ export interface Note {
   note_type_id?: string | null;
   custom_fields?: Record<string, any>;
   pinned: boolean;
+  archived?: boolean;
   created_at: string;
   updated_at: string;
 }

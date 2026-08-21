@@ -115,6 +115,7 @@ export const notes = pgTable(
     noteTypeId: text('note_type_id').references(() => noteTypes.typeId, { onDelete: 'set null' }),
     customFields: jsonb('custom_fields').$type<Record<string, any>>().default({}).notNull(),
     pinned: boolean('pinned').default(false).notNull(),
+    archived: boolean('archived').default(false).notNull(),
     // 768-dimensional text embedding vector (text-embedding-004 / Gemini embedding)
     embedding: vector('embedding', { dimensions: 768 }),
     aiSummary: text('ai_summary'),

@@ -14,6 +14,8 @@ import {
   ExternalLink,
   Check,
   X,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import api from "@/lib/api";
 import type { Note, LocationItem, Category, NoteType } from "@/types";
@@ -62,6 +64,7 @@ export default function NoteCard({
   const [editingDateInline, setEditingDateInline] = useState(false);
   const [inlineDateTimeVal, setInlineDateTimeVal] = useState(toDateTimeLocal(note.date));
 
+  const isArchived = Boolean(note.archived);
   const loc = note.location_id ? locationMap[note.location_id] : null;
   const currentType = (editing ? noteTypeMap[noteTypeId] : noteTypeMap[note.note_type_id || "type_plain"]) ||
     noteTypes.find((nt) => nt.type_id === (editing ? noteTypeId : (note.note_type_id || "type_plain")));
@@ -78,7 +81,23 @@ export default function NoteCard({
     }
   }
 
+  async function handleToggleArchive() {
+    try {
+      const { data } = await api.patch(`/notes/${note.note_id}/archive`);
+      const nextArchived = Boolean(data?.archived);
+      toast.success(nextArchived ? "Not arşivlendi" : "Not arşivden çıkarıldı");
+      if (editing) setEditing(false);
+      onChanged();
+    } catch {
+      toast.error("Arşivleme işlemi başarısız");
+    }
+  }
+
   async function handleSaveEdit() {
+    if (isArchived) {
+      toast.error("Arşivlenmiş notlar düzenlenemez. Lütfen önce arşivden çıkarın.");
+      return;
+    }
     if (!content.trim() && !title.trim()) {
       toast.error("Not içeriği boş olamaz");
       return;
@@ -96,14 +115,18 @@ export default function NoteCard({
       toast.success("Not güncellendi");
       setEditing(false);
       onChanged();
-    } catch {
-      toast.error("Not güncellenirken hata oluştu");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Not güncellenirken hata oluştu");
     } finally {
       setSaving(false);
     }
   }
 
   async function handleSaveInlineDate() {
+    if (isArchived) {
+      toast.error("Arşivlenmiş notlar düzenlenemez");
+      return;
+    }
     if (!inlineDateTimeVal) return;
     try {
       await api.put(`/notes/${note.note_id}`, {
@@ -113,8 +136,8 @@ export default function NoteCard({
       setEditingDateInline(false);
       toast.success("Tarih güncellendi");
       onChanged();
-    } catch {
-      toast.error("Tarih güncellenemedi");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Tarih güncellenemedi");
     }
   }
 
@@ -124,10 +147,12 @@ export default function NoteCard({
 
   return (
     <article
-      className={`relative group rounded-xl border transition-all duration-200 bg-card p-5 ${
-        note.pinned
-          ? "border-primary/40 shadow-xs ring-1 ring-primary/20"
-          : "border-border/70 hover:border-border hover:shadow-2xs"
+      className={`relative group rounded-xl border transition-all duration-200 p-5 ${
+        isArchived
+          ? "opacity-60 grayscale-[40%] bg-muted/30 border-dashed border-border/80 hover:opacity-85 hover:grayscale-[15%]"
+          : note.pinned
+          ? "bg-card border-primary/40 shadow-xs ring-1 ring-primary/20"
+          : "bg-card border-border/70 hover:border-border hover:shadow-2xs"
       }`}
       data-testid={`note-card-${note.note_id}`}
     >
@@ -215,17 +240,34 @@ export default function NoteCard({
               <button
                 type="button"
                 onClick={() => {
+                  if (isArchived) {
+                    toast.error("Arşivlenmiş notların tarihi düzenlenemez");
+                    return;
+                  }
                   setInlineDateTimeVal(toDateTimeLocal(note.date));
                   setEditingDateInline(true);
                 }}
-                className="flex items-center gap-1 hover:text-foreground hover:bg-secondary/60 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
-                title="Tarih ve saati düzenlemek için tıklayın"
+                disabled={isArchived}
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${
+                  isArchived
+                    ? "opacity-75 cursor-default text-muted-foreground"
+                    : "hover:text-foreground hover:bg-secondary/60 cursor-pointer"
+                }`}
+                title={isArchived ? "Arşivlenmiş not (tarih düzenlenemez)" : "Tarih ve saati düzenlemek için tıklayın"}
                 data-testid={`note-datetime-btn-${note.note_id}`}
               >
                 <Calendar className="w-3 h-3" />
                 <span>{formatDisplayDatetime(note.date) || note.date}</span>
-                <Edit3 className="w-2.5 h-2.5 opacity-40 hover:opacity-100" />
+                {!isArchived && <Edit3 className="w-2.5 h-2.5 opacity-40 hover:opacity-100" />}
               </button>
+            )}
+
+            {/* Archived Badge */}
+            {isArchived && (
+              <span className="inline-flex items-center gap-1 font-sans font-semibold px-2 py-0.5 rounded-full text-[11px] border border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10">
+                <Archive className="w-3 h-3 shrink-0" />
+                Arşivlendi
+              </span>
             )}
 
             {/* Note Type Badge */}
@@ -290,29 +332,56 @@ export default function NoteCard({
                 <MoreVertical className="w-3.5 h-3.5" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40 bg-popover border-border p-1 shadow-lg">
+            <DropdownMenuContent align="end" className="w-44 bg-popover border-border p-1 shadow-lg">
               <DropdownMenuItem asChild className="text-xs cursor-pointer">
                 <Link to={detailPath} data-testid={`note-detail-link-${note.note_id}`}>
-                  <ExternalLink className="w-3.5 h-3.5 mr-2" />
+                  <ExternalLink className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
                   Detay Sayfası
                 </Link>
               </DropdownMenuItem>
+
+              {/* Archive / Unarchive Action */}
               <DropdownMenuItem
-                onClick={() => setEditing(!editing)}
+                onClick={handleToggleArchive}
                 className="text-xs cursor-pointer"
-                data-testid={`note-edit-btn-${note.note_id}`}
+                data-testid={`note-archive-btn-${note.note_id}`}
               >
-                <Edit3 className="w-3.5 h-3.5 mr-2" />
-                {editing ? "Düzenlemeyi Kapat" : "Düzenle"}
+                {isArchived ? (
+                  <>
+                    <ArchiveRestore className="w-3.5 h-3.5 mr-2 text-emerald-500" />
+                    <span>Arşivden Çıkar</span>
+                  </>
+                ) : (
+                  <>
+                    <Archive className="w-3.5 h-3.5 mr-2 text-amber-500" />
+                    <span>Arşivle</span>
+                  </>
+                )}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => onDelete(note.note_id)}
-                className="text-xs text-destructive hover:text-destructive cursor-pointer"
-                data-testid={`note-delete-btn-${note.note_id}`}
-              >
-                <Trash2 className="w-3.5 h-3.5 mr-2" />
-                Sil
-              </DropdownMenuItem>
+
+              {/* Edit Action - Disabled when archived */}
+              {!isArchived && (
+                <DropdownMenuItem
+                  onClick={() => setEditing(!editing)}
+                  className="text-xs cursor-pointer"
+                  data-testid={`note-edit-btn-${note.note_id}`}
+                >
+                  <Edit3 className="w-3.5 h-3.5 mr-2 text-muted-foreground" />
+                  {editing ? "Düzenlemeyi Kapat" : "Düzenle"}
+                </DropdownMenuItem>
+              )}
+
+              {/* Delete Action - Disabled when archived */}
+              {!isArchived && (
+                <DropdownMenuItem
+                  onClick={() => onDelete(note.note_id)}
+                  className="text-xs text-destructive hover:text-destructive cursor-pointer"
+                  data-testid={`note-delete-btn-${note.note_id}`}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-2" />
+                  Sil
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

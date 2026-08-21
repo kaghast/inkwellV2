@@ -31,6 +31,8 @@ import {
   FileText,
   PenTool,
   ListTree,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Note, LocationItem, NoteType, Category } from "@/types";
@@ -239,6 +241,19 @@ export default function NoteDetail() {
     }
   }
 
+  async function handleToggleArchive() {
+    if (!note) return;
+    try {
+      const { data } = await api.patch(`/notes/${note.note_id}/archive`);
+      const nextArchived = Boolean(data?.archived);
+      setNote((prev) => (prev ? { ...prev, archived: nextArchived } : prev));
+      if (editing) setEditing(false);
+      toast.success(nextArchived ? "Not arşivlendi" : "Not arşivden çıkarıldı");
+    } catch {
+      toast.error("Arşivleme işlemi başarısız");
+    }
+  }
+
   async function handleSaveInlineDate() {
     if (!note || !inlineDateVal) return;
     try {
@@ -335,6 +350,24 @@ export default function NoteDetail() {
           </div>
         </div>
 
+        {/* Archived Alert Banner */}
+        {note.archived && (
+          <div className="mb-4 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10 flex items-center justify-between gap-3 text-xs text-amber-800 dark:text-amber-300">
+            <div className="flex items-center gap-2">
+              <Archive className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>Bu not arşivlendi. Notu düzenlemek veya silmek için lütfen önce arşivden çıkarın.</span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleToggleArchive}
+              className="h-7 text-xs border-amber-500/40 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20 cursor-pointer shrink-0"
+            >
+              <ArchiveRestore className="w-3.5 h-3.5 mr-1" /> Arşivden Çıkar
+            </Button>
+          </div>
+        )}
+
         {/* Metadata Header (Date, Category, Note Type) */}
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           {/* Editable Date in read mode */}
@@ -370,20 +403,37 @@ export default function NoteDetail() {
           ) : (
             <button
               onClick={() => {
+                if (note.archived) {
+                  toast.error("Arşivlenmiş notların tarihi düzenlenemez");
+                  return;
+                }
                 setInlineDateVal(toDateTimeLocal(note.date));
                 setEditingDateInline(true);
               }}
-              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground font-mono hover:bg-secondary/60 px-2 py-1 rounded transition-colors cursor-pointer"
-              title="Tarih ve saati düzenlemek için tıklayın"
+              disabled={Boolean(note.archived)}
+              className={`inline-flex items-center gap-1.5 text-xs font-mono px-2 py-1 rounded transition-colors ${
+                note.archived
+                  ? "opacity-75 cursor-default text-muted-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-secondary/60 cursor-pointer"
+              }`}
+              title={note.archived ? "Arşivlenmiş not (tarih düzenlenemez)" : "Tarih ve saati düzenlemek için tıklayın"}
               data-testid="detail-datetime-btn"
             >
               <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
               <span>{formattedDate}</span>
-              <Pencil className="w-2.5 h-2.5 opacity-40 hover:opacity-100" />
+              {!note.archived && <Pencil className="w-2.5 h-2.5 opacity-40 hover:opacity-100" />}
             </button>
           )}
 
           <div className="flex items-center gap-2">
+            {/* Archived Badge in View Mode */}
+            {note.archived && (
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border border-amber-500/40 text-amber-700 dark:text-amber-300 bg-amber-500/10 shadow-2xs">
+                <Archive className="w-3.5 h-3.5" />
+                <span>Arşivlendi</span>
+              </div>
+            )}
+
             {/* Note Type Badge in View Mode */}
             {!editing &&
               currentType &&
@@ -625,40 +675,62 @@ export default function NoteDetail() {
                     strokeWidth={1.5}
                   />
                 </Button>
+
+                {/* Archive / Unarchive Button */}
                 <Button
                   size="icon"
                   variant="ghost"
-                  onClick={() => setEditing(true)}
-                  title="Düzenle"
-                  data-testid="edit-note-btn"
+                  onClick={handleToggleArchive}
+                  title={note.archived ? "Arşivden Çıkar" : "Arşivle"}
+                  data-testid="archive-note-btn"
+                  className={note.archived ? "text-amber-500 hover:text-amber-600 hover:bg-amber-500/10" : "text-muted-foreground hover:text-foreground"}
                 >
-                  <Pencil className="w-4 h-4" strokeWidth={1.25} />
+                  {note.archived ? (
+                    <ArchiveRestore className="w-4 h-4" strokeWidth={1.5} />
+                  ) : (
+                    <Archive className="w-4 h-4" strokeWidth={1.5} />
+                  )}
                 </Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
+
+                {/* Edit & Delete are disabled / hidden when archived */}
+                {!note.archived && (
+                  <>
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="text-muted-foreground hover:text-destructive"
-                      title="Sil"
-                      data-testid="delete-note-btn"
+                      onClick={() => setEditing(true)}
+                      title="Düzenle"
+                      data-testid="edit-note-btn"
                     >
-                      <Trash2 className="w-4 h-4" strokeWidth={1.25} />
+                      <Pencil className="w-4 h-4" strokeWidth={1.25} />
                     </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent className="bg-card border-border rounded-sm">
-                    <AlertDialogHeader>
-                      <AlertDialogTitle className="font-serif">Notu sil?</AlertDialogTitle>
-                      <AlertDialogDescription>Bu işlem geri alınamaz.</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>İptal</AlertDialogCancel>
-                      <AlertDialogAction onClick={deleteNote} className="bg-destructive">
-                        Sil
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="text-muted-foreground hover:text-destructive"
+                          title="Sil"
+                          data-testid="delete-note-btn"
+                        >
+                          <Trash2 className="w-4 h-4" strokeWidth={1.25} />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="bg-card border-border rounded-sm">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="font-serif">Notu sil?</AlertDialogTitle>
+                          <AlertDialogDescription>Bu işlem geri alınamaz.</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>İptal</AlertDialogCancel>
+                          <AlertDialogAction onClick={deleteNote} className="bg-destructive">
+                            Sil
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </>
+                )}
               </div>
             </div>
 

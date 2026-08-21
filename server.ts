@@ -1772,6 +1772,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       noteTypeId: effectiveNoteTypeId,
       customFields: finalCustomFields,
       pinned: false,
+      archived: false,
     };
     if (embedding) {
       values.embedding = embedding;
@@ -1799,6 +1800,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       note_type_id: inserted.noteTypeId || "type_plain",
       custom_fields: inserted.customFields || {},
       pinned: inserted.pinned,
+      archived: inserted.archived || false,
       created_at: inserted.createdAt.toISOString(),
       updated_at: inserted.updatedAt.toISOString(),
     });
@@ -1871,6 +1873,7 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       note_type_id: n.noteTypeId || "type_plain",
       custom_fields: n.customFields || {},
       pinned: n.pinned,
+      archived: n.archived || false,
       created_at: n.createdAt.toISOString(),
       updated_at: n.updatedAt.toISOString(),
     }));
@@ -2025,6 +2028,7 @@ api.get("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       note_type_id: n.noteTypeId || "type_plain",
       custom_fields: n.customFields || {},
       pinned: n.pinned,
+      archived: n.archived || false,
       created_at: n.createdAt.toISOString(),
       updated_at: n.updatedAt.toISOString(),
     });
@@ -2050,6 +2054,10 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     }
     const current = found[0];
     const noteId = current.noteId;
+
+    if (current.archived) {
+      return res.status(403).json({ detail: "Arşivlenmiş notlar düzenlenemez. Lütfen önce arşivden çıkarın." });
+    }
 
     const { title, content, date, location_id, category_id, note_type_id, custom_fields, created_at, slug } = req.body || {};
     const noteContent = content !== undefined ? content : current.content;
@@ -2120,6 +2128,7 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
       pinned: updated.pinned,
+      archived: updated.archived || false,
       created_at: updated.createdAt.toISOString(),
       updated_at: updated.updatedAt.toISOString(),
     });
@@ -2161,11 +2170,54 @@ api.patch("/notes/:note_id/pin", authMiddleware, async (req: AuthRequest, res: R
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
       pinned: updated.pinned,
+      archived: updated.archived || false,
       created_at: updated.createdAt.toISOString(),
       updated_at: updated.updatedAt.toISOString(),
     });
   } catch (err: any) {
     res.status(500).json({ detail: "Sabitleme durumu değiştirilemedi", error: err.message });
+  }
+});
+
+api.patch("/notes/:note_id/archive", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const identifier = req.params.note_id;
+  try {
+    const found = await db.select().from(notes).where(
+      and(
+        or(eq(notes.noteId, identifier), eq(notes.slug, identifier)),
+        eq(notes.userId, userId)
+      )
+    ).limit(1);
+
+    if (found.length === 0) {
+      return res.status(404).json({ detail: "Not bulunamadı" });
+    }
+    const current = found[0];
+    const newArchived = !current.archived;
+    await db.update(notes).set({ archived: newArchived, updatedAt: new Date() }).where(eq(notes.noteId, current.noteId));
+    
+    const updated = (await db.select().from(notes).where(eq(notes.noteId, current.noteId)).limit(1))[0];
+    res.json({
+      note_id: updated.noteId,
+      user_id: updated.userId,
+      slug: updated.slug || current.slug,
+      title: updated.title,
+      content: updated.content,
+      date: updated.date,
+      tags: updated.tags || [],
+      people: updated.people || [],
+      category_id: updated.categoryId,
+      location_id: updated.locationId,
+      note_type_id: updated.noteTypeId || "type_plain",
+      custom_fields: updated.customFields || {},
+      pinned: updated.pinned,
+      archived: updated.archived || false,
+      created_at: updated.createdAt.toISOString(),
+      updated_at: updated.updatedAt.toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Arşivleme durumu değiştirilemedi", error: err.message });
   }
 });
 
@@ -2182,6 +2234,9 @@ api.delete("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Resp
 
     if (found.length === 0) {
       return res.status(404).json({ detail: "Not bulunamadı" });
+    }
+    if (found[0].archived) {
+      return res.status(403).json({ detail: "Arşivlenmiş notlar silinemez. Lütfen önce arşivden çıkarın." });
     }
     await db.delete(notes).where(eq(notes.noteId, found[0].noteId));
     res.json({ ok: true });

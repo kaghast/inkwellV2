@@ -244,7 +244,11 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
   - `server.ts` içerisindeki `/notes` endpoint'i `q` parametresi ile başlık, içerik, etiket ve kişi alanlarını doğrudan arka uçta (backend) filtreleyecek şekilde güncellendi.
   - Not listeleri 10'arlı gruplara bölündü (`limit=10`, `offset=0, 10, 20...`, `paginate=true`).
   - Listenin sonuna gelindiğinde yeni 10 notu dinamik olarak çeken şık "Daha Fazla Yükle (Load More)" mekanizması `AllNotes.tsx` ve `Dashboard.tsx` sayfalarına entegre edildi.
-  - Gerçek toplam not sayısı (`total`) ve arama kriteriyle eşleşen toplam not sayısı (`filtered_total`) başlık rozetinde her zaman net olarak gösterilecek şekilde yapılandırıldı.
+- **Not Arşivleme & Kilitli Eylemler Mekanizması:**
+  - Veritabanı ve TypeScript modellerine `archived: boolean` alanı eklendi.
+  - Not kartlarının üç nokta (`...`) menüsüne ve not detay sayfasına **"Arşivle" / "Arşivden Çıkar"** seçeneği entegre edildi (`PATCH /notes/:note_id/archive`).
+  - Bir not arşivlendiğinde `Edit` (Düzenle) ve `Delete` (Sil) eylemleri hem arayüzde kilitlenir hem de arka uçta (`PUT`/`DELETE` 403 Forbidden) korumaya alınır.
+  - Arşivlenen notlar silik, gri tonlu (`opacity-60 grayscale-[40%] border-dashed bg-muted/30`) ve "Arşivlendi" rozetiyle listelenmeye devam eder; arşivden çıkarıldığında tüm düzenleme ve silme yetenekleri eski haline döner.
 
 ---
 
