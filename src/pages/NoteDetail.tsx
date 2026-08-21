@@ -33,6 +33,9 @@ import {
   ListTree,
   Archive,
   ArchiveRestore,
+  Maximize2,
+  Minimize2,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Note, LocationItem, NoteType, Category } from "@/types";
@@ -91,6 +94,16 @@ export default function NoteDetail() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [editingDateInline, setEditingDateInline] = useState(false);
   const [inlineDateVal, setInlineDateVal] = useState("");
+  const [detailFullFocus, setDetailFullFocus] = useState(false);
+
+  useEffect(() => {
+    if (!detailFullFocus) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDetailFullFocus(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [detailFullFocus]);
 
   useEffect(() => {
     if (searchParams.get("edit") === "true") {
@@ -554,54 +567,72 @@ export default function NoteDetail() {
               <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground px-1.5">
                 <span>İçerik Düzenleme Modu:</span>
               </div>
-              <div className="flex items-center gap-1 bg-background p-0.5 rounded-md border border-border">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1 bg-background p-0.5 rounded-md border border-border">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContentMode("markdown");
+                      setCustomFields((prev) => ({ ...prev, content_mode: "markdown" }));
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
+                      contentMode === "markdown"
+                        ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5" /> Metin (Markdown)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContentMode("drawing");
+                      setCustomFields((prev) => ({ ...prev, content_mode: "drawing" }));
+                      if (!/```drawing/.test(content)) {
+                        setContent("```drawing\n{\n  \"version\": 1,\n  \"elements\": [],\n  \"gridMode\": \"dots\"\n}\n```");
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
+                      contentMode === "drawing"
+                        ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <PenTool className="w-3.5 h-3.5" /> Çizim & Şema
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContentMode("outline");
+                      setCustomFields((prev) => ({ ...prev, content_mode: "outline" }));
+                      if (!content.trim() || /```drawing/.test(content)) {
+                        setContent("- [ ] İlk ana madde\n  - [ ] Alt görev veya not\n- [ ] İkinci ana madde");
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
+                      contentMode === "outline"
+                        ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <ListTree className="w-3.5 h-3.5" /> Hiyerarşik Outline
+                  </button>
+                </div>
+
+                {/* Global Full Focus Button */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setContentMode("markdown");
-                    setCustomFields((prev) => ({ ...prev, content_mode: "markdown" }));
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
-                    contentMode === "markdown"
-                      ? "bg-primary text-primary-foreground font-bold shadow-xs"
-                      : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                  onClick={() => setDetailFullFocus(!detailFullFocus)}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer ${
+                    detailFullFocus
+                      ? "bg-primary text-primary-foreground shadow-xs"
+                      : "bg-primary/10 hover:bg-primary/20 text-primary border border-primary/25 shadow-2xs"
                   }`}
+                  title="Tam Odaklanma Modu (Esc ile çıkış)"
+                  data-testid="detail-full-focus-toggle-btn"
                 >
-                  <FileText className="w-3.5 h-3.5" /> Metin (Markdown)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setContentMode("drawing");
-                    setCustomFields((prev) => ({ ...prev, content_mode: "drawing" }));
-                    if (!/```drawing/.test(content)) {
-                      setContent("```drawing\n{\n  \"version\": 1,\n  \"elements\": [],\n  \"gridMode\": \"dots\"\n}\n```");
-                    }
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
-                    contentMode === "drawing"
-                      ? "bg-primary text-primary-foreground font-bold shadow-xs"
-                      : "hover:bg-muted text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <PenTool className="w-3.5 h-3.5" /> Çizim & Şema (Canvas)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setContentMode("outline");
-                    setCustomFields((prev) => ({ ...prev, content_mode: "outline" }));
-                    if (!content.trim() || /```drawing/.test(content)) {
-                      setContent("- [ ] İlk ana madde\n  - [ ] Alt görev veya not\n- [ ] İkinci ana madde");
-                    }
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
-                    contentMode === "outline"
-                      ? "bg-primary text-primary-foreground font-bold shadow-xs"
-                      : "hover:bg-muted text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <ListTree className="w-3.5 h-3.5" /> Hiyerarşik Outline
+                  {detailFullFocus ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                  <span>Full Focus</span>
                 </button>
               </div>
             </div>
@@ -942,6 +973,127 @@ export default function NoteDetail() {
           </>
         )}
       </main>
+
+      {/* Detail Full Focus Overlay for all 3 Content Editing Modes */}
+      {detailFullFocus && editing && (
+        <div
+          className="fixed inset-0 z-[100] bg-background flex flex-col p-3 sm:p-6 md:p-8 animate-in fade-in zoom-in-95 duration-150 overflow-hidden"
+          data-testid="detail-full-focus-overlay"
+        >
+          {/* Full Focus Top Header */}
+          <div className="max-w-6xl w-full mx-auto flex items-center justify-between pb-3 mb-3 border-b border-border/50 select-none shrink-0 flex-wrap gap-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary font-semibold text-xs border border-primary/20 shadow-2xs">
+                <Sparkles className="w-3.5 h-3.5" /> Full Focus Modu
+              </span>
+
+              {/* 3-Mode Content Switcher inside Full Focus */}
+              <div className="flex items-center gap-1 bg-secondary/80 p-0.5 rounded-lg border border-border">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContentMode("markdown");
+                    setCustomFields((prev) => ({ ...prev, content_mode: "markdown" }));
+                  }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
+                    contentMode === "markdown"
+                      ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                      : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" /> Metin (Markdown)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContentMode("drawing");
+                    setCustomFields((prev) => ({ ...prev, content_mode: "drawing" }));
+                    if (!/```drawing/.test(content)) {
+                      setContent("```drawing\n{\n  \"version\": 1,\n  \"elements\": [],\n  \"gridMode\": \"dots\"\n}\n```");
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
+                    contentMode === "drawing"
+                      ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                      : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <PenTool className="w-3.5 h-3.5" /> Çizim & Şema
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setContentMode("outline");
+                    setCustomFields((prev) => ({ ...prev, content_mode: "outline" }));
+                    if (!content.trim() || /```drawing/.test(content)) {
+                      setContent("- [ ] İlk ana madde\n  - [ ] Alt görev veya not\n- [ ] İkinci ana madde");
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
+                    contentMode === "outline"
+                      ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                      : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <ListTree className="w-3.5 h-3.5" /> Outline
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  save();
+                  setDetailFullFocus(false);
+                }}
+                disabled={busy}
+                className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer shadow-xs"
+                data-testid="detail-full-focus-save-btn"
+              >
+                <Save className="w-3.5 h-3.5 mr-1" /> Kaydet
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setDetailFullFocus(false)}
+                className="h-8 text-xs cursor-pointer"
+                title="Odaktan Çık (Esc)"
+                data-testid="detail-exit-full-focus-btn"
+              >
+                <Minimize2 className="w-3.5 h-3.5 mr-1.5" /> Odaktan Çık
+              </Button>
+            </div>
+          </div>
+
+          {/* Full Focus Editor Body */}
+          <div className="max-w-6xl w-full mx-auto flex-1 flex flex-col min-h-0">
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Not Başlığı (isteğe bağlı)..."
+              className="text-2xl sm:text-3xl font-serif border-0 px-0 focus-visible:ring-0 shadow-none bg-transparent mb-3 placeholder:text-muted-foreground/40 font-bold shrink-0"
+            />
+
+            <div className="flex-1 min-h-0 flex flex-col">
+              {contentMode === "drawing" ? (
+                <DrawingEditor initialContent={content} onChange={setContent} isFullFocus={false} height="100%" />
+              ) : contentMode === "outline" ? (
+                <OutlineEditor initialContent={content} onChange={setContent} isFullFocus={false} />
+              ) : (
+                <MarkdownEditor
+                  value={content}
+                  onChange={setContent}
+                  title={title}
+                  onTitleChange={setTitle}
+                  onSubmit={save}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <LocationPicker open={picker} onOpenChange={setPicker} onSave={saveNewLocation} />
     </div>
   );

@@ -253,10 +253,11 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
   - Markdown içerikleri için standart code fence (` ```timeslot `) formatında yeni bir zaman bloğu tasarlandı (`src/lib/timeslot.ts`).
   - **5 Temel Bilgi ve Süre Gösterimi:** Başlangıç zamanı, bitiş zamanı, işin adı/başlığı, detaylı açıklama ve blok rengi ile canlı hesaplanan süre rozeti (`⏱️ 1 sa 30 dk`) görsel kart üzerinde formatlanır (`TimeSlotCard.tsx`).
   - **Editör Entegrasyonu:** Editör araç çubuğuna ("Zaman Bloğu") butonu ve `/timeslot` slash komutu eklendi. Renk paleti seçimi ve canlı önizleme sunan `TimeSlotDialog.tsx` modalı entegre edildi.
-- **Tam Odaklanma Modu (Full Focus Mode):**
-  - Not oluşturma (`NoteComposer`), düzenleme (`NoteDetail`, `NoteCard`) ve ana Markdown editörüne (`MarkdownEditor.tsx`) **"Full Focus"** butonu entegre edildi.
-  - Tıklandığında tüm dikkat dağıtıcı öğeler (yan menü, üst bar, paneller vb.) gizlenerek tam ekran, sade ve geniş bir yazma moduna geçilir.
-  - Canlı kelime/karakter sayacı, doğrudan başlık düzenleme, hızlı blok araç çubuğu, `Esc` ile odaktan çıkış ve `Ctrl+S` / `Ctrl+Enter` ile anında kaydetme kısayolları eklendi.
+- **3 İçerik Düzenleme Modunda Tam Odaklanma (Full Focus Mode):**
+  - **1. Metin (Markdown):** `MarkdownEditor.tsx` üzerinde tam ekran, canlı kelime/karakter istatistiği, hızlı bloklar ve başlık düzenleme destekli Full Focus.
+  - **2. Çizim & Şema (Canvas):** `DrawingEditor.tsx` üzerinde tam ekran tuval, ızgara kontrolü, zengin çizim araçları ve serbest SVG şema çizimi.
+  - **3. Hiyerarşik Outline:** `OutlineEditor.tsx` üzerinde tam ekran madde ağacı, madde/alt madde yönetimi (`Tab`/`Shift+Tab`), sürükle-bırak ve durum döngüsü.
+  - `NoteDetail.tsx` içerisinde Full Focus aktifken 3 mod arasında kesintisiz geçiş yapabilme, `Esc` ile odaktan çıkış ve `Ctrl+S` ile anında kaydetme sağlandı.
 
 ---
 

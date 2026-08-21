@@ -14,6 +14,9 @@ import {
   ArrowDown,
   Indent,
   Outdent,
+  Maximize2,
+  Minimize2,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -93,13 +96,36 @@ export function serializeOutlineMarkdown(nodes: OutlineNode[]): string {
 export interface OutlineEditorProps {
   initialContent: string;
   onChange: (markdown: string) => void;
+  isFullFocus?: boolean;
+  onToggleFullFocus?: () => void;
 }
 
-export default function OutlineEditor({ initialContent, onChange }: OutlineEditorProps) {
+export default function OutlineEditor({
+  initialContent,
+  onChange,
+  isFullFocus,
+  onToggleFullFocus,
+}: OutlineEditorProps) {
   const [nodes, setNodes] = useState<OutlineNode[]>(() => parseOutlineMarkdown(initialContent));
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [internalFullFocus, setInternalFullFocus] = useState(false);
   const itemInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const fullFocus = isFullFocus !== undefined ? isFullFocus : internalFullFocus;
+  const toggleFullFocus = onToggleFullFocus || (() => setInternalFullFocus((f) => !f));
+
+  useEffect(() => {
+    if (!fullFocus) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (onToggleFullFocus) onToggleFullFocus();
+        else setInternalFullFocus(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullFocus, onToggleFullFocus]);
 
   const commitNodes = useCallback(
     (newNodes: OutlineNode[]) => {
@@ -190,12 +216,12 @@ export default function OutlineEditor({ initialContent, onChange }: OutlineEdito
   };
 
   const handleAddChild = (index: number) => {
-    const parent = nodes[index];
+    const current = nodes[index];
     const newId = "node_" + Date.now();
     const newNode: OutlineNode = {
       id: newId,
       text: "",
-      level: parent.level + 1,
+      level: current.level + 1,
       status: "todo",
     };
     const updated = [...nodes.slice(0, index + 1), newNode, ...nodes.slice(index + 1)];
@@ -207,8 +233,14 @@ export default function OutlineEditor({ initialContent, onChange }: OutlineEdito
 
   const handleDelete = (index: number) => {
     if (nodes.length <= 1) return;
+    const prevNode = nodes[index - 1] || nodes[index + 1];
     const updated = nodes.filter((_, i) => i !== index);
     commitNodes(updated);
+    if (prevNode) {
+      setTimeout(() => {
+        itemInputRefs.current[prevNode.id]?.focus();
+      }, 50);
+    }
   };
 
   // Drag & Drop Handlers
@@ -218,6 +250,7 @@ export default function OutlineEditor({ initialContent, onChange }: OutlineEdito
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
     setDragOverIndex(index);
   };
 
@@ -237,34 +270,66 @@ export default function OutlineEditor({ initialContent, onChange }: OutlineEdito
     setDragOverIndex(null);
   };
 
+  const doneCount = nodes.filter((n) => n.status === "done").length;
+
   return (
-    <div className="flex flex-col border border-border rounded-xl bg-card overflow-hidden shadow-sm">
+    <div
+      className={`flex flex-col border border-border bg-card overflow-hidden select-none ${
+        fullFocus
+          ? "fixed inset-0 z-[100] bg-background p-4 sm:p-8 max-w-5xl mx-auto w-full animate-in fade-in zoom-in-95 duration-150 rounded-none shadow-2xl"
+          : "rounded-xl shadow-xs"
+      }`}
+      data-testid="outline-editor"
+    >
       {/* Outline Top Toolbar */}
-      <div className="flex items-center justify-between p-3 border-b border-border bg-muted/40 text-xs">
+      <div className="flex items-center justify-between p-3 border-b border-border bg-muted/40 text-xs flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-foreground">Hiyerarşik Outline Düzenleyici</span>
+          {fullFocus && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold border border-primary/20">
+              <Sparkles className="w-3 h-3" /> Full Focus
+            </span>
+          )}
+          <span className="font-semibold text-foreground">Hiyerarşik Outline</span>
           <span className="text-[10px] font-mono text-muted-foreground bg-background px-2 py-0.5 rounded border border-border">
-            {nodes.length} Madde
+            {nodes.length} Madde {doneCount > 0 && `• ${doneCount} Tamam`}
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="hidden sm:inline">
-            <kbd className="px-1 py-0.5 bg-background border rounded text-[10px]">Enter</kbd> Yeni Madde
-          </span>
-          <span className="hidden sm:inline">•</span>
-          <span className="hidden sm:inline">
-            <kbd className="px-1 py-0.5 bg-background border rounded text-[10px]">Tab</kbd> Alt Madde
-          </span>
-          <span className="hidden sm:inline">•</span>
-          <span className="hidden sm:inline">
-            <kbd className="px-1 py-0.5 bg-background border rounded text-[10px]">Shift+Tab</kbd> Üst Seviye
-          </span>
+        <div className="flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span>
+              <kbd className="px-1 py-0.5 bg-background border rounded text-[10px]">Enter</kbd> Yeni
+            </span>
+            <span>•</span>
+            <span>
+              <kbd className="px-1 py-0.5 bg-background border rounded text-[10px]">Tab</kbd> Alt
+            </span>
+            <span>•</span>
+            <span>
+              <kbd className="px-1 py-0.5 bg-background border rounded text-[10px]">Shift+Tab</kbd> Üst
+            </span>
+          </div>
+
+          {/* Full Focus Button */}
+          <button
+            type="button"
+            onClick={toggleFullFocus}
+            className={`p-1 px-2 rounded cursor-pointer transition-colors flex items-center gap-1 text-xs font-semibold ${
+              fullFocus
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "bg-primary/10 hover:bg-primary/20 text-primary border border-primary/25 shadow-2xs"
+            }`}
+            title="Full Focus Modu (Esc ile çıkış)"
+            data-testid="outline-full-focus-btn"
+          >
+            {fullFocus ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">Full Focus</span>
+          </button>
         </div>
       </div>
 
       {/* Outline Item Nodes List */}
-      <div className="p-3 space-y-1.5 max-h-[600px] overflow-y-auto">
+      <div className="p-3 space-y-1.5 flex-1 min-h-[280px] max-h-[75vh] overflow-y-auto">
         {nodes.map((node, index) => {
           const isDragTarget = dragOverIndex === index;
 

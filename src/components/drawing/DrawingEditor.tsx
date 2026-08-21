@@ -16,6 +16,8 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Minimize2,
+  Sparkles,
   Grid,
   Palette,
   Check,
@@ -81,12 +83,36 @@ export interface DrawingEditorProps {
   initialContent: string;
   onChange: (markdown: string) => void;
   height?: number | string;
+  isFullFocus?: boolean;
+  onToggleFullFocus?: () => void;
 }
 
-export default function DrawingEditor({ initialContent, onChange, height = 540 }: DrawingEditorProps) {
+export default function DrawingEditor({
+  initialContent,
+  onChange,
+  height = 540,
+  isFullFocus,
+  onToggleFullFocus,
+}: DrawingEditorProps) {
   const [data, setData] = useState<DrawingData>(() => parseDrawingMarkdown(initialContent));
   const [history, setHistory] = useState<DrawingElement[][]>([data.elements]);
   const [historyIndex, setHistoryIndex] = useState(0);
+  const [internalFullFocus, setInternalFullFocus] = useState(false);
+
+  const fullFocus = isFullFocus !== undefined ? isFullFocus : internalFullFocus;
+  const toggleFullFocus = onToggleFullFocus || (() => setInternalFullFocus((f) => !f));
+
+  useEffect(() => {
+    if (!fullFocus) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (onToggleFullFocus) onToggleFullFocus();
+        else setInternalFullFocus(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullFocus, onToggleFullFocus]);
 
   // Active Tool & Settings
   const [activeTool, setActiveTool] = useState<DrawingElement["type"] | "select" | "eraser">("pencil");
@@ -178,7 +204,9 @@ export default function DrawingEditor({ initialContent, onChange, height = 540 }
 
     // Resize canvas to match display size
     const width = canvas.parentElement?.clientWidth || 800;
-    const heightNum = typeof height === "number" ? height : 540;
+    const heightNum = fullFocus
+      ? (canvas.parentElement?.clientHeight || window.innerHeight - 120)
+      : (typeof height === "number" ? height : (canvas.parentElement?.clientHeight || 540));
     canvas.width = width * window.devicePixelRatio;
     canvas.height = heightNum * window.devicePixelRatio;
     canvas.style.width = `${width}px`;
@@ -548,7 +576,12 @@ export default function DrawingEditor({ initialContent, onChange, height = 540 }
   return (
     <div
       ref={containerRef}
-      className="flex flex-col border border-border rounded-xl bg-card overflow-hidden shadow-sm select-none"
+      className={`flex flex-col border border-border bg-card overflow-hidden select-none ${
+        fullFocus
+          ? "fixed inset-0 z-[100] bg-background p-2 sm:p-4 animate-in fade-in zoom-in-95 duration-150 rounded-none shadow-2xl"
+          : "rounded-xl shadow-xs"
+      }`}
+      data-testid="drawing-editor"
     >
       {/* Top Drawing Toolbar */}
       <div className="flex items-center justify-between p-2 border-b border-border bg-muted/40 flex-wrap gap-2 text-xs">
@@ -802,19 +835,29 @@ export default function DrawingEditor({ initialContent, onChange, height = 540 }
 
           <div className="h-4 w-px bg-border/80 mx-1" />
 
+          {/* Full Focus Button */}
           <button
             type="button"
-            onClick={handleClear}
-            className="p-1.5 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded cursor-pointer"
-            title="Çizimi Temizle"
+            onClick={toggleFullFocus}
+            className={`p-1.5 rounded cursor-pointer transition-colors flex items-center gap-1 text-xs font-semibold ${
+              fullFocus
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "bg-primary/10 hover:bg-primary/20 text-primary border border-primary/25 shadow-2xs"
+            }`}
+            title="Full Focus Modu (Esc ile çıkış)"
+            data-testid="drawing-full-focus-btn"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            {fullFocus ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">Full Focus</span>
           </button>
         </div>
       </div>
 
       {/* Canvas Drawing Surface */}
-      <div className="relative w-full overflow-hidden" style={{ height }}>
+      <div
+        className="relative w-full flex-1 min-h-0 overflow-hidden"
+        style={{ height: fullFocus ? undefined : height }}
+      >
         <canvas
           ref={canvasRef}
           onMouseDown={handleMouseDown}
