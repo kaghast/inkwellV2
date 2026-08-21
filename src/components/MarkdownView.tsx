@@ -7,6 +7,7 @@ import { BellRing, MapPin, Youtube, Check, Loader2, Maximize2, X, Clock, Calenda
 import { isGmap, isYoutube, extractYoutubeId } from "@/lib/blocks";
 import { highlightText } from "@/lib/highlight";
 import DrawingViewer from "@/components/drawing/DrawingViewer";
+import TimeSlotCard from "@/components/TimeSlotCard";
 import {
   Dialog,
   DialogContent,
@@ -455,7 +456,19 @@ function CodeRenderer(props: any) {
   const cls: string = props.className || "";
   const info = cls.replace(/^language-/, "").trim();
   const looksReminder = info === "reminder" || info.startsWith("reminder");
+  const looksTimeslot = info === "timeslot" || info.startsWith("timeslot");
   const looksDrawing = info === "drawing" || info.startsWith("drawing");
+
+  if (looksTimeslot) {
+    let raw = "";
+    const walk = (c: any) => {
+      if (typeof c === "string") raw += c;
+      else if (Array.isArray(c)) c.forEach(walk);
+      else if (React.isValidElement(c)) walk((c as any).props?.children);
+    };
+    walk(props.children);
+    return <TimeSlotCard raw={raw} />;
+  }
 
   if (looksReminder) {
     let raw = "";
@@ -591,7 +604,12 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
             const first = Array.isArray(children) ? children[0] : children;
             if (React.isValidElement(first)) {
               const cls: string = (first as any).props?.className || "";
-              if (cls.startsWith("language-reminder") || cls === "language-reminder") {
+              if (
+                cls.startsWith("language-reminder") ||
+                cls === "language-reminder" ||
+                cls.startsWith("language-timeslot") ||
+                cls === "language-timeslot"
+              ) {
                 return <>{first}</>;
               }
             }

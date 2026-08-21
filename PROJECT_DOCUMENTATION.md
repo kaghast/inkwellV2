@@ -249,6 +249,10 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
   - Not kartlarının üç nokta (`...`) menüsüne ve not detay sayfasına **"Arşivle" / "Arşivden Çıkar"** seçeneği entegre edildi (`PATCH`/`POST`/`PUT /notes/:note_id/archive`).
   - Bir not arşivlendiğinde `Edit` (Düzenle), `Delete` (Sil) ve `Pin` (Sabitleme) eylemleri hem arayüzde kilitlenir hem de arka uçta (`PUT`/`DELETE`/`PATCH /pin` 403 Forbidden) korumaya alınır.
   - Arşivlenen notlar varsa panodan otomatik olarak çıkarılır (`pinned = false`), arayüzde silik ve gri tonlu (`opacity-60 grayscale-[40%] border-dashed bg-muted/30`) olarak ve "Arşivlendi" rozetiyle listelenir; arşivden çıkarıldığında tüm düzenleme, silme ve pinleme yetenekleri anında eski haline döner.
+- **Yeni Zaman Bloğu (Time Slot) Not Bloğu ve Otomatik Süre Hesaplama:**
+  - Markdown içerikleri için standart code fence (` ```timeslot `) formatında yeni bir zaman bloğu tasarlandı (`src/lib/timeslot.ts`).
+  - **5 Temel Bilgi ve Süre Gösterimi:** Başlangıç zamanı, bitiş zamanı, işin adı/başlığı, detaylı açıklama ve blok rengi ile canlı hesaplanan süre rozeti (`⏱️ 1 sa 30 dk`) görsel kart üzerinde formatlanır (`TimeSlotCard.tsx`).
+  - **Editör Entegrasyonu:** Editör araç çubuğuna ("Zaman Bloğu") butonu ve `/timeslot` slash komutu eklendi. Renk paleti seçimi ve canlı önizleme sunan `TimeSlotDialog.tsx` modalı entegre edildi.
 
 ---
 

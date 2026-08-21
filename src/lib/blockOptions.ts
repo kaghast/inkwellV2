@@ -10,6 +10,7 @@ import {
   MapPin,
   Image as ImageIcon,
   BellRing,
+  CalendarClock,
   LucideIcon,
 } from "lucide-react";
 
@@ -28,7 +29,8 @@ export type BlockType =
   | "youtube"
   | "gmap"
   | "image"
-  | "reminder";
+  | "reminder"
+  | "timeslot";
 
 export interface BlockOption {
   type: BlockType;
@@ -45,6 +47,7 @@ export const BLOCK_OPTIONS: BlockOption[] = [
   { type: "task", label: "Görev Listesi", hint: "- [ ] Görev", desc: "Onay kutulu yapılacak madde", icon: CheckSquare },
   { type: "quote", label: "Alıntı", hint: "> Alıntı metni", desc: "Vurgulanmış blok alıntı", icon: Quote },
   { type: "divider", label: "Ayırıcı Çizgi", hint: "---", desc: "Yatay ayırıcı", icon: Minus },
+  { type: "timeslot", label: "Zaman Bloğu (Time Slot)", hint: "```timeslot", desc: "Süre hesaplamalı zaman aralığı ve aktivite", icon: CalendarClock },
   { type: "image", label: "Görsel Yükle", hint: "![...](...)", desc: "Resim veya ekran görüntüsü ekle", icon: ImageIcon },
   { type: "reminder", label: "Hatırlatma", hint: "```reminder", desc: "Tarihli ve saatli anımsatıcı", icon: BellRing },
   { type: "link", label: "Bağlantı", hint: "[Metin](url)", desc: "Web sitesi linki ekle", icon: LinkIcon },

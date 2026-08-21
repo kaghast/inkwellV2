@@ -6,6 +6,7 @@ import { filterBlockOptions, BlockOption } from "@/lib/blockOptions";
 import LinkDialog from "@/components/LinkDialog";
 import ReminderDialog from "@/components/ReminderDialog";
 import ImageUploadDialog from "@/components/ImageUploadDialog";
+import TimeSlotDialog from "@/components/TimeSlotDialog";
 import { uploadImage } from "@/lib/uploads";
 import { toast } from "sonner";
 import {
@@ -17,6 +18,7 @@ import {
   Quote,
   FileText,
   Network,
+  CalendarClock,
 } from "lucide-react";
 
 type SuggestionItem = Tag | Person;
@@ -79,6 +81,7 @@ export default function MarkdownEditor({
   const [linkOpen, setLinkOpen] = useState(false);
   const [reminderOpen, setReminderOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
+  const [timeSlotOpen, setTimeSlotOpen] = useState(false);
   const [pendingBlock, setPendingBlock] = useState<null | { start: number; end: number }>(null);
 
   async function fetchSuggestions(type: "tag" | "person", query: string): Promise<SuggestionItem[]> {
@@ -271,6 +274,11 @@ export default function MarkdownEditor({
         setPopup(null);
         setReminderOpen(true);
         return;
+      case "timeslot":
+        setPendingBlock({ start: from, end: caret });
+        setPopup(null);
+        setTimeSlotOpen(true);
+        return;
     }
     setPopup(null);
   }
@@ -395,7 +403,20 @@ export default function MarkdownEditor({
     setPendingBlock(null);
   }
 
-  function insertQuickBlock(kind: "image" | "reminder" | "task" | "link" | "heading" | "quote" | "wikilink") {
+  function onTimeSlotConfirm(markdown: string) {
+    const el = ref.current;
+    const caret = el ? el.selectionStart : value.length;
+    const from = pendingBlock ? pendingBlock.start : caret;
+    const to = pendingBlock ? pendingBlock.end : caret;
+
+    const before = value.slice(0, from);
+    const needsNl = before.length > 0 && !before.endsWith("\n");
+    const prefix = needsNl ? "\n" : "";
+    replaceRange(from, to, prefix + markdown + "\n");
+    setPendingBlock(null);
+  }
+
+  function insertQuickBlock(kind: "image" | "reminder" | "timeslot" | "task" | "link" | "heading" | "quote" | "wikilink") {
     const el = ref.current;
     const caret = el ? el.selectionStart : value.length;
     const before = value.slice(0, caret);
@@ -411,6 +432,7 @@ export default function MarkdownEditor({
 
     if (kind === "image") setImageOpen(true);
     else if (kind === "reminder") setReminderOpen(true);
+    else if (kind === "timeslot") setTimeSlotOpen(true);
     else if (kind === "link") setLinkOpen(true);
     else if (kind === "task") {
       replaceRange(caret, caret, prefix + "- [ ] ");
@@ -450,6 +472,17 @@ export default function MarkdownEditor({
           >
             <Network className="w-3.5 h-3.5" />
             <span className="hidden sm:inline text-[11px]">[[</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => insertQuickBlock("timeslot")}
+            data-testid="toolbar-btn-timeslot"
+            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 text-primary"
+            title="Zaman Bloğu (Time Slot) Ekle"
+          >
+            <CalendarClock className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline text-[11px]">Zaman Bloğu</span>
           </button>
 
           <button
@@ -606,6 +639,7 @@ export default function MarkdownEditor({
       <LinkDialog open={linkOpen} onOpenChange={setLinkOpen} onConfirm={onLinkConfirm} />
       <ReminderDialog open={reminderOpen} onOpenChange={setReminderOpen} onConfirm={onReminderConfirm} />
       <ImageUploadDialog open={imageOpen} onOpenChange={setImageOpen} onConfirm={onImageConfirm} />
+      <TimeSlotDialog open={timeSlotOpen} onOpenChange={setTimeSlotOpen} onConfirm={onTimeSlotConfirm} />
     </div>
   );
 }
