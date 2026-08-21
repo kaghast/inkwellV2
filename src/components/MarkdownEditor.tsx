@@ -1,5 +1,7 @@
 import React, { useRef, useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import api from "@/lib/api";
 import type { Tag, Person } from "@/types";
 import { filterBlockOptions, BlockOption } from "@/lib/blockOptions";
@@ -19,6 +21,10 @@ import {
   FileText,
   Network,
   CalendarClock,
+  Maximize2,
+  Minimize2,
+  Sparkles,
+  Save,
 } from "lucide-react";
 
 type SuggestionItem = Tag | Person;
@@ -66,6 +72,8 @@ interface Props {
   onCancel?: () => void;
   locations?: any[];
   onLocationsChanged?: () => void;
+  title?: string;
+  onTitleChange?: (t: string) => void;
 }
 
 export default function MarkdownEditor({
@@ -75,6 +83,8 @@ export default function MarkdownEditor({
   autoFocus,
   onSubmit,
   onCancel,
+  title,
+  onTitleChange,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const [popup, setPopup] = useState<Popup | null>(null);
@@ -82,6 +92,7 @@ export default function MarkdownEditor({
   const [reminderOpen, setReminderOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
   const [timeSlotOpen, setTimeSlotOpen] = useState(false);
+  const [fullFocus, setFullFocus] = useState(false);
   const [pendingBlock, setPendingBlock] = useState<null | { start: number; end: number }>(null);
 
   async function fetchSuggestions(type: "tag" | "person", query: string): Promise<SuggestionItem[]> {
@@ -356,11 +367,21 @@ export default function MarkdownEditor({
       e.preventDefault();
       onSubmit();
     }
-    if (e.key === "Escape" && !popup && onCancel) {
-      e.preventDefault();
-      onCancel();
+    if (e.key === "Escape" && !popup) {
+      if (fullFocus) {
+        e.preventDefault();
+        setFullFocus(false);
+        return;
+      }
+      if (onCancel) {
+        e.preventDefault();
+        onCancel();
+      }
     }
   }
+
+  const wordCount = value.trim() ? value.trim().split(/\s+/).length : 0;
+  const charCount = value.length;
 
   function onImageConfirm(markdown: string) {
     const el = ref.current;
@@ -462,12 +483,12 @@ export default function MarkdownEditor({
 
       {/* Editor Quick Action Toolbar */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-muted/40 border-x border-b border-border rounded-b-md text-xs text-muted-foreground select-none">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-wrap">
           <button
             type="button"
             onClick={() => insertQuickBlock("wikilink")}
             data-testid="toolbar-btn-wikilink"
-            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1"
+            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
             title="Not Bağlantısı Ekle"
           >
             <Network className="w-3.5 h-3.5" />
@@ -478,7 +499,7 @@ export default function MarkdownEditor({
             type="button"
             onClick={() => insertQuickBlock("timeslot")}
             data-testid="toolbar-btn-timeslot"
-            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 text-primary"
+            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 text-primary cursor-pointer"
             title="Zaman Bloğu (Time Slot) Ekle"
           >
             <CalendarClock className="w-3.5 h-3.5" />
@@ -489,7 +510,7 @@ export default function MarkdownEditor({
             type="button"
             onClick={() => insertQuickBlock("image")}
             data-testid="toolbar-btn-image"
-            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1"
+            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
             title="Resim Yükle (veya panodan yapıştırın)"
           >
             <ImageIcon className="w-3.5 h-3.5" />
@@ -500,7 +521,7 @@ export default function MarkdownEditor({
             type="button"
             onClick={() => insertQuickBlock("reminder")}
             data-testid="toolbar-btn-reminder"
-            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1"
+            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
             title="Hatırlatma Ekle"
           >
             <BellRing className="w-3.5 h-3.5" />
@@ -511,7 +532,7 @@ export default function MarkdownEditor({
             type="button"
             onClick={() => insertQuickBlock("task")}
             data-testid="toolbar-btn-task"
-            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1"
+            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
             title="Görev Ekle"
           >
             <CheckSquare className="w-3.5 h-3.5" />
@@ -522,7 +543,7 @@ export default function MarkdownEditor({
             type="button"
             onClick={() => insertQuickBlock("link")}
             data-testid="toolbar-btn-link"
-            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1"
+            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
             title="Bağlantı Ekle"
           >
             <LinkIcon className="w-3.5 h-3.5" />
@@ -533,7 +554,7 @@ export default function MarkdownEditor({
             type="button"
             onClick={() => insertQuickBlock("heading")}
             data-testid="toolbar-btn-heading"
-            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1"
+            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
             title="Başlık Ekle"
           >
             <Heading className="w-3.5 h-3.5" />
@@ -544,15 +565,29 @@ export default function MarkdownEditor({
             type="button"
             onClick={() => insertQuickBlock("quote")}
             data-testid="toolbar-btn-quote"
-            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1"
+            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
             title="Alıntı Ekle"
           >
             <Quote className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <div className="text-[10px] text-muted-foreground/70 hidden sm:block">
-          Görseli direkt panodan (Ctrl+V) yapıştırabilirsiniz
+        <div className="flex items-center gap-2">
+          <div className="text-[10px] text-muted-foreground/70 hidden md:block">
+            Ctrl+V ile resim yapıştırın
+          </div>
+
+          {/* Full Focus Trigger Button */}
+          <button
+            type="button"
+            onClick={() => setFullFocus(true)}
+            data-testid="toolbar-btn-full-focus"
+            className="p-1 px-2 rounded-sm bg-primary/10 hover:bg-primary/20 text-primary border border-primary/25 transition-all flex items-center gap-1.5 font-medium cursor-pointer shadow-2xs"
+            title="Tam Odaklanma Moduna Geç (Full Focus)"
+          >
+            <Maximize2 className="w-3 h-3" />
+            <span className="text-[11px] font-semibold">Full Focus</span>
+          </button>
         </div>
       </div>
 
@@ -632,6 +667,142 @@ export default function MarkdownEditor({
                   </li>
                 ))}
           </ul>
+        </div>
+      )}
+
+      {/* Full Focus Overlay Mode */}
+      {fullFocus && (
+        <div
+          className="fixed inset-0 z-[100] bg-background flex flex-col p-4 sm:p-8 md:p-12 animate-in fade-in zoom-in-95 duration-150 overflow-hidden"
+          data-testid="full-focus-overlay"
+        >
+          {/* Full Focus Top Header */}
+          <div className="max-w-4xl w-full mx-auto flex items-center justify-between pb-3 mb-4 border-b border-border/50 select-none shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3 text-xs font-mono text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary font-semibold border border-primary/20 shadow-2xs">
+                <Sparkles className="w-3.5 h-3.5" /> Full Focus Modu
+              </span>
+              <span className="hidden sm:inline opacity-80">
+                • {wordCount} kelime, {charCount} karakter
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {onSubmit && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    onSubmit();
+                    setFullFocus(false);
+                  }}
+                  className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer shadow-xs"
+                  data-testid="full-focus-save-btn"
+                >
+                  <Save className="w-3.5 h-3.5 mr-1" /> Kaydet
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setFullFocus(false)}
+                className="h-8 text-xs cursor-pointer"
+                title="Odaktan Çık (Esc)"
+                data-testid="exit-full-focus-btn"
+              >
+                <Minimize2 className="w-3.5 h-3.5 mr-1.5" /> Odaktan Çık
+              </Button>
+            </div>
+          </div>
+
+          {/* Full Focus Canvas */}
+          <div className="max-w-4xl w-full mx-auto flex-1 flex flex-col min-h-0">
+            {title !== undefined && onTitleChange && (
+              <Input
+                value={title}
+                onChange={(e) => onTitleChange(e.target.value)}
+                placeholder="Not Başlığı (opsiyonel)..."
+                className="text-2xl sm:text-4xl font-serif border-0 px-0 focus-visible:ring-0 shadow-none bg-transparent mb-3 placeholder:text-muted-foreground/40 font-bold"
+                data-testid="full-focus-title-input"
+              />
+            )}
+
+            <Textarea
+              value={value}
+              onChange={onChangeTextarea}
+              onKeyDown={onKeyDown}
+              onPaste={onPaste}
+              autoFocus
+              placeholder={placeholder || "Yazın… ‘/’ ile blok tipi seçebilir veya resmi yapıştırabilirsiniz"}
+              className="flex-1 w-full resize-none border-0 bg-transparent focus-visible:ring-0 font-mono text-base sm:text-lg leading-relaxed p-0 shadow-none outline-none overflow-y-auto"
+              data-testid="full-focus-textarea"
+            />
+
+            {/* Floating Quick Action Bar */}
+            <div className="flex items-center justify-between px-3 py-2 bg-muted/60 border border-border/80 rounded-xl text-xs text-muted-foreground select-none mt-3 shrink-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => insertQuickBlock("wikilink")}
+                  className="p-1 px-2 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <Network className="w-3.5 h-3.5" />
+                  <span>[[</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertQuickBlock("timeslot")}
+                  className="p-1 px-2 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 text-primary cursor-pointer"
+                >
+                  <CalendarClock className="w-3.5 h-3.5" />
+                  <span>Zaman Bloğu</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertQuickBlock("image")}
+                  className="p-1 px-2 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  <span>Resim</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertQuickBlock("reminder")}
+                  className="p-1 px-2 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <BellRing className="w-3.5 h-3.5" />
+                  <span>Hatırlatma</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertQuickBlock("task")}
+                  className="p-1 px-2 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <CheckSquare className="w-3.5 h-3.5" />
+                  <span>Görev</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertQuickBlock("link")}
+                  className="p-1 px-2 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <LinkIcon className="w-3.5 h-3.5" />
+                  <span>Link</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertQuickBlock("heading")}
+                  className="p-1 px-2 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <Heading className="w-3.5 h-3.5" />
+                  <span>Başlık</span>
+                </button>
+              </div>
+
+              <div className="text-[11px] text-muted-foreground font-mono hidden sm:block">
+                Esc: Odaktan Çık • Ctrl+Enter: Kaydet
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

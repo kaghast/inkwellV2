@@ -612,7 +612,13 @@ export default function NoteDetail() {
             ) : contentMode === "outline" ? (
               <OutlineEditor initialContent={content} onChange={setContent} />
             ) : (
-              <MarkdownEditor value={content} onChange={setContent} />
+              <MarkdownEditor
+                value={content}
+                onChange={setContent}
+                title={title}
+                onTitleChange={setTitle}
+                onSubmit={save}
+              />
             )}
 
             <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-border/60">

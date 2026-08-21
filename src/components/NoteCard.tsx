@@ -430,6 +430,9 @@ export default function NoteCard({
           <MarkdownEditor
             value={content}
             onChange={setContent}
+            title={title}
+            onTitleChange={setTitle}
+            onSubmit={handleSaveEdit}
             placeholder="Not içeriğini girin..."
             autoFocus
           />

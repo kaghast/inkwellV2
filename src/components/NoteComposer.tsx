@@ -189,6 +189,8 @@ export default function NoteComposer({
       <MarkdownEditor
         value={content}
         onChange={setContent}
+        title={title}
+        onTitleChange={setTitle}
         placeholder="Markdown destekli. #etiket veya @kişi yazarak otomatik tamamlama..."
         autoFocus
         onSubmit={save}

@@ -253,6 +253,10 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
   - Markdown içerikleri için standart code fence (` ```timeslot `) formatında yeni bir zaman bloğu tasarlandı (`src/lib/timeslot.ts`).
   - **5 Temel Bilgi ve Süre Gösterimi:** Başlangıç zamanı, bitiş zamanı, işin adı/başlığı, detaylı açıklama ve blok rengi ile canlı hesaplanan süre rozeti (`⏱️ 1 sa 30 dk`) görsel kart üzerinde formatlanır (`TimeSlotCard.tsx`).
   - **Editör Entegrasyonu:** Editör araç çubuğuna ("Zaman Bloğu") butonu ve `/timeslot` slash komutu eklendi. Renk paleti seçimi ve canlı önizleme sunan `TimeSlotDialog.tsx` modalı entegre edildi.
+- **Tam Odaklanma Modu (Full Focus Mode):**
+  - Not oluşturma (`NoteComposer`), düzenleme (`NoteDetail`, `NoteCard`) ve ana Markdown editörüne (`MarkdownEditor.tsx`) **"Full Focus"** butonu entegre edildi.
+  - Tıklandığında tüm dikkat dağıtıcı öğeler (yan menü, üst bar, paneller vb.) gizlenerek tam ekran, sade ve geniş bir yazma moduna geçilir.
+  - Canlı kelime/karakter sayacı, doğrudan başlık düzenleme, hızlı blok araç çubuğu, `Esc` ile odaktan çıkış ve `Ctrl+S` / `Ctrl+Enter` ile anında kaydetme kısayolları eklendi.
 
 ---
 
