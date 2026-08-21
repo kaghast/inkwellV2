@@ -22,6 +22,9 @@ import {
   SlidersHorizontal,
   Layers,
   X,
+  ChevronDown,
+  Loader2,
+  CheckCircle2,
 } from "lucide-react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { toast } from "sonner";
@@ -157,8 +160,18 @@ export default function Dashboard({ mode }: Props) {
     extras.categoryIds.length > 0 ||
     mode !== "day";
 
-  const fetchNotes = useCallback(async () => {
-    const queryParams: Record<string, any> = {};
+  const [totalCount, setTotalCount] = useState(0);
+  const [filteredTotal, setFilteredTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const fetchNotes = useCallback(async (offset = 0, isAppend = false) => {
+    if (isAppend) setLoadingMore(true);
+    const queryParams: Record<string, any> = {
+      paginate: "true",
+      limit: 10,
+      offset,
+    };
 
     // In day mode, strictly filter notes by the selected date (e.g. today or clicked calendar day)
     if (mode === "day") {
@@ -185,14 +198,26 @@ export default function Dashboard({ mode }: Props) {
     if (extras.q.trim()) queryParams.q = extras.q.trim();
 
     try {
-      const { data } = await api.get<Note[]>("/notes", { params: queryParams });
-      let resNotes = Array.isArray(data) ? data : [];
-      if (extras.categoryIds.length > 0) {
-        resNotes = resNotes.filter((n) => n.category_id && extras.categoryIds.includes(n.category_id));
+      const { data } = await api.get<any>("/notes", { params: queryParams });
+      if (data && Array.isArray(data.items)) {
+        if (isAppend) {
+          setNotes((prev) => [...prev, ...data.items]);
+        } else {
+          setNotes(data.items);
+        }
+        setTotalCount(data.total ?? 0);
+        setFilteredTotal(data.filtered_total ?? 0);
+        setHasMore(Boolean(data.has_more));
+      } else if (Array.isArray(data)) {
+        setNotes(data);
+        setTotalCount(data.length);
+        setFilteredTotal(data.length);
+        setHasMore(false);
       }
-      setNotes(resNotes);
     } catch (err) {
       console.warn("Failed fetching notes:", err);
+    } finally {
+      setLoadingMore(false);
     }
   }, [mode, params.name, params.id, selectedDate, extras]);
 
@@ -205,7 +230,7 @@ export default function Dashboard({ mode }: Props) {
   }, [calMonth, fetchCalendar]);
 
   useEffect(() => {
-    fetchNotes();
+    fetchNotes(0, false);
   }, [fetchNotes]);
 
   function onSelectDate(iso: string) {
@@ -542,26 +567,59 @@ export default function Dashboard({ mode }: Props) {
                   )}
                 </div>
               ) : (
-                displayNotes.map((n) => (
-                  <NoteCard
-                    key={n.note_id}
-                    note={n}
-                    categoryMap={categoryMap}
-                    categories={categories}
-                    noteTypeMap={noteTypeMap}
-                    noteTypes={noteTypes}
-                    locationMap={locationMap}
-                    locations={locations}
-                    onDelete={onDeleteNote}
-                    onChanged={() => {
-                      fetchNotes();
-                      fetchCalendar(calMonth.year, calMonth.month);
-                      fetchAux();
-                      setRefreshKey((k) => k + 1);
-                    }}
-                    onLocationsChanged={fetchAux}
-                  />
-                ))
+                <>
+                  {displayNotes.map((n) => (
+                    <NoteCard
+                      key={n.note_id}
+                      note={n}
+                      categoryMap={categoryMap}
+                      categories={categories}
+                      noteTypeMap={noteTypeMap}
+                      noteTypes={noteTypes}
+                      locationMap={locationMap}
+                      locations={locations}
+                      onDelete={onDeleteNote}
+                      onChanged={() => {
+                        fetchNotes(0, false);
+                        fetchCalendar(calMonth.year, calMonth.month);
+                        fetchAux();
+                        setRefreshKey((k) => k + 1);
+                      }}
+                      onLocationsChanged={fetchAux}
+                    />
+                  ))}
+
+                  {/* Load More Section */}
+                  <div className="pt-2 pb-6 flex flex-col items-center justify-center gap-2">
+                    {hasMore ? (
+                      <button
+                        type="button"
+                        onClick={() => fetchNotes(notes.length, true)}
+                        disabled={loadingMore}
+                        className="flex items-center gap-2 px-5 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground shadow-2xs transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                      >
+                        {loadingMore ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                            <span>Daha Fazla Not Yükleniyor...</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="w-3.5 h-3.5 text-primary" />
+                            <span>Daha Fazla Yükle (10 Not Daha — {notes.length}/{filteredTotal})</span>
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      notes.length > 5 && (
+                        <div className="text-[11px] font-mono text-muted-foreground/70 flex items-center gap-1.5 py-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          <span>Tüm sonuçlar listelendi ({filteredTotal} Not)</span>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </>
               )}
             </div>
           </main>

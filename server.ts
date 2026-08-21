@@ -1810,7 +1810,20 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
 
 api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
-  const { date, tag, person, location_id, category_id, note_type_id, q, pinned } = req.query;
+  const {
+    date,
+    tag,
+    person,
+    location_id,
+    category_id,
+    note_type_id,
+    q,
+    pinned,
+    sortOrder,
+    limit: rawLimit,
+    offset: rawOffset,
+    paginate,
+  } = req.query;
 
   const rawTags = req.query.tags;
   const tagsArr: string[] = Array.isArray(rawTags)
@@ -1842,6 +1855,7 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
 
   try {
     const items = await db.select().from(notes).where(eq(notes.userId, userId)).orderBy(desc(notes.createdAt));
+    const totalUserNotes = items.length;
 
     let filtered = items.map((n) => ({
       note_id: n.noteId,
@@ -1895,13 +1909,54 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       filtered = filtered.filter((n) => n.location_id && targetLocs.includes(n.location_id));
     }
 
+    // Backend Search across Title, Content, Tags, People
     if (q && typeof q === "string" && q.trim()) {
       const queryStr = q.trim().toLowerCase();
       filtered = filtered.filter(
-        (n) => n.title.toLowerCase().includes(queryStr) || n.content.toLowerCase().includes(queryStr)
+        (n) =>
+          n.title.toLowerCase().includes(queryStr) ||
+          n.content.toLowerCase().includes(queryStr) ||
+          n.tags.some((t) => t.toLowerCase().includes(queryStr)) ||
+          n.people.some((p) => p.toLowerCase().includes(queryStr))
       );
     }
 
+    // Backend Sorting (newest first / oldest first)
+    filtered.sort((a, b) => {
+      const timeA = new Date(a.date || a.created_at).getTime();
+      const timeB = new Date(b.date || b.created_at).getTime();
+      if (sortOrder === "oldest") {
+        return timeA - timeB;
+      }
+      return timeB - timeA;
+    });
+
+    const filteredTotal = filtered.length;
+    const isPaginate = paginate === "true" || rawLimit !== undefined;
+
+    if (isPaginate) {
+      const limit = rawLimit !== undefined ? Math.max(1, parseInt(String(rawLimit), 10)) : 10;
+      const offset = rawOffset !== undefined ? Math.max(0, parseInt(String(rawOffset), 10)) : 0;
+      const paginatedItems = filtered.slice(offset, offset + limit);
+      const hasMore = offset + limit < filteredTotal;
+
+      res.setHeader("X-Total-Count", totalUserNotes.toString());
+      res.setHeader("X-Filtered-Count", filteredTotal.toString());
+      res.setHeader("X-Has-More", hasMore ? "true" : "false");
+
+      return res.json({
+        items: paginatedItems,
+        total: totalUserNotes,
+        filtered_total: filteredTotal,
+        has_more: hasMore,
+        limit,
+        offset,
+      });
+    }
+
+    res.setHeader("X-Total-Count", totalUserNotes.toString());
+    res.setHeader("X-Filtered-Count", filteredTotal.toString());
+    res.setHeader("X-Has-More", "false");
     res.json(filtered);
   } catch (err: any) {
     console.error("Failed fetching notes from db:", err);

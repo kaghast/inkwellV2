@@ -239,7 +239,12 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 
 ### 📅 21 Ağustos 2026
 - **Kapsamlı Proje Dokümantasyonu ve Sistem Mimarisi:**
-  - Tüm teknolojik bileşenlerin, veri modellerinin ve kronolojik geçmişin eksiksiz olarak `PROJECT_DOCUMENTATION.md` dosyasına işlenmesi tamamlandı.
+  - Tüm teknolojik bileşenlerin, veri modellerinin ve kronolojik geçmişin eksiksiz olarak `PROJECT_DOCUMENTATION.md` dosyasına işlenmesi tamamlandı (`b7a7432`).
+- **Sunucu Taraflı Arama, Sayfalama ve Listeleme Performansı:**
+  - `server.ts` içerisindeki `/notes` endpoint'i `q` parametresi ile başlık, içerik, etiket ve kişi alanlarını doğrudan arka uçta (backend) filtreleyecek şekilde güncellendi.
+  - Not listeleri 10'arlı gruplara bölündü (`limit=10`, `offset=0, 10, 20...`, `paginate=true`).
+  - Listenin sonuna gelindiğinde yeni 10 notu dinamik olarak çeken şık "Daha Fazla Yükle (Load More)" mekanizması `AllNotes.tsx` ve `Dashboard.tsx` sayfalarına entegre edildi.
+  - Gerçek toplam not sayısı (`total`) ve arama kriteriyle eşleşen toplam not sayısı (`filtered_total`) başlık rozetinde her zaman net olarak gösterilecek şekilde yapılandırıldı.
 
 ---
 

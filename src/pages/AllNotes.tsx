@@ -1,48 +1,68 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import api from "@/lib/api";
-import type { Note, Tag, Person, LocationItem, Category, ItemGroup, NoteType } from "@/types";
+import { Link } from "react-router-dom";
+import api, { formatApiError } from "@/lib/api";
+import type { Note, Category, LocationItem, NoteType, Tag, Person, ItemGroup } from "@/types";
 import TopBar from "@/components/TopBar";
 import Sidebar from "@/components/Sidebar";
 import NoteCard from "@/components/NoteCard";
 import NoteComposer from "@/components/NoteComposer";
-import SearchBar, { FilterChip } from "@/components/SearchBar";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   FileText,
-  Clock,
-  Calendar,
-  Layers,
   SlidersHorizontal,
   ArrowDownUp,
-  Tag as TagIcon,
-  Users,
-  MapPin,
-  Folder,
-  Boxes,
   Sparkles,
+  Search,
+  Loader2,
+  ChevronDown,
+  CheckCircle2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
+interface NotesResponse {
+  items: Note[];
+  total: number;
+  filtered_total: number;
+  has_more: boolean;
+  limit: number;
+  offset: number;
+}
+
 export default function AllNotes() {
+  const [leftOpen, setLeftOpen] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [filteredTotal, setFilteredTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Auxiliary data
   const [categories, setCategories] = useState<Category[]>([]);
   const [groups, setGroups] = useState<ItemGroup[]>([]);
-  const [noteTypes, setNoteTypes] = useState<NoteType[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [locations, setLocations] = useState<LocationItem[]>([]);
-  const [leftOpen, setLeftOpen] = useState(false);
+  const [noteTypes, setNoteTypes] = useState<NoteType[]>([]);
 
-  // Filters
+  // Filter States
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [selectedNoteType, setSelectedNoteType] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+
+  // Debounce search query to reduce unnecessary backend calls
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(searchQuery.trim());
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
   const locationMap = useMemo(() => {
     const m: Record<string, LocationItem> = {};
@@ -89,91 +109,79 @@ export default function AllNotes() {
     }
   }, []);
 
-  const fetchAllNotes = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await api.get<Note[]>("/notes");
-      setNotes(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      toast.error("Notlar yüklenirken bir hata oluştu");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Server-side paginated & filtered notes fetcher
+  const fetchNotes = useCallback(
+    async (offset = 0, isAppend = false) => {
+      if (isAppend) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+
+      try {
+        const params: Record<string, any> = {
+          paginate: "true",
+          limit: 10,
+          offset,
+          sortOrder,
+        };
+
+        if (debouncedQuery) params.q = debouncedQuery;
+        if (selectedTag) params.tag = selectedTag;
+        if (selectedPerson) params.person = selectedPerson;
+        if (selectedCategory) params.category_id = selectedCategory;
+        if (selectedLocation) params.location_id = selectedLocation;
+        if (selectedNoteType) params.note_type_id = selectedNoteType;
+
+        const { data } = await api.get<NotesResponse>("/notes", { params });
+
+        if (data && Array.isArray(data.items)) {
+          if (isAppend) {
+            setNotes((prev) => [...prev, ...data.items]);
+          } else {
+            setNotes(data.items);
+          }
+          setTotalCount(data.total ?? 0);
+          setFilteredTotal(data.filtered_total ?? 0);
+          setHasMore(Boolean(data.has_more));
+        } else if (Array.isArray(data)) {
+          // Fallback if legacy array returned
+          setNotes(data);
+          setTotalCount(data.length);
+          setFilteredTotal(data.length);
+          setHasMore(false);
+        }
+      } catch (err: any) {
+        toast.error(formatApiError(err) || "Notlar yüklenirken bir hata oluştu");
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [
+      debouncedQuery,
+      selectedTag,
+      selectedPerson,
+      selectedCategory,
+      selectedLocation,
+      selectedNoteType,
+      sortOrder,
+    ]
+  );
 
   useEffect(() => {
     fetchAux();
-    fetchAllNotes();
-  }, [fetchAux, fetchAllNotes]);
+  }, [fetchAux]);
 
-  // Filter and sort notes
-  const filteredNotes = useMemo(() => {
-    let list = Array.isArray(notes) ? [...notes] : [];
+  // Re-fetch from page 1 whenever filters, search query, or sorting change
+  useEffect(() => {
+    fetchNotes(0, false);
+  }, [fetchNotes]);
 
-    // Search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      list = list.filter(
-        (n) =>
-          n.title.toLowerCase().includes(q) ||
-          n.content.toLowerCase().includes(q) ||
-          n.tags.some((t) => t.toLowerCase().includes(q)) ||
-          n.people.some((p) => p.toLowerCase().includes(q))
-      );
-    }
-
-    // Tag filter
-    if (selectedTag) {
-      list = list.filter((n) => n.tags.includes(selectedTag));
-    }
-
-    // Person filter
-    if (selectedPerson) {
-      list = list.filter((n) => n.people.includes(selectedPerson));
-    }
-
-    // Category filter
-    if (selectedCategory) {
-      list = list.filter((n) => n.category_id === selectedCategory);
-    }
-
-    // Location filter
-    if (selectedLocation) {
-      list = list.filter((n) => n.location_id === selectedLocation);
-    }
-
-    // Note Type filter
-    if (selectedNoteType) {
-      list = list.filter((n) => {
-        if (selectedNoteType === "type_plain" || selectedNoteType === "default") {
-          return !n.note_type_id || n.note_type_id === "type_plain" || n.note_type_id === "default";
-        }
-        return n.note_type_id === selectedNoteType;
-      });
-    }
-
-    // Strict Sorting: En son tarihten en eskiye (newest first)
-    list.sort((a, b) => {
-      const timeA = new Date(a.date || a.created_at).getTime();
-      const timeB = new Date(b.date || b.created_at).getTime();
-      if (sortOrder === "newest") {
-        return timeB - timeA;
-      } else {
-        return timeA - timeB;
-      }
-    });
-
-    return list;
-  }, [
-    notes,
-    searchQuery,
-    selectedTag,
-    selectedPerson,
-    selectedCategory,
-    selectedLocation,
-    selectedNoteType,
-    sortOrder,
-  ]);
+  const handleLoadMore = () => {
+    if (loadingMore || !hasMore) return;
+    fetchNotes(notes.length, true);
+  };
 
   const activeFilterCount =
     (selectedTag ? 1 : 0) +
@@ -206,7 +214,7 @@ export default function AllNotes() {
             locations={locations}
             onChange={() => {
               fetchAux();
-              fetchAllNotes();
+              fetchNotes(0, false);
             }}
           />
         </aside>
@@ -223,28 +231,29 @@ export default function AllNotes() {
                 locations={locations}
                 onChange={() => {
                   fetchAux();
-                  fetchAllNotes();
+                  fetchNotes(0, false);
                 }}
+                onNavigate={() => setLeftOpen(false)}
               />
             </div>
           </SheetContent>
         </Sheet>
 
-        {/* Main Content Feed */}
+        {/* Main Content Area */}
         <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 space-y-6 max-w-4xl mx-auto">
-          {/* Header Banner */}
+          {/* Header Title & Sorting Control Bar */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border">
             <div>
-              <h1 className="font-serif text-2xl sm:text-3xl font-bold flex items-center gap-2.5 text-foreground">
-                <FileText className="w-6 h-6 text-primary" strokeWidth={1.5} />
+              <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                <FileText className="w-6 h-6 text-primary" />
                 <span>Bütün Notlar</span>
               </h1>
               <p className="text-xs text-muted-foreground mt-1">
-                Tüm zamanlara ait notlarınız kronolojik olarak en son tarihten en eskiye doğru listeleniyor.
+                Tüm notlarınız sunucu taraflı hızlı arama ve 10'arlı sayfalama ile listelenmektedir.
               </p>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
               <button
                 type="button"
                 onClick={() => setSortOrder(sortOrder === "newest" ? "oldest" : "newest")}
@@ -256,8 +265,13 @@ export default function AllNotes() {
                 <span>{sortOrder === "newest" ? "Yeniden Eskiye" : "Eskiden Yeniye"}</span>
               </button>
 
-              <span className="text-xs font-mono bg-muted text-muted-foreground px-2.5 py-1.5 rounded-lg border border-border">
-                {filteredNotes.length} / {notes.length} Not
+              {/* Total note count displays both currently loaded, matching filtered count and total count across system */}
+              <span className="text-xs font-mono bg-muted text-foreground px-3 py-1.5 rounded-lg border border-border flex items-center gap-1.5 shadow-2xs font-semibold">
+                <span>
+                  {debouncedQuery || activeFilterCount > 0
+                    ? `${filteredTotal} Sonuç (Toplam: ${totalCount})`
+                    : `Toplam: ${totalCount} Not`}
+                </span>
               </span>
             </div>
           </div>
@@ -273,29 +287,29 @@ export default function AllNotes() {
               categories={categories}
               locations={locations}
               noteTypes={noteTypes}
-              onCreated={fetchAllNotes}
+              onCreated={() => fetchNotes(0, false)}
             />
           </div>
 
-          {/* Search & Dynamic Filter Chips Bar */}
+          {/* Search & Dynamic Filter Chips Bar (Backend Powered) */}
           <div className="space-y-2.5">
             <div className="relative">
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Tüm notlar içinde metin, #etiket, @kişi veya başlık ara..."
-                className="w-full h-10 pl-10 pr-4 rounded-xl border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:border-primary shadow-2xs"
+                placeholder="Tüm notlar içinde metin, #etiket, @kişi veya başlık ara (Sunucu Araması)..."
+                className="w-full h-10 pl-10 pr-9 rounded-xl border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:border-primary shadow-2xs"
                 data-testid="all-notes-search-input"
               />
-              <FileText className="w-4 h-4 text-muted-foreground absolute left-3.5 top-3" />
+              <Search className="w-4 h-4 text-muted-foreground absolute left-3.5 top-3" />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-3 top-2.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                  className="absolute right-3 top-2.5 text-xs text-muted-foreground hover:text-foreground p-0.5 cursor-pointer"
                 >
-                  ✕
+                  <X className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
@@ -317,22 +331,6 @@ export default function AllNotes() {
                   {noteTypes.map((nt) => (
                     <option key={nt.type_id} value={nt.type_id}>
                       {nt.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              {/* Category Filter */}
-              {categories.length > 0 && (
-                <select
-                  value={selectedCategory || ""}
-                  onChange={(e) => setSelectedCategory(e.target.value || null)}
-                  className="h-7 px-2 text-[11px] rounded-md border border-border bg-secondary/60 text-foreground cursor-pointer shrink-0 font-medium"
-                >
-                  <option value="">Tüm Kategoriler</option>
-                  {categories.map((c) => (
-                    <option key={c.category_id} value={c.category_id}>
-                      {c.name}
                     </option>
                   ))}
                 </select>
@@ -369,10 +367,11 @@ export default function AllNotes() {
 
           {/* Notes List Feed */}
           {loading ? (
-            <div className="py-16 text-center text-xs text-muted-foreground">
-              Notlar yükleniyor...
+            <div className="py-20 text-center text-xs text-muted-foreground flex flex-col items-center justify-center gap-2">
+              <Loader2 className="w-5 h-5 text-primary animate-spin" />
+              <span>Notlar yükleniyor...</span>
             </div>
-          ) : filteredNotes.length === 0 ? (
+          ) : notes.length === 0 ? (
             <div className="py-16 text-center rounded-xl border border-dashed border-border p-8 bg-card/40 space-y-3">
               <FileText className="w-8 h-8 text-muted-foreground/40 mx-auto" />
               <div className="font-serif text-base font-semibold text-foreground">
@@ -395,7 +394,7 @@ export default function AllNotes() {
             </div>
           ) : (
             <div className="space-y-4" data-testid="all-notes-list">
-              {filteredNotes.map((note) => (
+              {notes.map((note) => (
                 <NoteCard
                   key={note.note_id}
                   note={note}
@@ -405,10 +404,39 @@ export default function AllNotes() {
                   categories={categories}
                   noteTypeMap={noteTypeMap}
                   noteTypes={noteTypes}
-                  onChanged={fetchAllNotes}
-                  onDelete={fetchAllNotes}
+                  onChanged={() => fetchNotes(0, false)}
+                  onDelete={() => fetchNotes(0, false)}
                 />
               ))}
+
+              {/* 10-Item Load More Section */}
+              <div className="pt-4 pb-8 flex flex-col items-center justify-center gap-2">
+                {hasMore ? (
+                  <button
+                    type="button"
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                        <span>Daha Fazla Not Yükleniyor...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="w-4 h-4 text-primary" />
+                        <span>Daha Fazla Yükle (10 Not Daha — {notes.length}/{filteredTotal})</span>
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <div className="text-[11px] font-mono text-muted-foreground/80 flex items-center gap-1.5 py-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Tüm sonuçlar listelendi ({filteredTotal} / {totalCount} Not)</span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </main>
