@@ -245,10 +245,10 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
   - Not listeleri 10'arlı gruplara bölündü (`limit=10`, `offset=0, 10, 20...`, `paginate=true`).
   - Listenin sonuna gelindiğinde yeni 10 notu dinamik olarak çeken şık "Daha Fazla Yükle (Load More)" mekanizması `AllNotes.tsx` ve `Dashboard.tsx` sayfalarına entegre edildi.
 - **Not Arşivleme & Kilitli Eylemler Mekanizması:**
-  - Veritabanı ve TypeScript modellerine `archived: boolean` alanı eklendi.
-  - Not kartlarının üç nokta (`...`) menüsüne ve not detay sayfasına **"Arşivle" / "Arşivden Çıkar"** seçeneği entegre edildi (`PATCH /notes/:note_id/archive`).
-  - Bir not arşivlendiğinde `Edit` (Düzenle) ve `Delete` (Sil) eylemleri hem arayüzde kilitlenir hem de arka uçta (`PUT`/`DELETE` 403 Forbidden) korumaya alınır.
-  - Arşivlenen notlar silik, gri tonlu (`opacity-60 grayscale-[40%] border-dashed bg-muted/30`) ve "Arşivlendi" rozetiyle listelenmeye devam eder; arşivden çıkarıldığında tüm düzenleme ve silme yetenekleri eski haline döner.
+  - Veritabanı ve TypeScript modellerine `archived: boolean` alanı eklendi (`ALTER TABLE notes ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false;`).
+  - Not kartlarının üç nokta (`...`) menüsüne ve not detay sayfasına **"Arşivle" / "Arşivden Çıkar"** seçeneği entegre edildi (`PATCH`/`POST`/`PUT /notes/:note_id/archive`).
+  - Bir not arşivlendiğinde `Edit` (Düzenle), `Delete` (Sil) ve `Pin` (Sabitleme) eylemleri hem arayüzde kilitlenir hem de arka uçta (`PUT`/`DELETE`/`PATCH /pin` 403 Forbidden) korumaya alınır.
+  - Arşivlenen notlar varsa panodan otomatik olarak çıkarılır (`pinned = false`), arayüzde silik ve gri tonlu (`opacity-60 grayscale-[40%] border-dashed bg-muted/30`) olarak ve "Arşivlendi" rozetiyle listelenir; arşivden çıkarıldığında tüm düzenleme, silme ve pinleme yetenekleri anında eski haline döner.
 
 ---
 
