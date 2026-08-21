@@ -251,6 +251,7 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
   - Arşivlenen notlar varsa panodan otomatik olarak çıkarılır (`pinned = false`), arayüzde silik ve gri tonlu (`opacity-60 grayscale-[40%] border-dashed bg-muted/30`) olarak ve "Arşivlendi" rozetiyle listelenir; arşivden çıkarıldığında tüm düzenleme, silme ve pinleme yetenekleri anında eski haline döner.
 - **Yeni Zaman Bloğu (Time Slot) Not Bloğu ve Otomatik Süre Hesaplama:**
   - Markdown içerikleri için standart code fence (` ```timeslot `) formatında yeni bir zaman bloğu tasarlandı (`src/lib/timeslot.ts`).
+  - **CSS RGBA Renk Formatı ve Etiket Çakışmasını Önleme:** Hex renk kodlarının (`#3b82f6`) sistem tarafından etiket (#tag) olarak algılanmasını önlemek için standart CSS `rgba(...)` renk formatına (`rgba(59, 130, 246, 1)`) geçildi; sunucu tarafındaki etiket/kişi ayıklama regex'i kod bloklarını filtreleyecek şekilde güçlendirildi.
   - **5 Temel Bilgi ve Süre Gösterimi:** Başlangıç zamanı, bitiş zamanı, işin adı/başlığı, detaylı açıklama ve blok rengi ile canlı hesaplanan süre rozeti (`⏱️ 1 sa 30 dk`) görsel kart üzerinde formatlanır (`TimeSlotCard.tsx`).
   - **Editör Entegrasyonu:** Editör araç çubuğuna ("Zaman Bloğu") butonu ve `/timeslot` slash komutu eklendi. Renk paleti seçimi ve canlı önizleme sunan `TimeSlotDialog.tsx` modalı entegre edildi.
 - **3 İçerik Düzenleme Modunda Tam Odaklanma (Full Focus Mode):**

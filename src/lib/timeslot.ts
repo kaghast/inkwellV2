@@ -6,27 +6,49 @@ export interface TimeSlotData {
   duration?: string; // e.g. "1 saat 30 dk"
   title: string; // e.g. "Proje Toplantısı"
   description?: string; // e.g. "Sprint hedefleri ve tasarım revizyonları"
-  color?: string; // Hex color code e.g. "#3b82f6"
+  color?: string; // CSS rgba color e.g. "rgba(59, 130, 246, 1)"
 }
 
 export interface PresetColor {
   name: string;
-  hex: string;
+  rgba: string;
   bg: string;
   border: string;
 }
 
 export const TIME_SLOT_PRESET_COLORS: PresetColor[] = [
-  { name: "Mavi", hex: "#3b82f6", bg: "rgba(59, 130, 246, 0.12)", border: "rgba(59, 130, 246, 0.35)" },
-  { name: "Zümrüt", hex: "#10b981", bg: "rgba(16, 185, 129, 0.12)", border: "rgba(16, 185, 129, 0.35)" },
-  { name: "Mor", hex: "#8b5cf6", bg: "rgba(139, 92, 246, 0.12)", border: "rgba(139, 92, 246, 0.35)" },
-  { name: "Kehribar", hex: "#f59e0b", bg: "rgba(245, 158, 11, 0.12)", border: "rgba(245, 158, 11, 0.35)" },
-  { name: "Mercan", hex: "#ef4444", bg: "rgba(239, 68, 68, 0.12)", border: "rgba(239, 68, 68, 0.35)" },
-  { name: "Pembe", hex: "#ec4899", bg: "rgba(236, 72, 153, 0.12)", border: "rgba(236, 72, 153, 0.35)" },
-  { name: "Camgöbeği", hex: "#06b6d4", bg: "rgba(6, 182, 212, 0.12)", border: "rgba(6, 182, 212, 0.35)" },
-  { name: "İndigo", hex: "#6366f1", bg: "rgba(99, 102, 241, 0.12)", border: "rgba(99, 102, 241, 0.35)" },
-  { name: "Kömür", hex: "#64748b", bg: "rgba(100, 116, 139, 0.12)", border: "rgba(100, 116, 139, 0.35)" },
+  { name: "Mavi", rgba: "rgba(59, 130, 246, 1)", bg: "rgba(59, 130, 246, 0.12)", border: "rgba(59, 130, 246, 0.35)" },
+  { name: "Zümrüt", rgba: "rgba(16, 185, 129, 1)", bg: "rgba(16, 185, 129, 0.12)", border: "rgba(16, 185, 129, 0.35)" },
+  { name: "Mor", rgba: "rgba(139, 92, 246, 1)", bg: "rgba(139, 92, 246, 0.12)", border: "rgba(139, 92, 246, 0.35)" },
+  { name: "Kehribar", rgba: "rgba(245, 158, 11, 1)", bg: "rgba(245, 158, 11, 0.12)", border: "rgba(245, 158, 11, 0.35)" },
+  { name: "Mercan", rgba: "rgba(239, 68, 68, 1)", bg: "rgba(239, 68, 68, 0.12)", border: "rgba(239, 68, 68, 0.35)" },
+  { name: "Pembe", rgba: "rgba(236, 72, 153, 1)", bg: "rgba(236, 72, 153, 0.12)", border: "rgba(236, 72, 153, 0.35)" },
+  { name: "Camgöbeği", rgba: "rgba(6, 182, 212, 1)", bg: "rgba(6, 182, 212, 0.12)", border: "rgba(6, 182, 212, 0.35)" },
+  { name: "İndigo", rgba: "rgba(99, 102, 241, 1)", bg: "rgba(99, 102, 241, 0.12)", border: "rgba(99, 102, 241, 0.35)" },
+  { name: "Kömür", rgba: "rgba(100, 116, 139, 1)", bg: "rgba(100, 116, 139, 0.12)", border: "rgba(100, 116, 139, 0.35)" },
 ];
+
+/**
+ * Converts any hex or rgb/rgba string into a standard rgba(r, g, b, alpha) string
+ */
+export function hexToRgba(hexOrRgba: string, alpha = 1): string {
+  if (!hexOrRgba) return `rgba(59, 130, 246, ${alpha})`;
+  const trimmed = hexOrRgba.trim();
+  if (trimmed.startsWith("rgba") || trimmed.startsWith("rgb")) {
+    if (alpha !== 1 && trimmed.startsWith("rgb(")) {
+      return trimmed.replace("rgb(", "rgba(").replace(")", `, ${alpha})`);
+    }
+    return trimmed;
+  }
+  let c = trimmed.replace("#", "");
+  if (c.length === 3) c = c.split("").map((x) => x + x).join("");
+  const num = parseInt(c, 16);
+  if (isNaN(num)) return `rgba(59, 130, 246, ${alpha})`;
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 /**
  * Calculates human-readable duration between two times (HH:mm or ISO strings).
@@ -95,7 +117,7 @@ export function parseTimeSlotBlock(rawContent: string): TimeSlotData {
     end: "",
     title: "",
     description: "",
-    color: "#3b82f6",
+    color: "rgba(59, 130, 246, 1)",
     duration: "",
   };
 
@@ -119,7 +141,8 @@ export function parseTimeSlotBlock(rawContent: string): TimeSlotData {
         continue;
       }
       if (lower.startsWith("color:") || lower.startsWith("renk:")) {
-        data.color = trimmed.replace(/^[^:]+:\s*/i, "").trim();
+        const rawCol = trimmed.replace(/^[^:]+:\s*/i, "").trim();
+        data.color = hexToRgba(rawCol);
         continue;
       }
       if (lower.startsWith("duration:") || lower.startsWith("süre:") || lower.startsWith("sure:")) {
@@ -159,11 +182,12 @@ export function parseTimeSlotBlock(rawContent: string): TimeSlotData {
 export function serializeTimeSlotBlock(data: TimeSlotData): string {
   const calc = calculateDuration(data.start, data.end);
   const dur = calc.durationText || data.duration || "";
+  const safeColor = hexToRgba(data.color || "rgba(59, 130, 246, 1)");
   let md = "```timeslot\n";
   md += `start: ${data.start}\n`;
   md += `end: ${data.end}\n`;
   if (dur) md += `duration: ${dur}\n`;
-  md += `color: ${data.color || "#3b82f6"}\n`;
+  md += `color: ${safeColor}\n`;
   md += `title: ${data.title || "İş"}\n`;
   if (data.description && data.description.trim()) {
     md += `description: ${data.description.trim()}\n`;

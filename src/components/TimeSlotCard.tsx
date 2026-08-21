@@ -1,6 +1,12 @@
 import React from "react";
 import { Clock, Calendar, Timer, Tag } from "lucide-react";
-import { parseTimeSlotBlock, TimeSlotData, calculateDuration, TIME_SLOT_PRESET_COLORS } from "@/lib/timeslot";
+import {
+  parseTimeSlotBlock,
+  TimeSlotData,
+  calculateDuration,
+  TIME_SLOT_PRESET_COLORS,
+  hexToRgba,
+} from "@/lib/timeslot";
 
 interface Props {
   raw?: string;
@@ -13,17 +19,22 @@ export default function TimeSlotCard({ raw, data: propData }: Props) {
     end: "",
     title: "",
     description: "",
-    color: "#3b82f6",
+    color: "rgba(59, 130, 246, 1)",
   });
 
-  const color = data.color || "#3b82f6";
+  const rawColor = data.color || "rgba(59, 130, 246, 1)";
+  const color = hexToRgba(rawColor, 1);
   const calc = calculateDuration(data.start, data.end);
   const durationText = data.duration || calc.durationText;
 
-  // Find matching preset or construct styles
-  const preset = TIME_SLOT_PRESET_COLORS.find((p) => p.hex.toLowerCase() === color.toLowerCase());
-  const bgColor = preset ? preset.bg : `${color}18`;
-  const borderColor = preset ? preset.border : `${color}40`;
+  // Find matching preset or construct rgba styles
+  const clean = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+  const preset = TIME_SLOT_PRESET_COLORS.find(
+    (p) => clean(p.rgba) === clean(color) || clean(p.name) === clean(rawColor)
+  );
+
+  const bgColor = preset ? preset.bg : hexToRgba(color, 0.12);
+  const borderColor = preset ? preset.border : hexToRgba(color, 0.35);
 
   return (
     <div

@@ -77,10 +77,12 @@ const MENTION_RE = /(?<!\S)@([a-zA-Z0-9_\-ğüşıöçĞÜŞİÖÇ]+)(?!\S)/gu;
 const REMINDER_RE = /```reminder\s*\n([^\n]+)\n([\s\S]*?)\n?```/gi;
 
 function extractTags(content: string): string[] {
+  // Strip fenced code blocks before extracting tags
+  const cleanContent = (content || "").replace(/```[\s\S]*?```/g, "");
   const extracted: string[] = [];
   const re = new RegExp(TAG_RE.source, "gu");
   let m;
-  while ((m = re.exec(content || "")) !== null) {
+  while ((m = re.exec(cleanContent)) !== null) {
     const t = m[1].toLowerCase();
     if (!extracted.includes(t)) extracted.push(t);
   }
@@ -88,10 +90,12 @@ function extractTags(content: string): string[] {
 }
 
 function extractPeople(content: string): string[] {
+  // Strip fenced code blocks before extracting people
+  const cleanContent = (content || "").replace(/```[\s\S]*?```/g, "");
   const extracted: string[] = [];
   const re = new RegExp(MENTION_RE.source, "gu");
   let m;
-  while ((m = re.exec(content || "")) !== null) {
+  while ((m = re.exec(cleanContent)) !== null) {
     const p = m[1].toLowerCase();
     if (!extracted.includes(p)) extracted.push(p);
   }

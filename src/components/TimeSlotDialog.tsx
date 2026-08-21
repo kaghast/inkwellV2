@@ -42,7 +42,7 @@ export default function TimeSlotDialog({
   const [end, setEnd] = useState(initialData?.end || defaultEnd);
   const [title, setTitle] = useState(initialData?.title || "");
   const [description, setDescription] = useState(initialData?.description || "");
-  const [color, setColor] = useState(initialData?.color || "#3b82f6");
+  const [color, setColor] = useState(initialData?.color || "rgba(59, 130, 246, 1)");
 
   // Reset when dialog opens
   useEffect(() => {
@@ -51,7 +51,7 @@ export default function TimeSlotDialog({
       setEnd(initialData?.end || defaultEnd);
       setTitle(initialData?.title || "");
       setDescription(initialData?.description || "");
-      setColor(initialData?.color || "#3b82f6");
+      setColor(initialData?.color || "rgba(59, 130, 246, 1)");
     }
   }, [open, initialData]);
 
@@ -100,11 +100,11 @@ export default function TimeSlotDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {/* Start & End Times with Live Duration Calculation */}
+          {/* Start & End Time Row */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-muted-foreground mb-1 block">
-                Başlangıç Zamanı
+                Başlangıç Zamanı <span className="text-destructive">*</span>
               </label>
               <Input
                 type="time"
@@ -116,7 +116,7 @@ export default function TimeSlotDialog({
             </div>
             <div>
               <label className="text-xs font-semibold text-muted-foreground mb-1 block">
-                Bitiş Zamanı
+                Bitiş Zamanı <span className="text-destructive">*</span>
               </label>
               <Input
                 type="time"
@@ -177,19 +177,20 @@ export default function TimeSlotDialog({
             </label>
             <div className="flex items-center gap-2 flex-wrap">
               {TIME_SLOT_PRESET_COLORS.map((p) => {
-                const isSelected = color.toLowerCase() === p.hex.toLowerCase();
+                const clean = (s: string) => (s || "").replace(/\s+/g, "").toLowerCase();
+                const isSelected = clean(color) === clean(p.rgba) || clean(color) === clean(p.name);
                 return (
                   <button
-                    key={p.hex}
+                    key={p.rgba}
                     type="button"
-                    onClick={() => setColor(p.hex)}
+                    onClick={() => setColor(p.rgba)}
                     title={p.name}
                     className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer ${
                       isSelected
                         ? "ring-2 ring-foreground ring-offset-2 ring-offset-background scale-110"
                         : "hover:scale-105 opacity-80 hover:opacity-100"
                     }`}
-                    style={{ backgroundColor: p.hex }}
+                    style={{ backgroundColor: p.rgba }}
                   >
                     {isSelected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
                   </button>
