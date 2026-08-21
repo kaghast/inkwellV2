@@ -72,12 +72,16 @@ export default function NoteCard({
   const detailPath = `/note/${note.slug || note.note_id}`;
 
   async function handleTogglePin() {
+    if (isArchived) {
+      toast.error("Arşivlenmiş notlar panoya sabitlenemez");
+      return;
+    }
     try {
       await api.patch(`/notes/${note.note_id}/pin`);
       toast.success(note.pinned ? "Sabitleme kaldırıldı" : "Not panoya sabitlendi");
       onChanged();
-    } catch {
-      toast.error("Sabitleme işlemi başarısız");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Sabitleme işlemi başarısız");
     }
   }
 
@@ -320,20 +324,22 @@ export default function NoteCard({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-1 shrink-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleTogglePin}
-            className={`h-7 w-7 rounded-md cursor-pointer ${
-              note.pinned
-                ? "text-primary hover:text-primary/80"
-                : "text-muted-foreground hover:text-foreground opacity-60 group-hover:opacity-100"
-            }`}
-            data-testid={`pin-btn-${note.note_id}`}
-            title={note.pinned ? "Sabitlemeyi Kaldır" : "Panoya Sabitle"}
-          >
-            <Pin className={`w-3.5 h-3.5 ${note.pinned ? "fill-primary" : ""}`} strokeWidth={1.5} />
-          </Button>
+          {!isArchived && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleTogglePin}
+              className={`h-7 w-7 rounded-md cursor-pointer ${
+                note.pinned
+                  ? "text-primary hover:text-primary/80"
+                  : "text-muted-foreground hover:text-foreground opacity-60 group-hover:opacity-100"
+              }`}
+              data-testid={`pin-btn-${note.note_id}`}
+              title={note.pinned ? "Sabitlemeyi Kaldır" : "Panoya Sabitle"}
+            >
+              <Pin className={`w-3.5 h-3.5 ${note.pinned ? "fill-primary" : ""}`} strokeWidth={1.5} />
+            </Button>
+          )}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

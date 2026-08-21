@@ -2156,6 +2156,9 @@ api.patch("/notes/:note_id/pin", authMiddleware, async (req: AuthRequest, res: R
       return res.status(404).json({ detail: "Not bulunamadı" });
     }
     const current = found[0];
+    if (current.archived) {
+      return res.status(403).json({ detail: "Arşivlenmiş notlar panoya sabitlenemez. Lütfen önce arşivden çıkarın." });
+    }
     const newPinned = !current.pinned;
     await db.update(notes).set({ pinned: newPinned, updatedAt: new Date() }).where(eq(notes.noteId, current.noteId));
     
@@ -2199,7 +2202,15 @@ const handleArchiveToggle = async (req: AuthRequest, res: Response) => {
     }
     const current = found[0];
     const newArchived = req.body?.archived !== undefined ? Boolean(req.body.archived) : !current.archived;
-    await db.update(notes).set({ archived: newArchived, updatedAt: new Date() }).where(eq(notes.noteId, current.noteId));
+    const updateValues: any = {
+      archived: newArchived,
+      updatedAt: new Date(),
+    };
+    // Auto unpin when archiving
+    if (newArchived) {
+      updateValues.pinned = false;
+    }
+    await db.update(notes).set(updateValues).where(eq(notes.noteId, current.noteId));
     
     const updated = (await db.select().from(notes).where(eq(notes.noteId, current.noteId)).limit(1))[0];
     res.json({

@@ -231,13 +231,17 @@ export default function NoteDetail() {
 
   async function handleTogglePin() {
     if (!note) return;
+    if (note.archived) {
+      toast.error("Arşivlenmiş notlar panoya sabitlenemez");
+      return;
+    }
     try {
       await api.patch(`/notes/${note.note_id}/pin`);
       const newPinned = !note.pinned;
       setNote((prev) => (prev ? { ...prev, pinned: newPinned } : prev));
       toast.success(newPinned ? "Not panoya sabitlendi" : "Sabitleme kaldırıldı");
-    } catch {
-      toast.error("Sabitleme durumu değiştirilemedi");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Sabitleme durumu değiştirilemedi");
     }
   }
 
@@ -678,18 +682,20 @@ export default function NoteDetail() {
                 {note.title || <span className="text-muted-foreground">Başlıksız Not</span>}
               </h1>
               <div className="flex items-center gap-1 shrink-0">
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={handleTogglePin}
-                  title={note.pinned ? "Sabitlemeyi Kaldır" : "Panoya Sabitle"}
-                  data-testid="pin-note-btn"
-                >
-                  <Pin
-                    className={`w-4 h-4 ${note.pinned ? "fill-primary text-primary" : "text-muted-foreground"}`}
-                    strokeWidth={1.5}
-                  />
-                </Button>
+                {!note.archived && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={handleTogglePin}
+                    title={note.pinned ? "Sabitlemeyi Kaldır" : "Panoya Sabitle"}
+                    data-testid="pin-note-btn"
+                  >
+                    <Pin
+                      className={`w-4 h-4 ${note.pinned ? "fill-primary text-primary" : "text-muted-foreground"}`}
+                      strokeWidth={1.5}
+                    />
+                  </Button>
+                )}
 
                 {/* Archive / Unarchive Button */}
                 <Button
