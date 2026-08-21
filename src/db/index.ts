@@ -171,6 +171,20 @@ export async function initDatabaseSchema() {
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS note_versions (
+      version_id TEXT PRIMARY KEY,
+      note_id TEXT NOT NULL REFERENCES notes(note_id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+      version_number INTEGER NOT NULL DEFAULT 1,
+      title TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '',
+      date TEXT NOT NULL,
+      tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+      people JSONB NOT NULL DEFAULT '[]'::jsonb,
+      custom_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
+      change_summary TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS reminders (
       reminder_id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,

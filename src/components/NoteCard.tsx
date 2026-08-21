@@ -16,11 +16,14 @@ import {
   X,
   Archive,
   ArchiveRestore,
+  History,
 } from "lucide-react";
 import api from "@/lib/api";
 import type { Note, LocationItem, Category, NoteType } from "@/types";
 import MarkdownView from "@/components/MarkdownView";
 import MarkdownEditor from "@/components/MarkdownEditor";
+import NoteCommentsSection from "@/components/NoteCommentsSection";
+import NoteVersionsDialog from "@/components/NoteVersionsDialog";
 import { CustomFieldsForm, CustomFieldsView } from "@/components/CustomFieldsRenderer";
 import { formatDisplayDatetime, toDateTimeLocal } from "@/lib/datetime";
 import { Button } from "@/components/ui/button";
@@ -63,6 +66,7 @@ export default function NoteCard({
   const [saving, setSaving] = useState(false);
   const [editingDateInline, setEditingDateInline] = useState(false);
   const [inlineDateTimeVal, setInlineDateTimeVal] = useState(toDateTimeLocal(note.date));
+  const [versionsOpen, setVersionsOpen] = useState(false);
 
   const isArchived = Boolean(note.archived);
   const loc = note.location_id ? locationMap[note.location_id] : null;
@@ -360,6 +364,16 @@ export default function NoteCard({
                 </Link>
               </DropdownMenuItem>
 
+              {/* Version History Action */}
+              <DropdownMenuItem
+                onClick={() => setVersionsOpen(true)}
+                className="text-xs cursor-pointer"
+                data-testid={`note-versions-btn-${note.note_id}`}
+              >
+                <History className="w-3.5 h-3.5 mr-2 text-primary" />
+                Versiyon Geçmişi
+              </DropdownMenuItem>
+
               {/* Archive / Unarchive Action */}
               <DropdownMenuItem
                 onClick={handleToggleArchive}
@@ -514,6 +528,36 @@ export default function NoteCard({
           ))}
         </div>
       )}
+
+      {/* Embedded Comments Section (Read Mode) */}
+      {!editing && (
+        <NoteCommentsSection
+          noteId={note.note_id}
+          content={note.content}
+          disabled={isArchived}
+          defaultExpanded={false}
+          onContentChange={async (newContent, summary) => {
+            try {
+              await api.put(`/notes/${note.note_id}`, {
+                content: newContent,
+                change_summary: summary || "Yorum güncellendi",
+              });
+              onChanged();
+            } catch (err: any) {
+              toast.error("Yorum kaydedilemedi: " + err.message);
+            }
+          }}
+        />
+      )}
+
+      {/* Version History Modal */}
+      <NoteVersionsDialog
+        open={versionsOpen}
+        onOpenChange={setVersionsOpen}
+        noteId={note.note_id}
+        noteTitle={note.title}
+        onRestored={() => onChanged()}
+      />
     </article>
   );
 }

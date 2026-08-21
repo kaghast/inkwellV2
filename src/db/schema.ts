@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, doublePrecision, vector, jsonb, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, doublePrecision, vector, jsonb, index, integer } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Users table (Stores logged in user accounts)
@@ -129,6 +129,30 @@ export const notes = pgTable(
   ]
 );
 
+// Note Versions table (Stores historical versions of notes)
+export const noteVersions = pgTable(
+  'note_versions',
+  {
+    versionId: text('version_id').primaryKey(),
+    noteId: text('note_id').references(() => notes.noteId, { onDelete: 'cascade' }).notNull(),
+    userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }).notNull(),
+    versionNumber: integer('version_number').default(1).notNull(),
+    title: text('title').default('').notNull(),
+    content: text('content').default('').notNull(),
+    date: text('date').notNull(),
+    tags: jsonb('tags').$type<string[]>().default([]).notNull(),
+    people: jsonb('people').$type<string[]>().default([]).notNull(),
+    customFields: jsonb('custom_fields').$type<Record<string, any>>().default({}).notNull(),
+    changeSummary: text('change_summary'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('ver_note_idx').on(table.noteId),
+    index('ver_user_idx').on(table.userId),
+    index('ver_num_idx').on(table.noteId, table.versionNumber),
+  ]
+);
+
 // Reminders table
 export const reminders = pgTable('reminders', {
   reminderId: text('reminder_id').primaryKey(),
@@ -156,6 +180,7 @@ export const files = pgTable('files', {
 // Relationships
 export const usersRelations = relations(users, ({ many }) => ({
   notes: many(notes),
+  noteVersions: many(noteVersions),
   noteTypes: many(noteTypes),
   categories: many(categories),
   tags: many(tags),
@@ -163,6 +188,17 @@ export const usersRelations = relations(users, ({ many }) => ({
   locations: many(locations),
   groups: many(itemGroups),
   reminders: many(reminders),
+}));
+
+export const noteVersionsRelations = relations(noteVersions, ({ one }) => ({
+  user: one(users, {
+    fields: [noteVersions.userId],
+    references: [users.userId],
+  }),
+  note: one(notes, {
+    fields: [noteVersions.noteId],
+    references: [notes.noteId],
+  }),
 }));
 
 export const noteTypesRelations = relations(noteTypes, ({ one, many }) => ({
@@ -214,4 +250,5 @@ export const notesRelations = relations(notes, ({ one, many }) => ({
     references: [locations.locationId],
   }),
   reminders: many(reminders),
+  versions: many(noteVersions),
 }));

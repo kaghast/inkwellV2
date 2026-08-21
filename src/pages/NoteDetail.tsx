@@ -36,6 +36,7 @@ import {
   Maximize2,
   Minimize2,
   Sparkles,
+  History,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Note, LocationItem, NoteType, Category } from "@/types";
@@ -43,6 +44,8 @@ import DrawingEditor from "@/components/drawing/DrawingEditor";
 import DrawingViewer from "@/components/drawing/DrawingViewer";
 import OutlineEditor from "@/components/outline/OutlineEditor";
 import OutlineViewer from "@/components/outline/OutlineViewer";
+import NoteCommentsSection from "@/components/NoteCommentsSection";
+import NoteVersionsDialog from "@/components/NoteVersionsDialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -95,6 +98,7 @@ export default function NoteDetail() {
   const [editingDateInline, setEditingDateInline] = useState(false);
   const [inlineDateVal, setInlineDateVal] = useState("");
   const [detailFullFocus, setDetailFullFocus] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
 
   useEffect(() => {
     if (!detailFullFocus) return;
@@ -719,6 +723,17 @@ export default function NoteDetail() {
                 {note.title || <span className="text-muted-foreground">Başlıksız Not</span>}
               </h1>
               <div className="flex items-center gap-1 shrink-0">
+                {/* Version History Button */}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setVersionsOpen(true)}
+                  title="Versiyon Geçmişi"
+                  data-testid="versions-note-btn"
+                >
+                  <History className="w-4 h-4 text-muted-foreground hover:text-primary" strokeWidth={1.5} />
+                </Button>
+
                 {!note.archived && (
                   <Button
                     size="icon"
@@ -888,6 +903,33 @@ export default function NoteDetail() {
                 ))}
               </div>
             )}
+
+            {/* Embedded Markdown Comments Section */}
+            <div className="mt-8">
+              <NoteCommentsSection
+                noteId={note.note_id}
+                content={note.content}
+                disabled={Boolean(note.archived)}
+                defaultExpanded={true}
+                onContentChange={async (newContent, summary) => {
+                  try {
+                    const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
+                      title: note.title,
+                      content: newContent,
+                      date: note.date,
+                      location_id: note.location_id,
+                      note_type_id: note.note_type_id,
+                      custom_fields: note.custom_fields,
+                      change_summary: summary || "Yorum güncellendi",
+                    });
+                    setNote(data);
+                    setContent(newContent);
+                  } catch (err: any) {
+                    toast.error("Yorum kaydedilemedi: " + err.message);
+                  }
+                }}
+              />
+            </div>
 
             {/* Related Notes & Backlinks Section */}
             <div className="mt-10 pt-6 border-t border-border/60 space-y-3.5" data-testid="related-notes-section">
@@ -1095,6 +1137,22 @@ export default function NoteDetail() {
       )}
 
       <LocationPicker open={picker} onOpenChange={setPicker} onSave={saveNewLocation} />
+
+      {/* Version History Modal */}
+      <NoteVersionsDialog
+        open={versionsOpen}
+        onOpenChange={setVersionsOpen}
+        noteId={note.note_id}
+        noteTitle={note.title}
+        onRestored={(restoredNote) => {
+          setNote(restoredNote);
+          setTitle(restoredNote.title);
+          setContent(restoredNote.content);
+          setDateTime(toDateTimeLocal(restoredNote.date));
+          setCustomFields(restoredNote.custom_fields || {});
+          setContentMode(detectContentMode(restoredNote.content, restoredNote.custom_fields));
+        }}
+      />
     </div>
   );
 }

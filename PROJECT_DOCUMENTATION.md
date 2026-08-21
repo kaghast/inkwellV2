@@ -259,6 +259,16 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
   - **2. Çizim & Şema (Canvas):** `DrawingEditor.tsx` üzerinde tam ekran tuval, ızgara kontrolü, zengin çizim araçları ve serbest SVG şema çizimi.
   - **3. Hiyerarşik Outline:** `OutlineEditor.tsx` üzerinde tam ekran madde ağacı, madde/alt madde yönetimi (`Tab`/`Shift+Tab`), sürükle-bırak ve durum döngüsü.
   - `NoteDetail.tsx` içerisinde Full Focus aktifken 3 mod arasında kesintisiz geçiş yapabilme, `Esc` ile odaktan çıkış ve `Ctrl+S` ile anında kaydetme sağlandı.
+- **Sınırsız Not Versiyonlama & Geri Yükleme (Note Versioning):**
+  - **Veritabanı Katmanı:** `note_versions` tablosu oluşturuldu (`version_id`, `note_id`, `user_id`, `version_number`, `title`, `content`, `date`, `tags`, `people`, `custom_fields`, `change_summary`, `created_at`).
+  - **Otomatik Versiyon Kaydı:** Her not oluşturulduğunda otomatik olarak v1 versiyonu oluşturulur. Her düzenleme, alan güncellemesi, yorum ekleme/silme veya geri yükleme işleminde yeni bir versiyon numarası (`v2`, `v3`...) ile tüm geçmiş sınırsız olarak saklanır.
+  - **Arayüz Entegrasyonu:** Not kartlarındaki 3 nokta (`...`) menüsüne ve not detay sayfasına **"Versiyon Geçmişi"** (`NoteVersionsDialog.tsx`) butonu eklendi.
+  - **Karşılaştırma ve Geri Dönüş:** Geçmiş versiyonların listesi, kelime sayıları, değişiklik açıklamaları ve içerik önizlemeleri incelenebilir; **"vX Versiyonuna Geri Dön"** butonuyla not tek tıkla eski haline döndürülebilir.
+- **Gömülü Markdown Not Yorumları (Embedded Note Comments):**
+  - **Özel DB Alanı Olmadan Gömülü Yapı:** Veritabanında ayrı bir alan veya tablo açılmaksızın yorumlar doğrudan notun `content` (Markdown) alanı içinde özel bloklar olarak saklanır (`src/lib/comments.ts`).
+  - **Arama & Tarih Filtreleme Uyumluluğu:** Yorumlar not içeriğinde yer aldığı için hem backend tarafında (`q` parametresi ile `ILIKE %kelime%`) hem de frontend arama/filtreleme motorunda otomatik olarak taranır ve arama sonuçlarına dahil edilir.
+  - **Desteklenen Markdown Formatları:** Minimalist tasarımda `[bağlantı metni](url)` linkleri, `**kalın**`, `*italik*` ve çok satırlı paragraflar desteklenir.
+  - **Yorum CRUD Yetenekleri:** Yorum ekleme, yerinde (inline) düzenleme ve silme fonksiyonları eklendi (`NoteCommentsSection.tsx`). Her yorum işlemi notun yeni bir versiyon kaydını otomatik olarak üretir.
 
 ---
 

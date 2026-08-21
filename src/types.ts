@@ -134,6 +134,21 @@ export interface Note {
   updated_at: string;
 }
 
+export interface NoteVersion {
+  version_id: string;
+  note_id: string;
+  user_id: string;
+  version_number: number;
+  title: string;
+  content: string;
+  date: string;
+  tags: string[];
+  people: string[];
+  custom_fields?: Record<string, any>;
+  change_summary?: string | null;
+  created_at: string;
+}
+
 export interface CalendarCounts {
   [date: string]: number;
 }

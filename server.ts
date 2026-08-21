@@ -14,7 +14,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { eq, and, or, desc, sql } from "drizzle-orm";
-import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns } from "./src/db/index";
+import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions } from "./src/db/index";
 import { generateTextEmbedding } from "./src/lib/embeddings";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -171,6 +171,50 @@ async function syncReminders(userId: string, noteId: string, content: string) {
     }
   } catch (err) {
     console.warn("Error syncing reminders in db:", err);
+  }
+}
+
+async function saveNoteVersion(
+  userId: string,
+  noteId: string,
+  noteData: {
+    title?: string;
+    content?: string;
+    date?: string;
+    tags?: string[];
+    people?: string[];
+    custom_fields?: Record<string, any>;
+    customFields?: Record<string, any>;
+  },
+  changeSummary = "Değişiklik yapıldı"
+) {
+  try {
+    const existingVersions = await db
+      .select({ versionNumber: noteVersions.versionNumber })
+      .from(noteVersions)
+      .where(and(eq(noteVersions.noteId, noteId), eq(noteVersions.userId, userId)))
+      .orderBy(desc(noteVersions.versionNumber))
+      .limit(1);
+
+    const nextVer = (existingVersions[0]?.versionNumber || 0) + 1;
+    const versionId = genId("ver");
+
+    await db.insert(noteVersions).values({
+      versionId,
+      noteId,
+      userId,
+      versionNumber: nextVer,
+      title: noteData.title || "",
+      content: noteData.content || "",
+      date: noteData.date || new Date().toISOString(),
+      tags: noteData.tags || [],
+      people: noteData.people || [],
+      customFields: noteData.customFields || noteData.custom_fields || {},
+      changeSummary,
+      createdAt: new Date(),
+    });
+  } catch (e) {
+    console.error("Failed to save note version in db:", e);
   }
 }
 
@@ -1790,6 +1834,8 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
     await syncReminders(userId, noteId, noteContent);
 
     const inserted = (await db.select().from(notes).where(eq(notes.noteId, noteId)).limit(1))[0];
+    await saveNoteVersion(userId, noteId, inserted, "Not oluşturuldu (v1)");
+
     res.json({
       note_id: inserted.noteId,
       user_id: inserted.userId,
@@ -2122,6 +2168,9 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     await syncReminders(userId, noteId, noteContent);
 
     const updated = (await db.select().from(notes).where(eq(notes.noteId, noteId)).limit(1))[0];
+    const changeSummary = req.body?.change_summary || "Not içeriği güncellendi";
+    await saveNoteVersion(userId, noteId, updated, changeSummary);
+
     res.json({
       note_id: updated.noteId,
       user_id: updated.userId,
@@ -2142,6 +2191,135 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     });
   } catch (err: any) {
     res.status(500).json({ detail: "Not güncellenemedi", error: err.message });
+  }
+});
+
+api.get("/notes/:note_id/versions", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const identifier = req.params.note_id;
+  try {
+    const found = await db.select().from(notes).where(
+      and(
+        or(eq(notes.noteId, identifier), eq(notes.slug, identifier)),
+        eq(notes.userId, userId)
+      )
+    ).limit(1);
+
+    if (found.length === 0) {
+      return res.status(404).json({ detail: "Not bulunamadı" });
+    }
+    const noteId = found[0].noteId;
+
+    const list = await db
+      .select()
+      .from(noteVersions)
+      .where(and(eq(noteVersions.noteId, noteId), eq(noteVersions.userId, userId)))
+      .orderBy(desc(noteVersions.versionNumber));
+
+    res.json(
+      list.map((v) => ({
+        version_id: v.versionId,
+        note_id: v.noteId,
+        user_id: v.userId,
+        version_number: v.versionNumber,
+        title: v.title,
+        content: v.content,
+        date: v.date,
+        tags: v.tags || [],
+        people: v.people || [],
+        custom_fields: v.customFields || {},
+        change_summary: v.changeSummary,
+        created_at: v.createdAt ? v.createdAt.toISOString() : new Date().toISOString(),
+      }))
+    );
+  } catch (err: any) {
+    res.status(500).json({ detail: "Versiyonlar yüklenemedi", error: err.message });
+  }
+});
+
+api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const identifier = req.params.note_id;
+  const versionId = req.params.version_id;
+  try {
+    const found = await db.select().from(notes).where(
+      and(
+        or(eq(notes.noteId, identifier), eq(notes.slug, identifier)),
+        eq(notes.userId, userId)
+      )
+    ).limit(1);
+
+    if (found.length === 0) {
+      return res.status(404).json({ detail: "Not bulunamadı" });
+    }
+    const current = found[0];
+    const noteId = current.noteId;
+
+    if (current.archived) {
+      return res.status(403).json({ detail: "Arşivlenmiş notlar geri yüklenemez." });
+    }
+
+    const targetVer = (
+      await db
+        .select()
+        .from(noteVersions)
+        .where(
+          and(
+            eq(noteVersions.versionId, versionId),
+            eq(noteVersions.noteId, noteId),
+            eq(noteVersions.userId, userId)
+          )
+        )
+        .limit(1)
+    )[0];
+
+    if (!targetVer) {
+      return res.status(404).json({ detail: "Versiyon bulunamadı" });
+    }
+
+    const tagsArr = targetVer.tags || extractTags(targetVer.content);
+    const peopleArr = targetVer.people || extractPeople(targetVer.content);
+    const embedding = await generateTextEmbedding(`${targetVer.title}\n${targetVer.content}`);
+
+    const updateData: any = {
+      title: targetVer.title,
+      content: targetVer.content,
+      date: targetVer.date,
+      tags: tagsArr,
+      people: peopleArr,
+      customFields: targetVer.customFields || {},
+      updatedAt: new Date(),
+    };
+    if (embedding) {
+      updateData.embedding = embedding;
+    }
+
+    await db.update(notes).set(updateData).where(eq(notes.noteId, noteId));
+    await syncReminders(userId, noteId, targetVer.content);
+
+    const updated = (await db.select().from(notes).where(eq(notes.noteId, noteId)).limit(1))[0];
+    await saveNoteVersion(userId, noteId, updated, `v${targetVer.versionNumber} versiyonuna geri dönüldü`);
+
+    res.json({
+      note_id: updated.noteId,
+      user_id: updated.userId,
+      slug: updated.slug,
+      title: updated.title,
+      content: updated.content,
+      date: updated.date,
+      tags: updated.tags || [],
+      people: updated.people || [],
+      category_id: updated.categoryId,
+      location_id: updated.locationId,
+      note_type_id: updated.noteTypeId || "type_plain",
+      custom_fields: updated.customFields || {},
+      pinned: updated.pinned,
+      archived: updated.archived || false,
+      created_at: updated.createdAt.toISOString(),
+      updated_at: updated.updatedAt.toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Versiyona dönülemedi", error: err.message });
   }
 });
 
