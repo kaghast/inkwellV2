@@ -2052,14 +2052,12 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     if (found.length === 0) {
       return res.status(404).json({ detail: "Not bulunamadı" });
     }
-    const current = found[0];
-    const noteId = current.noteId;
+    const { title, content, date, location_id, category_id, note_type_id, custom_fields, created_at, slug, archived } = req.body || {};
 
-    if (current.archived) {
+    if (current.archived && archived === undefined) {
       return res.status(403).json({ detail: "Arşivlenmiş notlar düzenlenemez. Lütfen önce arşivden çıkarın." });
     }
 
-    const { title, content, date, location_id, category_id, note_type_id, custom_fields, created_at, slug } = req.body || {};
     const noteContent = content !== undefined ? content : current.content;
     const noteTitle = (title !== undefined ? title : current.title).trim();
     const tagsArr = extractTags(noteContent);
@@ -2102,6 +2100,9 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       customFields: finalCustomFields,
       updatedAt: new Date(),
     };
+    if (archived !== undefined) {
+      updateData.archived = Boolean(archived);
+    }
     if (embedding) {
       updateData.embedding = embedding;
     }
@@ -2179,7 +2180,7 @@ api.patch("/notes/:note_id/pin", authMiddleware, async (req: AuthRequest, res: R
   }
 });
 
-api.patch("/notes/:note_id/archive", authMiddleware, async (req: AuthRequest, res: Response) => {
+const handleArchiveToggle = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
   const identifier = req.params.note_id;
   try {
@@ -2194,7 +2195,7 @@ api.patch("/notes/:note_id/archive", authMiddleware, async (req: AuthRequest, re
       return res.status(404).json({ detail: "Not bulunamadı" });
     }
     const current = found[0];
-    const newArchived = !current.archived;
+    const newArchived = req.body?.archived !== undefined ? Boolean(req.body.archived) : !current.archived;
     await db.update(notes).set({ archived: newArchived, updatedAt: new Date() }).where(eq(notes.noteId, current.noteId));
     
     const updated = (await db.select().from(notes).where(eq(notes.noteId, current.noteId)).limit(1))[0];
@@ -2219,7 +2220,13 @@ api.patch("/notes/:note_id/archive", authMiddleware, async (req: AuthRequest, re
   } catch (err: any) {
     res.status(500).json({ detail: "Arşivleme durumu değiştirilemedi", error: err.message });
   }
-});
+};
+
+api.patch("/notes/:note_id/archive", authMiddleware, handleArchiveToggle);
+api.post("/notes/:note_id/archive", authMiddleware, handleArchiveToggle);
+api.put("/notes/:note_id/archive", authMiddleware, handleArchiveToggle);
+api.patch("/notes/:note_id/unarchive", authMiddleware, handleArchiveToggle);
+api.post("/notes/:note_id/unarchive", authMiddleware, handleArchiveToggle);
 
 api.delete("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;

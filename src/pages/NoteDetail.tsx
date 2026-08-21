@@ -244,13 +244,23 @@ export default function NoteDetail() {
   async function handleToggleArchive() {
     if (!note) return;
     try {
-      const { data } = await api.patch(`/notes/${note.note_id}/archive`);
-      const nextArchived = Boolean(data?.archived);
+      const id = encodeURIComponent(note.note_id);
+      let res;
+      try {
+        res = await api.patch(`/notes/${id}/archive`);
+      } catch (err: any) {
+        if (err?.response?.status === 404 || err?.response?.status === 405) {
+          res = await api.post(`/notes/${id}/archive`);
+        } else {
+          throw err;
+        }
+      }
+      const nextArchived = Boolean(res?.data?.archived);
       setNote((prev) => (prev ? { ...prev, archived: nextArchived } : prev));
       if (editing) setEditing(false);
       toast.success(nextArchived ? "Not arşivlendi" : "Not arşivden çıkarıldı");
-    } catch {
-      toast.error("Arşivleme işlemi başarısız");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Arşivleme işlemi başarısız");
     }
   }
 
