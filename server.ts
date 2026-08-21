@@ -2052,6 +2052,9 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     if (found.length === 0) {
       return res.status(404).json({ detail: "Not bulunamadı" });
     }
+    const current = found[0];
+    const noteId = current.noteId;
+
     const { title, content, date, location_id, category_id, note_type_id, custom_fields, created_at, slug, archived } = req.body || {};
 
     if (current.archived && archived === undefined) {

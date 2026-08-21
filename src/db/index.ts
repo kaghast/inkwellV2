@@ -165,6 +165,7 @@ export async function initDatabaseSchema() {
       note_type_id TEXT REFERENCES note_types(type_id) ON DELETE SET NULL,
       custom_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
       pinned BOOLEAN NOT NULL DEFAULT false,
+      archived BOOLEAN NOT NULL DEFAULT false,
       embedding TEXT,
       ai_summary TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -209,6 +210,7 @@ export async function initDatabaseSchema() {
     if (global._pgliteClient) {
       await global._pgliteClient.exec(ddl);
       try {
+        await global._pgliteClient.exec(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false;`);
         await global._pgliteClient.exec(`ALTER TABLE notes ALTER COLUMN embedding TYPE TEXT;`);
       } catch {}
       try {
@@ -219,6 +221,7 @@ export async function initDatabaseSchema() {
     } else if (db.execute) {
       await db.execute(sql.raw(ddl));
       try {
+        await db.execute(sql.raw(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false;`));
         await db.execute(sql.raw(`ALTER TABLE notes ALTER COLUMN embedding TYPE TEXT;`));
       } catch {}
       try {

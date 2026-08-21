@@ -245,17 +245,22 @@ export default function NoteDetail() {
     if (!note) return;
     try {
       const id = encodeURIComponent(note.note_id);
+      const isArchived = Boolean(note.archived);
       let res;
       try {
         res = await api.patch(`/notes/${id}/archive`);
       } catch (err: any) {
         if (err?.response?.status === 404 || err?.response?.status === 405) {
-          res = await api.post(`/notes/${id}/archive`);
+          try {
+            res = await api.post(`/notes/${id}/archive`);
+          } catch {
+            res = await api.put(`/notes/${id}`, { archived: !isArchived });
+          }
         } else {
           throw err;
         }
       }
-      const nextArchived = Boolean(res?.data?.archived);
+      const nextArchived = Boolean(res?.data?.archived !== undefined ? res.data.archived : !isArchived);
       setNote((prev) => (prev ? { ...prev, archived: nextArchived } : prev));
       if (editing) setEditing(false);
       toast.success(nextArchived ? "Not arşivlendi" : "Not arşivden çıkarıldı");
