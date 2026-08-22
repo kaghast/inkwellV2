@@ -185,6 +185,10 @@ async function saveNoteVersion(
     people?: string[];
     custom_fields?: Record<string, any>;
     customFields?: Record<string, any>;
+    is_encrypted?: boolean;
+    isEncrypted?: boolean;
+    password_hash?: string | null;
+    passwordHash?: string | null;
   },
   changeSummary = "Değişiklik yapıldı"
 ) {
@@ -211,6 +215,8 @@ async function saveNoteVersion(
       people: noteData.people || [],
       customFields: noteData.customFields || noteData.custom_fields || {},
       changeSummary,
+      isEncrypted: Boolean(noteData.isEncrypted || noteData.is_encrypted),
+      passwordHash: noteData.passwordHash !== undefined ? noteData.passwordHash : (noteData.password_hash || null),
       createdAt: new Date(),
     });
   } catch (e) {
@@ -1804,7 +1810,7 @@ api.delete("/categories/:category_id", authMiddleware, async (req: AuthRequest, 
 // ---------------------------------------------------------------------------
 api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
-  const { title, content, date, location_id, category_id, note_type_id, custom_fields, created_at, slug } = req.body || {};
+  const { title, content, date, location_id, category_id, note_type_id, custom_fields, created_at, slug, is_encrypted, password_hash } = req.body || {};
   const noteContent = content || "";
   const tagsArr = extractTags(noteContent);
   const peopleArr = extractPeople(noteContent);
@@ -1840,6 +1846,8 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       customFields: finalCustomFields,
       pinned: false,
       archived: false,
+      isEncrypted: Boolean(is_encrypted),
+      passwordHash: password_hash || null,
     };
     if (embedding) {
       values.embedding = embedding;
@@ -1870,6 +1878,8 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       custom_fields: inserted.customFields || {},
       pinned: inserted.pinned,
       archived: inserted.archived || false,
+      is_encrypted: Boolean(inserted.isEncrypted),
+      password_hash: inserted.passwordHash || null,
       created_at: inserted.createdAt.toISOString(),
       updated_at: inserted.updatedAt.toISOString(),
     });
@@ -1943,6 +1953,8 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       custom_fields: n.customFields || {},
       pinned: n.pinned,
       archived: n.archived || false,
+      is_encrypted: Boolean(n.isEncrypted),
+      password_hash: n.passwordHash || null,
       created_at: n.createdAt.toISOString(),
       updated_at: n.updatedAt.toISOString(),
     }));
@@ -2099,6 +2111,8 @@ api.get("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       custom_fields: n.customFields || {},
       pinned: n.pinned,
       archived: n.archived || false,
+      is_encrypted: Boolean(n.isEncrypted),
+      password_hash: n.passwordHash || null,
       created_at: n.createdAt.toISOString(),
       updated_at: n.updatedAt.toISOString(),
     });
@@ -2125,7 +2139,7 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     const current = found[0];
     const noteId = current.noteId;
 
-    const { title, content, date, location_id, category_id, note_type_id, custom_fields, created_at, slug, archived } = req.body || {};
+    const { title, content, date, location_id, category_id, note_type_id, custom_fields, created_at, slug, archived, is_encrypted, password_hash } = req.body || {};
 
     if (current.archived && archived === undefined) {
       return res.status(403).json({ detail: "Arşivlenmiş notlar düzenlenemez. Lütfen önce arşivden çıkarın." });
@@ -2176,6 +2190,12 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     if (archived !== undefined) {
       updateData.archived = Boolean(archived);
     }
+    if (is_encrypted !== undefined) {
+      updateData.isEncrypted = Boolean(is_encrypted);
+    }
+    if (password_hash !== undefined) {
+      updateData.passwordHash = password_hash;
+    }
     if (embedding) {
       updateData.embedding = embedding;
     }
@@ -2206,6 +2226,8 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       custom_fields: updated.customFields || {},
       pinned: updated.pinned,
       archived: updated.archived || false,
+      is_encrypted: Boolean(updated.isEncrypted),
+      password_hash: updated.passwordHash || null,
       created_at: updated.createdAt.toISOString(),
       updated_at: updated.updatedAt.toISOString(),
     });
@@ -2249,6 +2271,8 @@ api.get("/notes/:note_id/versions", authMiddleware, async (req: AuthRequest, res
         people: v.people || [],
         custom_fields: v.customFields || {},
         change_summary: v.changeSummary,
+        is_encrypted: Boolean(v.isEncrypted),
+        password_hash: v.passwordHash || null,
         created_at: v.createdAt ? v.createdAt.toISOString() : new Date().toISOString(),
       }))
     );
@@ -2308,6 +2332,8 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
       tags: tagsArr,
       people: peopleArr,
       customFields: targetVer.customFields || {},
+      isEncrypted: Boolean(targetVer.isEncrypted),
+      passwordHash: targetVer.passwordHash || null,
       updatedAt: new Date(),
     };
     if (embedding) {
@@ -2335,6 +2361,8 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
       custom_fields: updated.customFields || {},
       pinned: updated.pinned,
       archived: updated.archived || false,
+      is_encrypted: Boolean(updated.isEncrypted),
+      password_hash: updated.passwordHash || null,
       created_at: updated.createdAt.toISOString(),
       updated_at: updated.updatedAt.toISOString(),
     });
@@ -2866,18 +2894,18 @@ const handleImageUpload = async (req: AuthRequest, res: Response) => {
   if (!file) {
     return res.status(400).json({ detail: "No file provided" });
   }
-  if (!file.mimetype.startsWith("image/")) {
-    return res.status(400).json({ detail: "Only images allowed" });
-  }
 
   const fileId = genId("file");
+  const contentType = file.mimetype || "application/octet-stream";
+  const filename = file.originalname || "attachment";
+
   try {
     // 1. Save to database
     await db.insert(files).values({
       fileId,
       userId: req.user!.userId,
-      originalFilename: file.originalname || "image.png",
-      contentType: file.mimetype,
+      originalFilename: filename,
+      contentType: contentType,
       size: file.size,
       dataBase64: file.buffer.toString("base64"),
       isDeleted: false,
@@ -2892,17 +2920,25 @@ const handleImageUpload = async (req: AuthRequest, res: Response) => {
 
     res.json({
       file_id: fileId,
+      filename: filename,
       url: `/api/files/${fileId}`,
       size: file.size,
-      content_type: file.mimetype,
+      content_type: contentType,
     });
   } catch (err: any) {
-    res.status(500).json({ detail: "Görsel veritabanına yüklenemedi", error: err.message });
+    res.status(500).json({ detail: "Dosya veritabanına yüklenemedi", error: err.message });
   }
 };
 
 api.post(
   "/uploads/image",
+  authMiddleware,
+  upload.fields([{ name: "file", maxCount: 1 }, { name: "image", maxCount: 1 }]),
+  handleImageUpload
+);
+
+api.post(
+  "/uploads/file",
   authMiddleware,
   upload.fields([{ name: "file", maxCount: 1 }, { name: "image", maxCount: 1 }]),
   handleImageUpload
@@ -2923,8 +2959,10 @@ api.get("/files/:file_id", async (req: Request, res: Response) => {
     // Check if file is directly available on persistent volume
     if (fs.existsSync(diskPath)) {
       const found = await db.select().from(files).where(and(eq(files.fileId, fileId), eq(files.isDeleted, false))).limit(1);
-      const contentType = found[0]?.contentType || "image/png";
+      const contentType = found[0]?.contentType || "application/octet-stream";
+      const filename = found[0]?.originalFilename || fileId;
       res.setHeader("Content-Type", contentType);
+      res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(filename)}"`);
       res.setHeader("Cache-Control", "public, max-age=86400, immutable");
       return res.sendFile(diskPath);
     }
@@ -2943,7 +2981,10 @@ api.get("/files/:file_id", async (req: Request, res: Response) => {
       /* ignore */
     }
 
-    res.setHeader("Content-Type", file.contentType || "image/png");
+    const contentType = file.contentType || "application/octet-stream";
+    const filename = file.originalFilename || fileId;
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(filename)}"`);
     res.setHeader("Cache-Control", "public, max-age=86400, immutable");
     res.send(buffer);
   } catch (err: any) {

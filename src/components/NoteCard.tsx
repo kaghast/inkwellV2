@@ -17,6 +17,9 @@ import {
   Archive,
   ArchiveRestore,
   History,
+  Lock,
+  Unlock,
+  Key,
 } from "lucide-react";
 import api from "@/lib/api";
 import type { Note, LocationItem, Category, NoteType } from "@/types";
@@ -24,6 +27,8 @@ import MarkdownView from "@/components/MarkdownView";
 import MarkdownEditor from "@/components/MarkdownEditor";
 import NoteCommentsSection from "@/components/NoteCommentsSection";
 import NoteVersionsDialog from "@/components/NoteVersionsDialog";
+import EncryptNoteDialog from "@/components/EncryptNoteDialog";
+import { verifyPassword } from "@/lib/crypto";
 import { extractCommentsFromContent, embedCommentsIntoContent } from "@/lib/comments";
 import { CustomFieldsForm, CustomFieldsView } from "@/components/CustomFieldsRenderer";
 import { formatDisplayDatetime, toDateTimeLocal } from "@/lib/datetime";
@@ -68,13 +73,38 @@ export default function NoteCard({
   const [editingDateInline, setEditingDateInline] = useState(false);
   const [inlineDateTimeVal, setInlineDateTimeVal] = useState(toDateTimeLocal(note.date));
   const [versionsOpen, setVersionsOpen] = useState(false);
+  const [encryptOpen, setEncryptOpen] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [unlockPass, setUnlockPass] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
 
   const isArchived = Boolean(note.archived);
+  const isEncrypted = Boolean(note.is_encrypted);
   const loc = note.location_id ? locationMap[note.location_id] : null;
   const currentType = (editing ? noteTypeMap[noteTypeId] : noteTypeMap[note.note_type_id || "type_plain"]) ||
     noteTypes.find((nt) => nt.type_id === (editing ? noteTypeId : (note.note_type_id || "type_plain")));
 
   const detailPath = `/note/${note.slug || note.note_id}`;
+
+  async function handleUnlock(e: React.FormEvent) {
+    e.preventDefault();
+    if (!unlockPass.trim()) return;
+    setUnlocking(true);
+    try {
+      const ok = await verifyPassword(unlockPass.trim(), note.password_hash || "");
+      if (ok) {
+        setIsUnlocked(true);
+        setUnlockPass("");
+        toast.success("Not kilidi açıldı");
+      } else {
+        toast.error("Hatalı parola");
+      }
+    } catch {
+      toast.error("Kilit açılırken hata oluştu");
+    } finally {
+      setUnlocking(false);
+    }
+  }
 
   async function handleTogglePin() {
     if (isArchived) {
@@ -397,6 +427,27 @@ export default function NoteCard({
                 )}
               </DropdownMenuItem>
 
+              {/* Encryption Action - Disabled when archived */}
+              {!isArchived && (
+                <DropdownMenuItem
+                  onClick={() => setEncryptOpen(true)}
+                  className="text-xs cursor-pointer text-amber-600 dark:text-amber-400"
+                  data-testid={`note-encrypt-btn-${note.note_id}`}
+                >
+                  {isEncrypted ? (
+                    <>
+                      <Key className="w-3.5 h-3.5 mr-2 text-amber-500" />
+                      <span>Şifreyi Yönet / Kaldır</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-3.5 h-3.5 mr-2 text-amber-500" />
+                      <span>Notu Şifrele</span>
+                    </>
+                  )}
+                </DropdownMenuItem>
+              )}
+
               {/* Edit Action - Disabled when archived */}
               {!isArchived && (
                 <DropdownMenuItem
@@ -430,132 +481,181 @@ export default function NoteCard({
         </div>
       </div>
 
-      {/* Dynamic Custom Fields in Read Mode */}
-      {!editing && currentType && currentType.fields && currentType.fields.length > 0 && (
-        <CustomFieldsView fields={currentType.fields} values={note.custom_fields} />
+      {/* Encryption Status Bar (When Unlocked) */}
+      {isEncrypted && isUnlocked && (
+        <div className="flex items-center justify-between px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-300 mt-2">
+          <div className="flex items-center gap-1.5 font-medium">
+            <Unlock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            <span>Şifreli Not (Açık)</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsUnlocked(false)}
+            className="text-[11px] underline hover:text-foreground cursor-pointer"
+          >
+            Yeniden Kilitle
+          </button>
+        </div>
       )}
 
-      {/* Content Area (Viewing or Editing) */}
-      {editing ? (
-        <div className="space-y-3 mt-3">
-          {/* Dynamic Custom Fields Form in Edit Mode */}
-          {currentType && currentType.fields && currentType.fields.length > 0 && (
-            <CustomFieldsForm
-              fields={currentType.fields}
-              values={customFields}
-              onChange={(fieldId, val) =>
-                setCustomFields((prev) => ({ ...prev, [fieldId]: val }))
-              }
-              disabled={saving}
-            />
-          )}
-
-          <MarkdownEditor
-            value={content}
-            onChange={setContent}
-            title={title}
-            onTitleChange={setTitle}
-            onSubmit={handleSaveEdit}
-            placeholder="Not içeriğini girin..."
-            autoFocus
-          />
-
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border/60">
-            <div className="flex items-center gap-2 flex-wrap text-xs">
-              {/* Edit Date & Time */}
-              <input
-                type="datetime-local"
-                value={toDateTimeLocal(date)}
-                onChange={(e) => setDate(e.target.value)}
-                className="bg-muted/70 border border-border px-2 py-1 rounded text-xs text-foreground font-mono"
-                data-testid="edit-datetime-input"
-              />
-
-              {/* Edit Location */}
-              {locations.length > 0 && (
-                <select
-                  value={locationId || ""}
-                  onChange={(e) => setLocationId(e.target.value || null)}
-                  className="bg-muted/70 border border-border px-2 py-1 rounded text-xs text-foreground"
-                >
-                  <option value="">— Konum Yok —</option>
-                  {locations.map((l) => (
-                    <option key={l.location_id} value={l.location_id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1.5 ml-auto">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setEditing(false);
-                  setTitle(note.title);
-                  setContent(extractCommentsFromContent(note.content).mainContent);
-                  setDate(note.date);
-                  setLocationId(note.location_id || null);
-                  setNoteTypeId(note.note_type_id || "type_plain");
-                  setCustomFields(note.custom_fields || {});
-                }}
-              >
-                İptal
-              </Button>
-              <Button size="sm" onClick={handleSaveEdit} disabled={saving}>
-                {saving ? "Kaydediliyor..." : "Kaydet"}
-              </Button>
-            </div>
+      {/* When Note is Encrypted and Locked */}
+      {isEncrypted && !isUnlocked ? (
+        <div className="p-5 my-3 rounded-lg border border-amber-500/30 bg-amber-500/5 flex flex-col items-center justify-center text-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400">
+            <Lock className="w-5 h-5" />
           </div>
+          <div className="space-y-0.5">
+            <p className="text-xs font-semibold text-foreground">Bu Not Şifrelenmiştir</p>
+            <p className="text-[11px] text-muted-foreground">İçeriği ve yorumları görüntülemek için parolayı girin</p>
+          </div>
+          <form onSubmit={handleUnlock} className="flex items-center gap-1.5 w-full max-w-xs mt-1">
+            <input
+              type="password"
+              value={unlockPass}
+              onChange={(e) => setUnlockPass(e.target.value)}
+              placeholder="Parola..."
+              className="flex-1 text-xs bg-background border border-border rounded px-2.5 py-1.5 text-foreground outline-none focus:border-amber-500"
+            />
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!unlockPass.trim() || unlocking}
+              className="h-8 text-xs bg-amber-500 text-amber-950 hover:bg-amber-400 cursor-pointer"
+            >
+              {unlocking ? "Açılıyor..." : "Kilidi Aç"}
+            </Button>
+          </form>
         </div>
       ) : (
-        <MarkdownView content={note.content} />
-      )}
+        <>
+          {/* Dynamic Custom Fields in Read Mode */}
+          {!editing && currentType && currentType.fields && currentType.fields.length > 0 && (
+            <CustomFieldsView fields={currentType.fields} values={note.custom_fields} />
+          )}
 
-      {/* Note footer: tags & people */}
-      {(note.tags?.length > 0 || note.people?.length > 0) && (
-        <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-2.5 border-t border-border/40">
-          {note.tags?.map((t) => (
-            <Link
-              key={t}
-              to={`/tag/${encodeURIComponent(t)}`}
-              className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 hover:bg-sky-500/20 transition-colors"
-            >
-              #{t}
-            </Link>
-          ))}
-          {note.people?.map((p) => (
-            <Link
-              key={p}
-              to={`/person/${encodeURIComponent(p)}`}
-              className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
-            >
-              @{p}
-            </Link>
-          ))}
-        </div>
-      )}
+          {/* Content Area (Viewing or Editing) */}
+          {editing ? (
+            <div className="space-y-3 mt-3">
+              {/* Dynamic Custom Fields Form in Edit Mode */}
+              {currentType && currentType.fields && currentType.fields.length > 0 && (
+                <CustomFieldsForm
+                  fields={currentType.fields}
+                  values={customFields}
+                  onChange={(fieldId, val) =>
+                    setCustomFields((prev) => ({ ...prev, [fieldId]: val }))
+                  }
+                  disabled={saving}
+                />
+              )}
 
-      {/* Embedded Comments Section (Read Mode) */}
-      {!editing && (
-        <NoteCommentsSection
-          noteId={note.note_id}
-          content={note.content}
-          disabled={isArchived}
-          onContentChange={async (newContent, summary) => {
-            try {
-              await api.put(`/notes/${note.note_id}`, {
-                content: newContent,
-                change_summary: summary || "Yorum güncellendi",
-              });
-              onChanged();
-            } catch (err: any) {
-              toast.error("Yorum kaydedilemedi: " + err.message);
-            }
-          }}
-        />
+              <MarkdownEditor
+                value={content}
+                onChange={setContent}
+                title={title}
+                onTitleChange={setTitle}
+                onSubmit={handleSaveEdit}
+                placeholder="Not içeriğini girin..."
+                autoFocus
+              />
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border/60">
+                <div className="flex items-center gap-2 flex-wrap text-xs">
+                  {/* Edit Date & Time */}
+                  <input
+                    type="datetime-local"
+                    value={toDateTimeLocal(date)}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="bg-muted/70 border border-border px-2 py-1 rounded text-xs text-foreground font-mono"
+                    data-testid="edit-datetime-input"
+                  />
+
+                  {/* Edit Location */}
+                  {locations.length > 0 && (
+                    <select
+                      value={locationId || ""}
+                      onChange={(e) => setLocationId(e.target.value || null)}
+                      className="bg-muted/70 border border-border px-2 py-1 rounded text-xs text-foreground"
+                    >
+                      <option value="">— Konum Yok —</option>
+                      {locations.map((l) => (
+                        <option key={l.location_id} value={l.location_id}>
+                          {l.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setEditing(false);
+                      setTitle(note.title);
+                      setContent(extractCommentsFromContent(note.content).mainContent);
+                      setDate(note.date);
+                      setLocationId(note.location_id || null);
+                      setNoteTypeId(note.note_type_id || "type_plain");
+                      setCustomFields(note.custom_fields || {});
+                    }}
+                  >
+                    İptal
+                  </Button>
+                  <Button size="sm" onClick={handleSaveEdit} disabled={saving}>
+                    {saving ? "Kaydediliyor..." : "Kaydet"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <MarkdownView content={note.content} />
+          )}
+
+          {/* Note footer: tags & people */}
+          {(note.tags?.length > 0 || note.people?.length > 0) && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-2.5 border-t border-border/40">
+              {note.tags?.map((t) => (
+                <Link
+                  key={t}
+                  to={`/tag/${encodeURIComponent(t)}`}
+                  className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 hover:bg-sky-500/20 transition-colors"
+                >
+                  #{t}
+                </Link>
+              ))}
+              {note.people?.map((p) => (
+                <Link
+                  key={p}
+                  to={`/person/${encodeURIComponent(p)}`}
+                  className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                >
+                  @{p}
+                </Link>
+              ))}
+            </div>
+          )}
+
+          {/* Embedded Comments Section (Read Mode) */}
+          {!editing && (
+            <NoteCommentsSection
+              noteId={note.note_id}
+              content={note.content}
+              disabled={isArchived}
+              onContentChange={async (newContent, summary) => {
+                try {
+                  await api.put(`/notes/${note.note_id}`, {
+                    content: newContent,
+                    change_summary: summary || "Yorum güncellendi",
+                  });
+                  onChanged();
+                } catch (err: any) {
+                  toast.error("Yorum kaydedilemedi: " + err.message);
+                }
+              }}
+            />
+          )}
+        </>
       )}
 
       {/* Version History Modal */}
@@ -565,6 +665,17 @@ export default function NoteCard({
         noteId={note.note_id}
         noteTitle={note.title}
         onRestored={() => onChanged()}
+      />
+
+      {/* Note Encryption Modal */}
+      <EncryptNoteDialog
+        open={encryptOpen}
+        onOpenChange={setEncryptOpen}
+        note={note}
+        onSuccess={() => {
+          setIsUnlocked(false);
+          onChanged();
+        }}
       />
     </article>
   );

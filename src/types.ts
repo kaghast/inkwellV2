@@ -130,6 +130,8 @@ export interface Note {
   custom_fields?: Record<string, any>;
   pinned: boolean;
   archived?: boolean;
+  is_encrypted?: boolean;
+  password_hash?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -146,6 +148,8 @@ export interface NoteVersion {
   people: string[];
   custom_fields?: Record<string, any>;
   change_summary?: string | null;
+  is_encrypted?: boolean;
+  password_hash?: string | null;
   created_at: string;
 }
 

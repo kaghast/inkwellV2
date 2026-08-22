@@ -116,6 +116,8 @@ export const notes = pgTable(
     customFields: jsonb('custom_fields').$type<Record<string, any>>().default({}).notNull(),
     pinned: boolean('pinned').default(false).notNull(),
     archived: boolean('archived').default(false).notNull(),
+    isEncrypted: boolean('is_encrypted').default(false).notNull(),
+    passwordHash: text('password_hash'),
     // 768-dimensional text embedding vector (text-embedding-004 / Gemini embedding)
     embedding: vector('embedding', { dimensions: 768 }),
     aiSummary: text('ai_summary'),
@@ -144,6 +146,8 @@ export const noteVersions = pgTable(
     people: jsonb('people').$type<string[]>().default([]).notNull(),
     customFields: jsonb('custom_fields').$type<Record<string, any>>().default({}).notNull(),
     changeSummary: text('change_summary'),
+    isEncrypted: boolean('is_encrypted').default(false).notNull(),
+    passwordHash: text('password_hash'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [

@@ -166,6 +166,8 @@ export async function initDatabaseSchema() {
       custom_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
       pinned BOOLEAN NOT NULL DEFAULT false,
       archived BOOLEAN NOT NULL DEFAULT false,
+      is_encrypted BOOLEAN NOT NULL DEFAULT false,
+      password_hash TEXT,
       embedding TEXT,
       ai_summary TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -183,6 +185,8 @@ export async function initDatabaseSchema() {
       people JSONB NOT NULL DEFAULT '[]'::jsonb,
       custom_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
       change_summary TEXT,
+      is_encrypted BOOLEAN NOT NULL DEFAULT false,
+      password_hash TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS reminders (
@@ -225,6 +229,10 @@ export async function initDatabaseSchema() {
       await global._pgliteClient.exec(ddl);
       try {
         await global._pgliteClient.exec(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false;`);
+        await global._pgliteClient.exec(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT false;`);
+        await global._pgliteClient.exec(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
+        await global._pgliteClient.exec(`ALTER TABLE note_versions ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT false;`);
+        await global._pgliteClient.exec(`ALTER TABLE note_versions ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
         await global._pgliteClient.exec(`ALTER TABLE notes ALTER COLUMN embedding TYPE TEXT;`);
       } catch {}
       try {
@@ -236,6 +244,10 @@ export async function initDatabaseSchema() {
       await db.execute(sql.raw(ddl));
       try {
         await db.execute(sql.raw(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false;`));
+        await db.execute(sql.raw(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT false;`));
+        await db.execute(sql.raw(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS password_hash TEXT;`));
+        await db.execute(sql.raw(`ALTER TABLE note_versions ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT false;`));
+        await db.execute(sql.raw(`ALTER TABLE note_versions ADD COLUMN IF NOT EXISTS password_hash TEXT;`));
         await db.execute(sql.raw(`ALTER TABLE notes ALTER COLUMN embedding TYPE TEXT;`));
       } catch {}
       try {

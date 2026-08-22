@@ -29,6 +29,7 @@ export type BlockType =
   | "youtube"
   | "gmap"
   | "image"
+  | "file"
   | "reminder"
   | "timeslot";
 
@@ -49,6 +50,7 @@ export const BLOCK_OPTIONS: BlockOption[] = [
   { type: "divider", label: "Ayırıcı Çizgi", hint: "---", desc: "Yatay ayırıcı", icon: Minus },
   { type: "timeslot", label: "Zaman Bloğu (Time Slot)", hint: "```timeslot", desc: "Süre hesaplamalı zaman aralığı ve aktivite", icon: CalendarClock },
   { type: "image", label: "Görsel Yükle", hint: "![...](...)", desc: "Resim veya ekran görüntüsü ekle", icon: ImageIcon },
+  { type: "file", label: "Dosya / Belge Yükle", hint: "[Belge](...)", desc: "PDF, TXT, DOCX, MP4 vb. dosya ekle", icon: LinkIcon },
   { type: "reminder", label: "Hatırlatma", hint: "```reminder", desc: "Tarihli ve saatli anımsatıcı", icon: BellRing },
   { type: "link", label: "Bağlantı", hint: "[Metin](url)", desc: "Web sitesi linki ekle", icon: LinkIcon },
   { type: "youtube", label: "YouTube Videosu", hint: "https://youtube.com/...", desc: "Gömülü video oynatıcı", icon: Youtube },

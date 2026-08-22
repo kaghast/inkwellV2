@@ -37,6 +37,9 @@ import {
   Minimize2,
   Sparkles,
   History,
+  Lock,
+  Unlock,
+  Key,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Note, LocationItem, NoteType, Category } from "@/types";
@@ -46,6 +49,8 @@ import OutlineEditor from "@/components/outline/OutlineEditor";
 import OutlineViewer from "@/components/outline/OutlineViewer";
 import NoteCommentsSection from "@/components/NoteCommentsSection";
 import NoteVersionsDialog from "@/components/NoteVersionsDialog";
+import EncryptNoteDialog from "@/components/EncryptNoteDialog";
+import { verifyPassword } from "@/lib/crypto";
 import { extractCommentsFromContent, embedCommentsIntoContent } from "@/lib/comments";
 import {
   AlertDialog,
@@ -100,6 +105,32 @@ export default function NoteDetail() {
   const [inlineDateVal, setInlineDateVal] = useState("");
   const [detailFullFocus, setDetailFullFocus] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  const [encryptOpen, setEncryptOpen] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [unlockPass, setUnlockPass] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
+
+  const isEncrypted = Boolean(note?.is_encrypted);
+
+  async function handleUnlock(e: React.FormEvent) {
+    e.preventDefault();
+    if (!unlockPass.trim() || !note) return;
+    setUnlocking(true);
+    try {
+      const ok = await verifyPassword(unlockPass.trim(), note.password_hash || "");
+      if (ok) {
+        setIsUnlocked(true);
+        setUnlockPass("");
+        toast.success("Not kilidi açıldı");
+      } else {
+        toast.error("Hatalı parola");
+      }
+    } catch {
+      toast.error("Kilit açılırken hata oluştu");
+    } finally {
+      setUnlocking(false);
+    }
+  }
 
   useEffect(() => {
     if (!detailFullFocus) return;
@@ -770,6 +801,20 @@ export default function NoteDetail() {
                   )}
                 </Button>
 
+                {/* Encryption Action - Disabled when archived */}
+                {!note.archived && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => setEncryptOpen(true)}
+                    title={isEncrypted ? "Şifreyi Yönet / Kaldır" : "Notu Şifrele"}
+                    data-testid="encrypt-note-btn"
+                    className={isEncrypted ? "text-amber-500 hover:text-amber-600 hover:bg-amber-500/10" : "text-muted-foreground hover:text-foreground"}
+                  >
+                    {isEncrypted ? <Key className="w-4 h-4" strokeWidth={1.5} /> : <Lock className="w-4 h-4" strokeWidth={1.5} />}
+                  </Button>
+                )}
+
                 {/* Edit & Delete are disabled / hidden when archived */}
                 {!note.archived && (
                   <>
@@ -815,22 +860,70 @@ export default function NoteDetail() {
               </div>
             </div>
 
-            {/* Custom fields view in read mode */}
-            {currentType && currentType.fields && currentType.fields.length > 0 && (
-              <CustomFieldsView fields={currentType.fields} values={note.custom_fields} />
-            )}
-
-            {loc && (
-              <div className="mb-6">
-                <Link
-                  to={`/location/${loc.location_id}`}
-                  className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground mb-2"
+            {/* Encryption Status Bar (When Unlocked) */}
+            {isEncrypted && isUnlocked && (
+              <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-300 mb-6">
+                <div className="flex items-center gap-2 font-medium">
+                  <Unlock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  <span>Şifreli Not (Kilit Açık)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsUnlocked(false)}
+                  className="text-xs underline hover:text-foreground cursor-pointer"
                 >
-                  <MapPin className="w-3 h-3" strokeWidth={1.5} /> {loc.name}
-                </Link>
-                <MiniMap lat={loc.lat} lng={loc.lng} height={180} />
+                  Yeniden Kilitle
+                </button>
               </div>
             )}
+
+            {/* When Note is Encrypted and Locked */}
+            {isEncrypted && !isUnlocked ? (
+              <div className="p-8 my-6 rounded-xl border border-amber-500/30 bg-amber-500/5 flex flex-col items-center justify-center text-center gap-4 max-w-md mx-auto">
+                <div className="w-14 h-14 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                  <Lock className="w-7 h-7" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-serif font-bold text-foreground">Bu Not Şifrelenmiştir</h3>
+                  <p className="text-xs text-muted-foreground">İçeriği, ekleri ve yorumları görüntülemek için parolayı girin</p>
+                </div>
+                <form onSubmit={handleUnlock} className="flex items-center gap-2 w-full mt-2">
+                  <input
+                    type="password"
+                    value={unlockPass}
+                    onChange={(e) => setUnlockPass(e.target.value)}
+                    placeholder="Parola..."
+                    className="flex-1 text-xs bg-background border border-border rounded-md px-3 py-2 text-foreground outline-none focus:border-amber-500"
+                    autoFocus
+                  />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={!unlockPass.trim() || unlocking}
+                    className="h-9 text-xs bg-amber-500 text-amber-950 hover:bg-amber-400 cursor-pointer font-medium"
+                  >
+                    {unlocking ? "Açılıyor..." : "Kilidi Aç"}
+                  </Button>
+                </form>
+              </div>
+            ) : (
+              <>
+                {/* Custom fields view in read mode */}
+                {currentType && currentType.fields && currentType.fields.length > 0 && (
+                  <CustomFieldsView fields={currentType.fields} values={note.custom_fields} />
+                )}
+
+                {loc && (
+                  <div className="mb-6">
+                    <Link
+                      to={`/location/${loc.location_id}`}
+                      className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground mb-2"
+                    >
+                      <MapPin className="w-3 h-3" strokeWidth={1.5} /> {loc.name}
+                    </Link>
+                    <MiniMap lat={loc.lat} lng={loc.lng} height={180} />
+                  </div>
+                )}
 
             {/* Content View Modes */}
             {contentMode === "drawing" || /```drawing\s*[\s\S]*?```/.test(note.content) ? (
@@ -1019,6 +1112,8 @@ export default function NoteDetail() {
                 </div>
               )}
             </div>
+            </>
+          )}
           </>
         )}
       </main>
@@ -1158,6 +1253,17 @@ export default function NoteDetail() {
           setDateTime(toDateTimeLocal(restoredNote.date));
           setCustomFields(restoredNote.custom_fields || {});
           setContentMode(detectContentMode(restoredNote.content, restoredNote.custom_fields));
+        }}
+      />
+
+      {/* Note Encryption Modal */}
+      <EncryptNoteDialog
+        open={encryptOpen}
+        onOpenChange={setEncryptOpen}
+        note={note}
+        onSuccess={(updatedNote) => {
+          setNote(updatedNote);
+          setIsUnlocked(false);
         }}
       />
     </div>

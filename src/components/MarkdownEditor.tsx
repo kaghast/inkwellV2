@@ -8,6 +8,7 @@ import { filterBlockOptions, BlockOption } from "@/lib/blockOptions";
 import LinkDialog from "@/components/LinkDialog";
 import ReminderDialog from "@/components/ReminderDialog";
 import ImageUploadDialog from "@/components/ImageUploadDialog";
+import FileUploadDialog from "@/components/FileUploadDialog";
 import TimeSlotDialog from "@/components/TimeSlotDialog";
 import { uploadImage } from "@/lib/uploads";
 import { toast } from "sonner";
@@ -25,6 +26,7 @@ import {
   Minimize2,
   Sparkles,
   Save,
+  Paperclip,
 } from "lucide-react";
 
 type SuggestionItem = Tag | Person;
@@ -91,6 +93,7 @@ export default function MarkdownEditor({
   const [linkOpen, setLinkOpen] = useState(false);
   const [reminderOpen, setReminderOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
+  const [fileOpen, setFileOpen] = useState(false);
   const [timeSlotOpen, setTimeSlotOpen] = useState(false);
   const [fullFocus, setFullFocus] = useState(false);
   const [pendingBlock, setPendingBlock] = useState<null | { start: number; end: number }>(null);
@@ -280,6 +283,11 @@ export default function MarkdownEditor({
         setPopup(null);
         setImageOpen(true);
         return;
+      case "file":
+        setPendingBlock({ start: from, end: caret });
+        setPopup(null);
+        setFileOpen(true);
+        return;
       case "reminder":
         setPendingBlock({ start: from, end: caret });
         setPopup(null);
@@ -437,7 +445,20 @@ export default function MarkdownEditor({
     setPendingBlock(null);
   }
 
-  function insertQuickBlock(kind: "image" | "reminder" | "timeslot" | "task" | "link" | "heading" | "quote" | "wikilink") {
+  function onFileConfirm(link: string) {
+    const el = ref.current;
+    const caret = el ? el.selectionStart : value.length;
+    const from = pendingBlock ? pendingBlock.start : caret;
+    const to = pendingBlock ? pendingBlock.end : caret;
+
+    const before = value.slice(0, from);
+    const needsNl = before.length > 0 && !before.endsWith("\n");
+    const prefix = needsNl ? "\n" : "";
+    replaceRange(from, to, prefix + link + "\n");
+    setPendingBlock(null);
+  }
+
+  function insertQuickBlock(kind: "image" | "file" | "reminder" | "timeslot" | "task" | "link" | "heading" | "quote" | "wikilink") {
     const el = ref.current;
     const caret = el ? el.selectionStart : value.length;
     const before = value.slice(0, caret);
@@ -452,6 +473,7 @@ export default function MarkdownEditor({
     setPendingBlock({ start: caret, end: caret });
 
     if (kind === "image") setImageOpen(true);
+    else if (kind === "file") setFileOpen(true);
     else if (kind === "reminder") setReminderOpen(true);
     else if (kind === "timeslot") setTimeSlotOpen(true);
     else if (kind === "link") setLinkOpen(true);
@@ -515,6 +537,17 @@ export default function MarkdownEditor({
           >
             <ImageIcon className="w-3.5 h-3.5" />
             <span className="hidden sm:inline text-[11px]">Resim</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => insertQuickBlock("file")}
+            data-testid="toolbar-btn-file"
+            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
+            title="Dosya / Belge Yükle (PDF, TXT, DOCX, MP4 vb.)"
+          >
+            <Paperclip className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline text-[11px]">Dosya</span>
           </button>
 
           <button
@@ -766,6 +799,14 @@ export default function MarkdownEditor({
                 </button>
                 <button
                   type="button"
+                  onClick={() => insertQuickBlock("file")}
+                  className="p-1 px-2 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <Paperclip className="w-3.5 h-3.5" />
+                  <span>Dosya</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => insertQuickBlock("reminder")}
                   className="p-1 px-2 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
                 >
@@ -810,6 +851,7 @@ export default function MarkdownEditor({
       <LinkDialog open={linkOpen} onOpenChange={setLinkOpen} onConfirm={onLinkConfirm} />
       <ReminderDialog open={reminderOpen} onOpenChange={setReminderOpen} onConfirm={onReminderConfirm} />
       <ImageUploadDialog open={imageOpen} onOpenChange={setImageOpen} onConfirm={onImageConfirm} />
+      <FileUploadDialog open={fileOpen} onOpenChange={setFileOpen} onInsert={onFileConfirm} />
       <TimeSlotDialog open={timeSlotOpen} onOpenChange={setTimeSlotOpen} onConfirm={onTimeSlotConfirm} />
     </div>
   );
