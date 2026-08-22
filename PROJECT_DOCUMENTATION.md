@@ -118,6 +118,9 @@ erDiagram
 | `note_type_id` | `text` (FK -> note_types) | Not tipi (Düz Not, Toplantı, Kart vb.) |
 | `custom_fields` | `jsonb` | Dinamik not tipi alan değerleri |
 | `pinned` | `boolean` | Sabitlenmiş not durumu |
+| `archived` | `boolean` | Arşivlenmiş not durumu (Varsayılan: `false`) |
+| `is_encrypted` | `boolean` | Parola korumalı şifreli not durumu (Varsayılan: `false`) |
+| `password_hash` | `text` | Güvenli SHA-256 + Salt parola özeti |
 | `embedding` | `vector(768)` | AI Anlamsal arama vektör verisi |
 | `ai_summary` | `text` | Yapay zeka tarafından üretilen özet |
 | `created_at` / `updated_at` | `timestamp` | Oluşturma ve güncelleme zamanları |
@@ -151,6 +154,26 @@ erDiagram
 | `name` | `text` | Lokasyon adı (Örn: "Ofis", "Kadıköy") |
 | `lat` / `lng` | `doublePrecision` | Enlem ve Boylam koordinatları |
 | `group_id` | `text` (FK -> item_groups) | Bağlı olduğu grup/klasör |
+
+#### `note_versions` (Not Versiyon Geçmişi & Değişiklik Günlüğü)
+| Alan Adı | Tip | Açıklama |
+| :--- | :--- | :--- |
+| `version_id` | `text` (PK) | Benzersiz versiyon kimliği |
+| `note_id` | `text` (FK -> notes) | Bağlı ana not kimliği |
+| `user_id` | `text` (FK -> users) | Değişikliği yapan kullanıcı |
+| `version_number` | `integer` | Sıralı versiyon numarası (`1`, `2`, `3`...) |
+| `title` | `text` | İlgili versiyondaki başlık |
+| `content` | `text` | İlgili versiyondaki Markdown/Çizim/Outline içeriği |
+| `date` | `text` | ISO Tarih damgası |
+| `tags` | `jsonb` (`string[]`) | Etiketler dizisi |
+| `people` | `jsonb` (`string[]`) | Bahsedilen kişiler |
+| `location_id` | `text` (FK -> locations) | Bağlı coğrafi konum |
+| `note_type_id` | `text` (FK -> note_types) | Not tipi |
+| `custom_fields` | `jsonb` | Dinamik alan değerleri |
+| `change_summary` | `text` | Değişiklik açıklaması/özeti |
+| `is_encrypted` | `boolean` | Şifreli not durumu |
+| `password_hash` | `text` | Parola hash özeti |
+| `created_at` | `timestamp` | Versiyon oluşturulma anı |
 
 #### `tags` & `people` (Etiketler ve Kişiler)
 - `tags`: `tag_id`, `user_id`, `name`, `group_id`, `created_at`
@@ -191,6 +214,20 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 ### 4.2. Canlı Geocoding ve Çift Motorlu Harita
 - **Leaflet Fallback & ResizeObserver:** Harita kapsayıcısının boyut değişimlerini dinleyen `ResizeObserver` ve 3 kademeli `map.invalidateSize()` çağrısı ile gri/boş harita render hataları engellenmiştir.
 - **Global OSM Arama:** Arama kutusuna yazıldığı anda yerel kayıtlı yerler ile OpenStreetMap Nominatim Geocoder sonuçları anında birleştirilerek `z-[2000]` katmanında listelenir.
+
+### 4.3. Not Şifreleme ve Kilit Mekanizması (Web Crypto API)
+- **Kriptografik Güvenlik:** Parolalar SHA-256 ve 16-byte rastgele salt ile hashlenir (`src/lib/crypto.ts`). Parolanın kendisi asla düz metin olarak iletilmez veya saklanmaz.
+- **Kilit Ekranı ve İçerik Koruma:** Şifreli notlar (`is_encrypted: true`), istemcide parola girilip doğrulanana kadar Markdown içeriğini, çizimleri, etiketleri ve gömülü yorumları gizler.
+- **Kesintisiz Arama ve Takvim Uyumluluğu:** Not içeriği, başlığı ve etiketleri arka uç arama indeksinde (`GET /notes?q=...`) ve takvim filtrelerinde listelenmeye devam eder.
+
+### 4.4. Genel Dosya ve Belge Yönetimi
+- **Evrensel Format Desteği:** PDF, TXT, DOCX, XLSX, PPTX, MP4, MP3, ZIP vb. tüm yaygın dosya tipleri desteklenir (`FileUploadDialog.tsx`).
+- **Markdown Entegrasyonu & Yeni Sekmede Açılma:** Yüklenen dosyalar metin içerisine `[📄 dosya_adi.pdf](/api/files/:file_id)` formatında yerleştirilir ve tıklandığında `target="_blank" rel="noreferrer"` ile yeni sekmede açılır.
+- **Dinamik MIME ve Inline Dağıtım:** Sunucu tarafında `GET /files/:file_id` endpoint'i doğru `Content-Type` ve `Content-Disposition: inline` başlıklarıyla yanıt verir.
+
+### 4.5. Gömülü Yorumlar ve Dinamik Etkileşim
+- **İsteğe Bağlı (On-Demand) Yorum Formu:** Yorum ekleme alanı varsayılan olarak gizlidir; "Yorum Ekle" butonu ile açılır ve "İptal" veya başarılı gönderim ile kapanır (`NoteCommentsSection.tsx`).
+- **Takvim Rozet Entegrasyonu:** Yorum tarihleri ayıklanarak dashboard takvim rozet sayımlarına ve gün bazlı filtrelere dahil edilir.
 
 ---
 
@@ -272,6 +309,34 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 
 ---
 
+### 📅 22 Ağustos 2026
+
+- **Genel Dosya ve Belge Yükleme Desteği (PDF, TXT, MP4, MP3, DOCX, ZIP vb.):**
+  - **Evrensel Yükleme Modalı:** Markdown editör araç çubuğuna ve `/` menüsüne `FileUploadDialog.tsx` bileşeni entegre edildi. Sürükle-bırak desteği ve dosya uzantısına göre dinamik ikon gösterimi sağlandı.
+  - **Format İkonlu Markdown Bağlantıları:** Yüklenen dosyalar metin içerisine formatlarına uygun ikonlarla `[📄 dokuman.pdf](/api/files/:file_id)` veya `[🎬 video.mp4](/api/files/:file_id)` olarak eklenir.
+  - **Yeni Sekmede Açılma & Güvenli İndirme:** Markdown içerisindeki bağlantılara tıklandığında `target="_blank" rel="noreferrer"` ile içeriğin yeni sekmede açılması sağlandı.
+  - **Backend Çoklu MIME & Inline Dağıtım:** Sunucu tarafındaki `/upload` ve `/files/:file_id` endpoint'leri video, ses, doküman ve arşiv formatlarını destekleyecek dinamik `Content-Type` ve `Content-Disposition: inline` başlıklarıyla güçlendirildi (`5a2306e`).
+
+- **Not Şifreleme ve Parola Koruması (Note Encryption):**
+  - **Web Crypto API & Kriptografi Katmanı:** İstemci tarafında çalışan `src/lib/crypto.ts` modülü ile SHA-256 + 16-byte rastgele salt parola hashleme ve doğrulama motoru geliştirildi.
+  - **Veritabanı & DDL Migrasyonu:** `notes` ve `note_versions` tablolarına `is_encrypted: boolean (default: false)` ve `password_hash: text` sütunları eklendi.
+  - **3 Nokta & Detay Menü Eylemleri:** Not kartları ve detay sayfasında şifresiz notlar için **"Notu Şifrele"**, şifreli notlar için **"Şifreyi Yönet / Kaldır"** modalları (`EncryptNoteDialog.tsx`) bağlandı.
+  - **Kilit Ekranı Koruması:** Şifrelenmiş notlarda parola girilip **"Kilidi Aç"** denilmedikçe ham metin, çizim, etiket ve gömülü yorumlar gizlenerek şık kilit ekranı gösterilir; istenildiğinde tek tıkla **"Yeniden Kilitle"** butonu sunulur.
+  - **Kesintisiz Arama ve Takvim İndeksleme:** Şifrelenmiş notlar backend aramasında (`GET /notes?q=...`) ve takvim / tarih filtrelerinde listelenmeye devam eder (`5a2306e`).
+
+- **Yorum Önizleme & Takvim Rozet Sayımları İyileştirmesi:**
+  - `MarkdownView.tsx` içerisinde ham yorum blokları (`<!-- inkwell:comments:... -->`) tamamen gizlenerek sadeleştirildi.
+  - `server.ts` içerisindeki `extractNoteDates` fonksiyonu ile yorum tarihleri de ayıklanarak dashboard takvim rozet sayımlarına ve gün filtrelerine dahil edildi (`2ad8f40`).
+
+- **Yorum Ekleme Alanının İsteğe Bağlı Açılması (On-Demand Toggle):**
+  - `NoteCommentsSection.tsx` içerisinde yeni yorum formu varsayılan olarak gizlendi.
+  - Başlık çubuğundaki **"Yorum Ekle"** butonuyla açılan form, **"İptal"** veya başarılı gönderim sonrasında otomatik olarak kapanacak şekilde optimize edildi (`0ceeba4`).
+
+- **İlişkili Notlar Yönlendirme ve Bağlantı Düzeltmesi:**
+  - `NoteDetail.tsx` altındaki ilişkili not referans bağlantıları `/note/${rNote.slug || rNote.note_id}` formatına getirilerek kırık yönlendirme hatası giderildi (`0ceeba4`).
+
+---
+
 ## 6. Dağıtım ve DevOps Yapılandırması
 
 Inkwell V2, Docker konteyner mimarisi ile Coolify veya herhangi bir Docker Host üzerinde sıfır kesintiyle çalışacak şekilde yapılandırılmıştır.
@@ -309,4 +374,4 @@ CMD ["npm", "start"]
 
 ---
 
-*Belge son güncelleme tarihi: 21 Ağustos 2026*
+*Belge son güncelleme tarihi: 22 Ağustos 2026*
