@@ -1058,7 +1058,7 @@ export default function NoteDetail() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {relatedNotes.map(({ note: rNote, isBacklink, isOutgoing }) => {
                     const isCard = rNote.note_type_id === "type_card";
-                    const detailPath = rNote.slug ? `/${rNote.slug}` : `/note/${rNote.note_id}`;
+                    const detailPath = `/note/${rNote.slug || rNote.note_id}`;
 
                     return (
                       <Link

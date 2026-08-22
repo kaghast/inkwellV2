@@ -6,6 +6,7 @@ import {
   Edit2,
   Check,
   X,
+  Plus,
   Bold,
   Italic,
   Link as LinkIcon,
@@ -110,6 +111,7 @@ export default function NoteCommentsSection({
   const { user } = useAuth();
   const { comments } = extractCommentsFromContent(content);
 
+  const [showAddForm, setShowAddForm] = useState(false);
   const [newCommentText, setNewCommentText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -130,6 +132,7 @@ export default function NoteCommentsSection({
 
       await onContentChange(updatedContent, "Yorum eklendi");
       setNewCommentText("");
+      setShowAddForm(false);
       toast.success("Yorum eklendi");
     } catch (err: any) {
       toast.error(err.message || "Yorum eklenirken hata oluştu");
@@ -178,9 +181,24 @@ export default function NoteCommentsSection({
 
   return (
     <div className="mt-4 pt-3 border-t border-border/50 select-none">
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground/80 mb-2.5">
-        <MessageSquare className="w-3.5 h-3.5 text-primary" />
-        <span>Yorumlar {comments.length > 0 ? `(${comments.length})` : ""}</span>
+      <div className="flex items-center justify-between gap-2 text-xs font-semibold text-foreground/80 mb-2.5">
+        <div className="flex items-center gap-1.5">
+          <MessageSquare className="w-3.5 h-3.5 text-primary" />
+          <span>Yorumlar {comments.length > 0 ? `(${comments.length})` : ""}</span>
+        </div>
+        {!disabled && !showAddForm && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowAddForm(true)}
+            className="h-6 px-2 text-xs text-primary hover:text-primary/80 gap-1 cursor-pointer font-medium"
+            data-testid="show-add-comment-btn"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Yorum Ekle</span>
+          </Button>
+        )}
       </div>
 
       <div className="space-y-3 pt-1 select-text">
@@ -268,7 +286,7 @@ export default function NoteCommentsSection({
           </div>
         )}
 
-        {!disabled && (
+        {!disabled && showAddForm && (
           <form onSubmit={handleAddComment} className="pt-1">
             <div className="rounded-lg border border-border/70 bg-card p-2.5 focus-within:border-primary/60 transition-colors shadow-2xs">
               <Textarea
@@ -276,6 +294,7 @@ export default function NoteCommentsSection({
                 onChange={(e) => setNewCommentText(e.target.value)}
                 placeholder="Yorum ekleyin... (**kalın**, *italik*, [link](url) desteklenir)"
                 className="text-xs border-0 p-0 focus-visible:ring-0 shadow-none resize-y min-h-[50px] bg-transparent"
+                autoFocus
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                     e.preventDefault();
@@ -313,16 +332,30 @@ export default function NoteCommentsSection({
                   </button>
                 </div>
 
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={!newCommentText.trim() || isSubmitting}
-                  className="h-7 px-3 text-xs gap-1 cursor-pointer"
-                  data-testid="note-comment-submit-btn"
-                >
-                  <Send className="w-3 h-3" />
-                  <span>Yorum Yap</span>
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setShowAddForm(false);
+                      setNewCommentText("");
+                    }}
+                    className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    İptal
+                  </Button>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={!newCommentText.trim() || isSubmitting}
+                    className="h-7 px-3 text-xs gap-1 cursor-pointer"
+                    data-testid="note-comment-submit-btn"
+                  >
+                    <Send className="w-3 h-3" />
+                    <span>Yorum Yap</span>
+                  </Button>
+                </div>
               </div>
             </div>
           </form>
