@@ -24,6 +24,7 @@ import MarkdownView from "@/components/MarkdownView";
 import MarkdownEditor from "@/components/MarkdownEditor";
 import NoteCommentsSection from "@/components/NoteCommentsSection";
 import NoteVersionsDialog from "@/components/NoteVersionsDialog";
+import { extractCommentsFromContent, embedCommentsIntoContent } from "@/lib/comments";
 import { CustomFieldsForm, CustomFieldsView } from "@/components/CustomFieldsRenderer";
 import { formatDisplayDatetime, toDateTimeLocal } from "@/lib/datetime";
 import { Button } from "@/components/ui/button";
@@ -126,9 +127,12 @@ export default function NoteCard({
     }
     setSaving(true);
     try {
+      const { comments: existingComments } = extractCommentsFromContent(note.content);
+      const fullContentToSave = embedCommentsIntoContent(content, existingComments);
+
       await api.put(`/notes/${note.note_id}`, {
         title: title.trim() || undefined,
-        content,
+        content: fullContentToSave,
         date,
         location_id: locationId,
         note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
@@ -396,7 +400,12 @@ export default function NoteCard({
               {/* Edit Action - Disabled when archived */}
               {!isArchived && (
                 <DropdownMenuItem
-                  onClick={() => setEditing(!editing)}
+                  onClick={() => {
+                    if (!editing) {
+                      setContent(extractCommentsFromContent(note.content).mainContent);
+                    }
+                    setEditing(!editing);
+                  }}
                   className="text-xs cursor-pointer"
                   data-testid={`note-edit-btn-${note.note_id}`}
                 >
@@ -486,7 +495,7 @@ export default function NoteCard({
                 onClick={() => {
                   setEditing(false);
                   setTitle(note.title);
-                  setContent(note.content);
+                  setContent(extractCommentsFromContent(note.content).mainContent);
                   setDate(note.date);
                   setLocationId(note.location_id || null);
                   setNoteTypeId(note.note_type_id || "type_plain");

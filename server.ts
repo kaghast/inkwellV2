@@ -240,6 +240,25 @@ function normalizeDateToIso(dateStr?: string): string {
   return trimmed;
 }
 
+function extractNoteDates(note: { date?: string | null; content?: string | null }): string[] {
+  const dates = new Set<string>();
+  if (note.date) {
+    dates.add(note.date.slice(0, 10));
+  }
+  if (note.content) {
+    const matches = note.content.matchAll(/<!--\s*comment:id=[^,]+,(?:author=[^,]+,)?date=([^,>]+)/gi);
+    for (const match of matches) {
+      if (match[1]) {
+        const d = match[1].trim().slice(0, 10);
+        if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+          dates.add(d);
+        }
+      }
+    }
+  }
+  return Array.from(dates);
+}
+
 function slugify(text: string): string {
   const trMap: Record<string, string> = {
     'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g', 'ı': 'i', 'İ': 'i',
@@ -1929,7 +1948,11 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
     }));
 
     if (date && typeof date === "string") {
-      filtered = filtered.filter((n) => n.date.startsWith(date) || n.date.slice(0, 10) === date);
+      const targetDate = date.slice(0, 10);
+      filtered = filtered.filter((n) => {
+        const noteDates = extractNoteDates(n);
+        return noteDates.includes(targetDate) || n.date.startsWith(date);
+      });
     }
 
     if (category_id && typeof category_id === "string") {
@@ -2029,18 +2052,15 @@ api.get("/notes/calendar", authMiddleware, async (req: AuthRequest, res: Respons
   const prefix = `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-`;
   
   try {
-    const rows = await db.select().from(notes).where(
-      and(
-        eq(notes.userId, userId),
-        sql`${notes.date} LIKE ${`${prefix}%`}`
-      )
-    );
+    const rows = await db.select().from(notes).where(eq(notes.userId, userId));
 
     const counts: Record<string, number> = {};
     for (const r of rows) {
-      const dayKey = (r.date || "").slice(0, 10);
-      if (dayKey) {
-        counts[dayKey] = (counts[dayKey] || 0) + 1;
+      const dates = extractNoteDates(r);
+      for (const d of dates) {
+        if (d.startsWith(prefix)) {
+          counts[d] = (counts[d] || 0) + 1;
+        }
       }
     }
     res.json(counts);

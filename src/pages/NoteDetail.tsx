@@ -46,6 +46,7 @@ import OutlineEditor from "@/components/outline/OutlineEditor";
 import OutlineViewer from "@/components/outline/OutlineViewer";
 import NoteCommentsSection from "@/components/NoteCommentsSection";
 import NoteVersionsDialog from "@/components/NoteVersionsDialog";
+import { extractCommentsFromContent, embedCommentsIntoContent } from "@/lib/comments";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -218,9 +219,12 @@ export default function NoteDetail() {
         ...customFields,
         content_mode: contentMode,
       };
+      const { comments: existingComments } = extractCommentsFromContent(note.content);
+      const fullContentToSave = embedCommentsIntoContent(content, existingComments);
+
       const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
         title,
-        content,
+        content: fullContentToSave,
         date: dateTime,
         slug: slug.trim() || undefined,
         location_id: locationId,
@@ -232,6 +236,7 @@ export default function NoteDetail() {
       setInlineDateVal(toDateTimeLocal(data.date));
       setSlug(data.slug || "");
       setEditing(false);
+      setContent(extractCommentsFromContent(data.content || "").mainContent);
       setContentMode(detectContentMode(data.content || "", data.custom_fields));
       setLoc(locations.find((l) => l.location_id === data.location_id) || null);
       toast.success("Not kaydedildi");
@@ -692,7 +697,7 @@ export default function NoteDetail() {
                   onClick={() => {
                     setEditing(false);
                     setTitle(note.title);
-                    setContent(note.content);
+                    setContent(extractCommentsFromContent(note.content).mainContent);
                     setContentMode(detectContentMode(note.content, note.custom_fields));
                     setDateTime(toDateTimeLocal(note.date));
                     setSlug(note.slug || "");
@@ -771,7 +776,10 @@ export default function NoteDetail() {
                     <Button
                       size="icon"
                       variant="ghost"
-                      onClick={() => setEditing(true)}
+                      onClick={() => {
+                        setContent(extractCommentsFromContent(note.content).mainContent);
+                        setEditing(true);
+                      }}
                       title="Düzenle"
                       data-testid="edit-note-btn"
                     >

@@ -513,15 +513,8 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
   const displayContent = useMemo(() => {
     if (!content) return "";
     let clean = content;
-    if (clean.includes("<!-- inkwell:comments:start -->")) {
-      const start = clean.indexOf("<!-- inkwell:comments:start -->");
-      const end = clean.indexOf("<!-- inkwell:comments:end -->");
-      if (end !== -1) {
-        clean = clean.substring(0, start) + clean.substring(end + "<!-- inkwell:comments:end -->".length);
-      } else {
-        clean = clean.substring(0, start);
-      }
-    }
+    // Strip the entire comments block cleanly
+    clean = clean.replace(/<!--\s*inkwell:comments:start\s*-->[\s\S]*?(?:<!--\s*inkwell:comments:end\s*-->|$)/gi, "");
     clean = clean.replace(/<!--\s*comment:id=[\s\S]*?-->/gi, "");
     clean = clean.replace(/<!--\s*inkwell:comments:(?:start|end)\s*-->/gi, "");
     return clean.trimEnd();
@@ -657,7 +650,7 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
           },
         }}
       >
-        {content || ""}
+        {displayContent || ""}
       </ReactMarkdown>
     </div>
   );
