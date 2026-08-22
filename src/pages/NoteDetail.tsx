@@ -910,7 +910,6 @@ export default function NoteDetail() {
                 noteId={note.note_id}
                 content={note.content}
                 disabled={Boolean(note.archived)}
-                defaultExpanded={true}
                 onContentChange={async (newContent, summary) => {
                   try {
                     const { data } = await api.put<Note>(`/notes/${note.note_id}`, {

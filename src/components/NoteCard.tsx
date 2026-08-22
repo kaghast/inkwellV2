@@ -535,7 +535,6 @@ export default function NoteCard({
           noteId={note.note_id}
           content={note.content}
           disabled={isArchived}
-          defaultExpanded={false}
           onContentChange={async (newContent, summary) => {
             try {
               await api.put(`/notes/${note.note_id}`, {

@@ -51,14 +51,16 @@ export default function NoteVersionsDialog({
       setLoading(true);
       try {
         const res = await api.get<NoteVersion[]>("/notes/" + noteId + "/versions");
-        setVersions(res);
-        if (res.length > 0) {
-          setSelectedVer(res[0]);
+        const data = Array.isArray(res.data) ? res.data : (Array.isArray(res) ? res : []);
+        setVersions(data);
+        if (data.length > 0) {
+          setSelectedVer(data[0]);
         } else {
           setSelectedVer(null);
         }
       } catch (err: any) {
         toast.error("Versiyon geçmişi yüklenirken hata oluştu");
+        setVersions([]);
       } finally {
         setLoading(false);
       }
@@ -75,9 +77,10 @@ export default function NoteVersionsDialog({
 
     setRestoring(true);
     try {
-      const restored = await api.post<Note>(
+      const res = await api.post<Note>(
         "/notes/" + noteId + "/versions/" + selectedVer.version_id + "/restore"
       );
+      const restored = res.data || res;
       toast.success("v" + selectedVer.version_number + " versiyonuna başarıyla geri dönüldü");
       if (onRestored) {
         onRestored(restored);

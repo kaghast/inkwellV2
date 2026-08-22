@@ -74,7 +74,7 @@ export function extractCommentsFromContent(rawContent: string): {
 
     let commentBody = trimmed.replace(COMMENT_HEADER_RE, "").trim();
     commentBody = commentBody
-      .replace(/^>\s*\*\*[^*]+\*\*\s*•\s*\*[^*]+\*\s*\n+/i, "")
+      .replace(/^>\s*(?:\*\*[^*]+\*\*\s*•\s*|💬\s*)?\*[^*]+\*(?:\s*\*\([^*]+\)\*)?\s*\n+/i, "")
       .replace(/^>\s?/gm, "")
       .trim();
 
@@ -106,13 +106,13 @@ export function embedCommentsIntoContent(
   let block = `${COMMENTS_START}\n\n---\n### 💬 Yorumlar (${comments.length})\n\n`;
 
   for (const c of comments) {
-    const safeAuthor = encodeURIComponent(c.author);
+    const safeAuthor = encodeURIComponent(c.author || "Kullanıcı");
     const dateFormatted = formatDateForDisplay(c.createdAt);
     const updatedTag = c.updatedAt ? `,updated=${c.updatedAt}` : "";
     const authorIdTag = c.authorId ? `,authorId=${c.authorId}` : "";
 
     block += `<!-- comment:id=${c.id},author=${safeAuthor},date=${c.createdAt}${updatedTag}${authorIdTag} -->\n`;
-    block += `> **${c.author}** • *${dateFormatted}*${c.updatedAt ? " *(düzenlendi)*" : ""}\n`;
+    block += `> 💬 *${dateFormatted}*${c.updatedAt ? " *(düzenlendi)*" : ""}\n`;
     const quotedContent = c.content
       .split("\n")
       .map((line) => `> ${line}`)

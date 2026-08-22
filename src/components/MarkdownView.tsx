@@ -510,16 +510,33 @@ interface Props {
 }
 
 export default function MarkdownView({ content, onTaskToggle, highlight }: Props) {
+  const displayContent = useMemo(() => {
+    if (!content) return "";
+    let clean = content;
+    if (clean.includes("<!-- inkwell:comments:start -->")) {
+      const start = clean.indexOf("<!-- inkwell:comments:start -->");
+      const end = clean.indexOf("<!-- inkwell:comments:end -->");
+      if (end !== -1) {
+        clean = clean.substring(0, start) + clean.substring(end + "<!-- inkwell:comments:end -->".length);
+      } else {
+        clean = clean.substring(0, start);
+      }
+    }
+    clean = clean.replace(/<!--\s*comment:id=[\s\S]*?-->/gi, "");
+    clean = clean.replace(/<!--\s*inkwell:comments:(?:start|end)\s*-->/gi, "");
+    return clean.trimEnd();
+  }, [content]);
+
   const taskLineToIdx = useMemo(() => {
     const map = new Map<number, number>();
     let idx = 0;
-    (content || "").split("\n").forEach((line, i) => {
+    (displayContent || "").split("\n").forEach((line, i) => {
       if (/^\s*- \[[ xX]\]\s/.test(line)) {
         map.set(i + 1, idx++);
       }
     });
     return map;
-  }, [content]);
+  }, [displayContent]);
 
   const [pendingIdx, setPendingIdx] = useState<number | null>(null);
 
@@ -537,6 +554,7 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
   return (
     <div className="prose-paper break-words [overflow-wrap:anywhere] [word-break:break-word] max-w-full" data-testid="markdown-view">
       <ReactMarkdown
+        children={displayContent}
         remarkPlugins={[remarkGfm]}
         components={{
           p: ParagraphRenderer as any,
