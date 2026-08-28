@@ -247,7 +247,12 @@ export function ReminderProvider({ children }: { children: ReactNode }) {
   const handleGoToNote = () => {
     if (activePopup) {
       markAsRead(activePopup.id);
-      navigate(`/day/${activePopup.date}`);
+      if (activePopup.noteId) {
+        navigate(`/note/${activePopup.noteId}`);
+      } else {
+        const cleanDate = (activePopup.date || "").slice(0, 10);
+        navigate(`/day/${cleanDate}`);
+      }
     }
     setActivePopup(null);
   };

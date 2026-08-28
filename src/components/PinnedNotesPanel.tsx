@@ -4,6 +4,8 @@ import { Pin, Calendar, ArrowRight } from "lucide-react";
 import api from "@/lib/api";
 import type { Note } from "@/types";
 
+import { formatDisplayDatetime } from "@/lib/datetime";
+
 interface Props {
   reloadKey?: number;
 }
@@ -41,29 +43,37 @@ export default function PinnedNotesPanel({ reloadKey }: Props) {
       </div>
 
       <div className="space-y-2">
-        {pinnedNotes.map((note) => (
-          <Link
-            key={note.note_id}
-            to={`/day/${note.date}`}
-            className="group block p-2.5 rounded-lg border border-border/70 hover:border-primary/50 bg-card/60 hover:bg-card transition-all"
-            data-testid={`pinned-note-${note.note_id}`}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-xs font-serif font-medium text-foreground line-clamp-1 group-hover:text-primary transition-colors">
-                {note.title || "Başlıksız Not"}
-              </span>
-              <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1 shrink-0 mt-0.5">
-                <Calendar className="w-2.5 h-2.5" />
-                {note.date}
-              </span>
-            </div>
-            {note.content && (
-              <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1 font-sans leading-relaxed">
-                {note.content.replace(/[#@`*\-_\[\]]/g, "")}
-              </p>
-            )}
-          </Link>
-        ))}
+        {pinnedNotes.map((note) => {
+          const detailPath = `/note/${note.slug || note.note_id}`;
+          const snippet = (note.content || "")
+            .replace(/<!--[\s\S]*?-->/g, "")
+            .replace(/[#@`*\-_\[\]]/g, "")
+            .trim();
+
+          return (
+            <Link
+              key={note.note_id}
+              to={detailPath}
+              className="group block p-2.5 rounded-lg border border-border/70 hover:border-primary/50 bg-card/60 hover:bg-card transition-all"
+              data-testid={`pinned-note-${note.note_id}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-xs font-serif font-medium text-foreground line-clamp-1 group-hover:text-primary transition-colors">
+                  {note.title || "Başlıksız Not"}
+                </span>
+                <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1 shrink-0 mt-0.5">
+                  <Calendar className="w-2.5 h-2.5" />
+                  {formatDisplayDatetime(note.date)}
+                </span>
+              </div>
+              {snippet && (
+                <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1 font-sans leading-relaxed">
+                  {snippet}
+                </p>
+              )}
+            </Link>
+          );
+        })}
       </div>
     </div>
   );

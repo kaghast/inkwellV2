@@ -1900,6 +1900,7 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
     note_type_id,
     q,
     pinned,
+    filter: rawFilter,
     sortOrder,
     limit: rawLimit,
     offset: rawOffset,
@@ -1995,6 +1996,21 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
 
     if (targetLocs.length > 0) {
       filtered = filtered.filter((n) => n.location_id && targetLocs.includes(n.location_id));
+    }
+
+    // Quick filter across all notes (incomplete tasks, completed tasks, reminders, images, pinned)
+    if (rawFilter && typeof rawFilter === "string" && rawFilter !== "all") {
+      if (rawFilter === "incomplete_tasks") {
+        filtered = filtered.filter((n) => /(^|\n)\s*- \[ \]/m.test(n.content));
+      } else if (rawFilter === "completed_tasks") {
+        filtered = filtered.filter((n) => /(^|\n)\s*- \[[xX]\]/m.test(n.content));
+      } else if (rawFilter === "with_reminders") {
+        filtered = filtered.filter((n) => n.content.includes("```reminder"));
+      } else if (rawFilter === "with_images") {
+        filtered = filtered.filter((n) => /!\[[^\]]*\]\([^)]+\)/.test(n.content));
+      } else if (rawFilter === "pinned_only") {
+        filtered = filtered.filter((n) => Boolean(n.pinned));
+      }
     }
 
     // Backend Search across Title, Content, Tags, People

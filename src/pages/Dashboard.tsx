@@ -173,8 +173,14 @@ export default function Dashboard({ mode }: Props) {
       offset,
     };
 
-    // In day mode, strictly filter notes by the selected date (e.g. today or clicked calendar day)
-    if (mode === "day") {
+    // If a quick filter is active (incomplete tasks, completed tasks, reminders, etc.) or search query is present,
+    // search/filter globally across ALL notes.
+    // Otherwise in day mode, filter notes by the selected date (e.g. today or clicked calendar day).
+    if (settings.defaultFilter && settings.defaultFilter !== "all") {
+      queryParams.filter = settings.defaultFilter;
+    } else if (extras.q.trim()) {
+      // If user typed a search query, search globally
+    } else if (mode === "day") {
       queryParams.date = selectedDate;
     }
 
@@ -219,7 +225,7 @@ export default function Dashboard({ mode }: Props) {
     } finally {
       setLoadingMore(false);
     }
-  }, [mode, params.name, params.id, selectedDate, extras]);
+  }, [mode, params.name, params.id, selectedDate, extras, settings.defaultFilter]);
 
   useEffect(() => {
     fetchAux();
