@@ -9,9 +9,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { GitMerge, Search, Calendar, FileText, AlertTriangle } from "lucide-react";
+import { GitMerge, Search, Calendar, FileText, AlertTriangle, MapPin, Tag as TagIcon, Users } from "lucide-react";
 import api from "@/lib/api";
-import type { Note } from "@/types";
+import type { Note, LocationItem } from "@/types";
 import { formatDisplayDatetime } from "@/lib/datetime";
 import { toast } from "sonner";
 
@@ -30,6 +30,7 @@ export default function MergeNoteDialog({
 }: Props) {
   const [search, setSearch] = useState("");
   const [notes, setNotes] = useState<Note[]>([]);
+  const [locations, setLocations] = useState<LocationItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [merging, setMerging] = useState(false);
@@ -45,11 +46,19 @@ export default function MergeNoteDialog({
     (async () => {
       setLoading(true);
       try {
-        const { data } = await api.get<Note[]>("/notes");
-        if (isMounted && Array.isArray(data)) {
-          // Exclude current active note
-          const filtered = data.filter((n) => n.note_id !== currentNoteId);
-          setNotes(filtered);
+        const [notesRes, locsRes] = await Promise.all([
+          api.get<Note[]>("/notes"),
+          api.get<LocationItem[]>("/locations").catch(() => ({ data: [] })),
+        ]);
+
+        if (isMounted) {
+          if (Array.isArray(notesRes.data)) {
+            const filtered = notesRes.data.filter((n) => n.note_id !== currentNoteId);
+            setNotes(filtered);
+          }
+          if (Array.isArray(locsRes.data)) {
+            setLocations(locsRes.data);
+          }
         }
       } catch (err: any) {
         toast.error("Notlar yüklenemedi");
@@ -69,7 +78,8 @@ export default function MergeNoteDialog({
     const titleMatch = (n.title || "").toLowerCase().includes(q);
     const contentMatch = (n.content || "").toLowerCase().includes(q);
     const tagMatch = n.tags?.some((t) => t.toLowerCase().includes(q));
-    return titleMatch || contentMatch || tagMatch;
+    const peopleMatch = n.people?.some((p) => p.toLowerCase().includes(q));
+    return titleMatch || contentMatch || tagMatch || peopleMatch;
   });
 
   async function handleExecuteMerge() {
@@ -79,12 +89,35 @@ export default function MergeNoteDialog({
       // Format markdown content to append/insert
       const noteTitle = selectedNote.title ? selectedNote.title.trim() : "Birleştirilen Not";
       const noteContent = (selectedNote.content || "").trim();
-      
+      const noteDate = selectedNote.date ? formatDisplayDatetime(selectedNote.date) : "";
+      const locName = selectedNote.location_id
+        ? locations.find((l) => l.location_id === selectedNote.location_id)?.name
+        : "";
+      const tags =
+        selectedNote.tags && selectedNote.tags.length > 0
+          ? selectedNote.tags.map((t) => (t.startsWith("#") ? t : "#" + t)).join(" ")
+          : "";
+      const people =
+        selectedNote.people && selectedNote.people.length > 0
+          ? selectedNote.people.map((p) => (p.startsWith("@") ? p : "@" + p)).join(" ")
+          : "";
+
+      const metaLines: string[] = [];
+      if (noteDate) metaLines.push(`> - 📅 **Tarih:** ${noteDate}`);
+      if (locName) metaLines.push(`> - 📍 **Konum:** ${locName}`);
+      if (tags) metaLines.push(`> - 🏷️ **Etiketler:** ${tags}`);
+      if (people) metaLines.push(`> - 👥 **Kişiler:** ${people}`);
+
+      let metaBlock = "";
+      if (metaLines.length > 0) {
+        metaBlock = `> ℹ️ *Birleştirilen Not Bilgileri:*\n` + metaLines.join("\n") + "\n\n";
+      }
+
       let markdownToInsert = "";
       if (noteContent) {
-        markdownToInsert = `\n\n---\n### ${noteTitle}\n\n${noteContent}\n`;
+        markdownToInsert = `\n\n---\n### 🔀 ${noteTitle}\n\n${metaBlock}${noteContent}\n`;
       } else {
-        markdownToInsert = `\n\n---\n### ${noteTitle}\n`;
+        markdownToInsert = `\n\n---\n### 🔀 ${noteTitle}\n\n${metaBlock}`;
       }
 
       // Delete the merged note as required
@@ -171,10 +204,18 @@ export default function MergeNoteDialog({
                     <span className="font-serif font-bold text-xs text-foreground truncate">
                       {n.title || "Başlıksız Not"}
                     </span>
-                    <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1 shrink-0">
-                      <Calendar className="w-2.5 h-2.5" />
-                      {formatDisplayDatetime(n.date)}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {n.location_id && locations.find((l) => l.location_id === n.location_id) && (
+                        <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1">
+                          <MapPin className="w-2.5 h-2.5 text-amber-500" />
+                          {locations.find((l) => l.location_id === n.location_id)?.name}
+                        </span>
+                      )}
+                      <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1">
+                        <Calendar className="w-2.5 h-2.5" />
+                        {formatDisplayDatetime(n.date)}
+                      </span>
+                    </div>
                   </div>
 
                   {snippet && (
@@ -183,14 +224,22 @@ export default function MergeNoteDialog({
                     </p>
                   )}
 
-                  {n.tags && n.tags.length > 0 && (
+                  {((n.tags && n.tags.length > 0) || (n.people && n.people.length > 0)) && (
                     <div className="flex flex-wrap gap-1 mt-0.5">
-                      {n.tags.slice(0, 3).map((t) => (
+                      {n.tags?.slice(0, 3).map((t) => (
                         <span
                           key={t}
                           className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400"
                         >
                           #{t}
+                        </span>
+                      ))}
+                      {n.people?.slice(0, 2).map((p) => (
+                        <span
+                          key={p}
+                          className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400"
+                        >
+                          @{p}
                         </span>
                       ))}
                     </div>
