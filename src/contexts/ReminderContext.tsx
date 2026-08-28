@@ -260,6 +260,8 @@ export function ReminderProvider({ children }: { children: ReactNode }) {
         markAsRead,
         markAllAsRead,
         refreshReminders,
+        activePopup,
+        dismissPopup: handleDismissPopup,
       }}
     >
       {children}

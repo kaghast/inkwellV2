@@ -10,6 +10,8 @@ import ReminderDialog from "@/components/ReminderDialog";
 import ImageUploadDialog from "@/components/ImageUploadDialog";
 import FileUploadDialog from "@/components/FileUploadDialog";
 import TimeSlotDialog from "@/components/TimeSlotDialog";
+import MergeNoteDialog from "@/components/MergeNoteDialog";
+import { SPLIT_MARKER } from "@/lib/noteSplitMerge";
 import { uploadImage } from "@/lib/uploads";
 import { toast } from "sonner";
 import {
@@ -27,6 +29,8 @@ import {
   Sparkles,
   Save,
   Paperclip,
+  Scissors,
+  GitMerge,
 } from "lucide-react";
 
 type SuggestionItem = Tag | Person;
@@ -76,6 +80,7 @@ interface Props {
   onLocationsChanged?: () => void;
   title?: string;
   onTitleChange?: (t: string) => void;
+  noteId?: string;
 }
 
 export default function MarkdownEditor({
@@ -87,6 +92,7 @@ export default function MarkdownEditor({
   onCancel,
   title,
   onTitleChange,
+  noteId,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const [popup, setPopup] = useState<Popup | null>(null);
@@ -95,6 +101,7 @@ export default function MarkdownEditor({
   const [imageOpen, setImageOpen] = useState(false);
   const [fileOpen, setFileOpen] = useState(false);
   const [timeSlotOpen, setTimeSlotOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [fullFocus, setFullFocus] = useState(false);
   const [pendingBlock, setPendingBlock] = useState<null | { start: number; end: number }>(null);
 
@@ -271,6 +278,14 @@ export default function MarkdownEditor({
       case "divider":
         insertPlain("---\n\n");
         break;
+      case "split":
+        insertPlain("\n\n" + SPLIT_MARKER + "\n\n");
+        break;
+      case "merge":
+        setPendingBlock({ start: from, end: caret });
+        setPopup(null);
+        setMergeOpen(true);
+        return;
       case "link":
       case "youtube":
       case "gmap":
@@ -458,7 +473,20 @@ export default function MarkdownEditor({
     setPendingBlock(null);
   }
 
-  function insertQuickBlock(kind: "image" | "file" | "reminder" | "timeslot" | "task" | "link" | "heading" | "quote" | "wikilink") {
+  function onMergeConfirm(markdownToInsert: string) {
+    const el = ref.current;
+    const caret = el ? el.selectionStart : value.length;
+    const from = pendingBlock ? pendingBlock.start : caret;
+    const to = pendingBlock ? pendingBlock.end : caret;
+
+    const before = value.slice(0, from);
+    const needsNl = before.length > 0 && !before.endsWith("\n");
+    const prefix = needsNl ? "\n" : "";
+    replaceRange(from, to, prefix + markdownToInsert + "\n");
+    setPendingBlock(null);
+  }
+
+  function insertQuickBlock(kind: "image" | "file" | "reminder" | "timeslot" | "task" | "link" | "heading" | "quote" | "wikilink" | "split" | "merge") {
     const el = ref.current;
     const caret = el ? el.selectionStart : value.length;
     const before = value.slice(0, caret);
@@ -469,6 +497,11 @@ export default function MarkdownEditor({
       replaceRange(caret, caret, prefix + "[[");
       return;
     }
+    if (kind === "split") {
+      replaceRange(caret, caret, prefix + "\n" + SPLIT_MARKER + "\n\n");
+      setPendingBlock(null);
+      return;
+    }
 
     setPendingBlock({ start: caret, end: caret });
 
@@ -476,6 +509,7 @@ export default function MarkdownEditor({
     else if (kind === "file") setFileOpen(true);
     else if (kind === "reminder") setReminderOpen(true);
     else if (kind === "timeslot") setTimeSlotOpen(true);
+    else if (kind === "merge") setMergeOpen(true);
     else if (kind === "link") setLinkOpen(true);
     else if (kind === "task") {
       replaceRange(caret, caret, prefix + "- [ ] ");
@@ -602,6 +636,28 @@ export default function MarkdownEditor({
             title="Alıntı Ekle"
           >
             <Quote className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => insertQuickBlock("split")}
+            data-testid="toolbar-btn-split"
+            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer text-amber-600 dark:text-amber-400"
+            title="Notu Kes / İkiye Böl (Kaydedildiğinde bu noktadan 2 ayrı not oluşturur)"
+          >
+            <Scissors className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline text-[11px]">Kes</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => insertQuickBlock("merge")}
+            data-testid="toolbar-btn-merge"
+            className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer text-purple-600 dark:text-purple-400"
+            title="Notu Birleştir (Başka bir notun içeriğini buraya ekler ve o notu siler)"
+          >
+            <GitMerge className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline text-[11px]">Birleştir</span>
           </button>
         </div>
 
@@ -837,6 +893,24 @@ export default function MarkdownEditor({
                   <Heading className="w-3.5 h-3.5" />
                   <span>Başlık</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => insertQuickBlock("split")}
+                  className="p-1 px-2 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer text-amber-600 dark:text-amber-400"
+                  title="Notu Kes / İkiye Böl"
+                >
+                  <Scissors className="w-3.5 h-3.5" />
+                  <span>Kes</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => insertQuickBlock("merge")}
+                  className="p-1 px-2 rounded hover:bg-muted hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer text-purple-600 dark:text-purple-400"
+                  title="Notu Birleştir"
+                >
+                  <GitMerge className="w-3.5 h-3.5" />
+                  <span>Birleştir</span>
+                </button>
               </div>
 
               <div className="text-[11px] text-muted-foreground font-mono hidden sm:block">
@@ -853,6 +927,7 @@ export default function MarkdownEditor({
       <ImageUploadDialog open={imageOpen} onOpenChange={setImageOpen} onConfirm={onImageConfirm} />
       <FileUploadDialog open={fileOpen} onOpenChange={setFileOpen} onInsert={onFileConfirm} />
       <TimeSlotDialog open={timeSlotOpen} onOpenChange={setTimeSlotOpen} onConfirm={onTimeSlotConfirm} />
+      <MergeNoteDialog open={mergeOpen} onOpenChange={setMergeOpen} currentNoteId={noteId} onConfirm={onMergeConfirm} />
     </div>
   );
 }

@@ -124,9 +124,12 @@ export default function NoteCommentsSection({
 
     setIsSubmitting(true);
     try {
+      const authorName = user && typeof user === "object" ? user.name || "Kullanıcı" : "Kullanıcı";
+      const authorId = user && typeof user === "object" ? user.user_id : undefined;
+
       const updatedContent = addCommentToNote(content, {
-        author: user?.name || "Kullanıcı",
-        authorId: user?.user_id,
+        author: authorName,
+        authorId: authorId,
         content: newCommentText.trim(),
       });
 

@@ -517,6 +517,7 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
     clean = clean.replace(/<!--\s*inkwell:comments:start\s*-->[\s\S]*?(?:<!--\s*inkwell:comments:end\s*-->|$)/gi, "");
     clean = clean.replace(/<!--\s*comment:id=[\s\S]*?-->/gi, "");
     clean = clean.replace(/<!--\s*inkwell:comments:(?:start|end)\s*-->/gi, "");
+    clean = clean.replace(/<!--\s*inkwell:split\s*-->/gi, "");
     return clean.trimEnd();
   }, [content]);
 
@@ -547,7 +548,6 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
   return (
     <div className="prose-paper break-words [overflow-wrap:anywhere] [word-break:break-word] max-w-full" data-testid="markdown-view">
       <ReactMarkdown
-        children={displayContent}
         remarkPlugins={[remarkGfm]}
         components={{
           p: ParagraphRenderer as any,

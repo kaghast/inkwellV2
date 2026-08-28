@@ -30,6 +30,7 @@ import NoteVersionsDialog from "@/components/NoteVersionsDialog";
 import EncryptNoteDialog from "@/components/EncryptNoteDialog";
 import { verifyPassword } from "@/lib/crypto";
 import { extractCommentsFromContent, embedCommentsIntoContent } from "@/lib/comments";
+import { hasSplitMarker, splitNoteContent } from "@/lib/noteSplitMerge";
 import { CustomFieldsForm, CustomFieldsView } from "@/components/CustomFieldsRenderer";
 import { formatDisplayDatetime, toDateTimeLocal } from "@/lib/datetime";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,8 @@ interface Props {
   noteTypes?: NoteType[];
   locationMap: Record<string, LocationItem>;
   locations: LocationItem[];
+  categoryMap?: Record<string, any>;
+  categories?: any[];
   onDelete: (id: string) => void;
   onChanged: () => void;
   onLocationsChanged?: () => void;
@@ -158,6 +161,38 @@ export default function NoteCard({
     setSaving(true);
     try {
       const { comments: existingComments } = extractCommentsFromContent(note.content);
+
+      if (hasSplitMarker(content)) {
+        const { part1, part2, title2 } = splitNoteContent(content, title);
+        const fullPart1 = embedCommentsIntoContent(part1, existingComments);
+
+        await api.put(`/notes/${note.note_id}`, {
+          title: title.trim() || undefined,
+          content: fullPart1,
+          date,
+          location_id: locationId,
+          note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
+          custom_fields: customFields,
+          change_summary: "Not ikiye bölündü (1. Kısım)",
+        });
+
+        if (part2) {
+          await api.post("/notes", {
+            title: title2,
+            content: part2,
+            date,
+            location_id: locationId,
+            note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
+            custom_fields: customFields,
+          });
+        }
+
+        toast.success("Not 2 ayrı nota bölündü");
+        setEditing(false);
+        onChanged();
+        return;
+      }
+
       const fullContentToSave = embedCommentsIntoContent(content, existingComments);
 
       await api.put(`/notes/${note.note_id}`, {
@@ -555,6 +590,7 @@ export default function NoteCard({
                 onTitleChange={setTitle}
                 onSubmit={handleSaveEdit}
                 placeholder="Not içeriğini girin..."
+                noteId={note.note_id}
                 autoFocus
               />
 

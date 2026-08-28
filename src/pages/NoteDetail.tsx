@@ -52,6 +52,7 @@ import NoteVersionsDialog from "@/components/NoteVersionsDialog";
 import EncryptNoteDialog from "@/components/EncryptNoteDialog";
 import { verifyPassword } from "@/lib/crypto";
 import { extractCommentsFromContent, embedCommentsIntoContent } from "@/lib/comments";
+import { hasSplitMarker, splitNoteContent } from "@/lib/noteSplitMerge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -251,6 +252,49 @@ export default function NoteDetail() {
         content_mode: contentMode,
       };
       const { comments: existingComments } = extractCommentsFromContent(note.content);
+
+      if (hasSplitMarker(content)) {
+        const { part1, part2, title2 } = splitNoteContent(content, title);
+        const fullPart1 = embedCommentsIntoContent(part1, existingComments);
+
+        const { data: updatedNote } = await api.put<Note>(`/notes/${note.note_id}`, {
+          title,
+          content: fullPart1,
+          date: dateTime,
+          slug: slug.trim() || undefined,
+          location_id: locationId,
+          note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
+          custom_fields: updatedFields,
+          change_summary: "Not ikiye bölündü (1. Kısım)",
+        });
+
+        if (part2) {
+          await api.post<Note>("/notes", {
+            title: title2,
+            content: part2,
+            date: dateTime,
+            location_id: locationId,
+            note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
+            custom_fields: updatedFields,
+          });
+        }
+
+        setNote(updatedNote);
+        setDateTime(toDateTimeLocal(updatedNote.date));
+        setInlineDateVal(toDateTimeLocal(updatedNote.date));
+        setSlug(updatedNote.slug || "");
+        setEditing(false);
+        setContent(extractCommentsFromContent(updatedNote.content || "").mainContent);
+        setContentMode(detectContentMode(updatedNote.content || "", updatedNote.custom_fields));
+        setLoc(locations.find((l) => l.location_id === updatedNote.location_id) || null);
+        toast.success("Not 2 ayrı nota bölündü ve kaydedildi");
+
+        if (updatedNote.slug && updatedNote.slug !== id) {
+          navigate(`/note/${updatedNote.slug}`, { replace: true });
+        }
+        return;
+      }
+
       const fullContentToSave = embedCommentsIntoContent(content, existingComments);
 
       const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
@@ -689,6 +733,7 @@ export default function NoteDetail() {
                 title={title}
                 onTitleChange={setTitle}
                 onSubmit={save}
+                noteId={note.note_id}
               />
             )}
 
@@ -1231,6 +1276,7 @@ export default function NoteDetail() {
                   title={title}
                   onTitleChange={setTitle}
                   onSubmit={save}
+                  noteId={note.note_id}
                 />
               )}
             </div>

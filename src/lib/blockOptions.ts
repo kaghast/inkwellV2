@@ -11,6 +11,8 @@ import {
   Image as ImageIcon,
   BellRing,
   CalendarClock,
+  Scissors,
+  GitMerge,
   LucideIcon,
 } from "lucide-react";
 
@@ -31,7 +33,9 @@ export type BlockType =
   | "image"
   | "file"
   | "reminder"
-  | "timeslot";
+  | "timeslot"
+  | "split"
+  | "merge";
 
 export interface BlockOption {
   type: BlockType;
@@ -48,6 +52,8 @@ export const BLOCK_OPTIONS: BlockOption[] = [
   { type: "task", label: "Görev Listesi", hint: "- [ ] Görev", desc: "Onay kutulu yapılacak madde", icon: CheckSquare },
   { type: "quote", label: "Alıntı", hint: "> Alıntı metni", desc: "Vurgulanmış blok alıntı", icon: Quote },
   { type: "divider", label: "Ayırıcı Çizgi", hint: "---", desc: "Yatay ayırıcı", icon: Minus },
+  { type: "split", label: "Notu Kes (İkiye Böl)", hint: "<!-- inkwell:split -->", desc: "Bu noktadan öncesini ve sonrasını 2 ayrı not yapar", icon: Scissors },
+  { type: "merge", label: "Notu Birleştir", hint: "[[Not Seç]]", desc: "Başka bir notun içeriğini buraya ekler ve o notu siler", icon: GitMerge },
   { type: "timeslot", label: "Zaman Bloğu (Time Slot)", hint: "```timeslot", desc: "Süre hesaplamalı zaman aralığı ve aktivite", icon: CalendarClock },
   { type: "image", label: "Görsel Yükle", hint: "![...](...)", desc: "Resim veya ekran görüntüsü ekle", icon: ImageIcon },
   { type: "file", label: "Dosya / Belge Yükle", hint: "[Belge](...)", desc: "PDF, TXT, DOCX, MP4 vb. dosya ekle", icon: LinkIcon },

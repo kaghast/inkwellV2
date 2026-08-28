@@ -80,9 +80,9 @@ export default function NoteVersionsDialog({
       const res = await api.post<Note>(
         "/notes/" + noteId + "/versions/" + selectedVer.version_id + "/restore"
       );
-      const restored = res.data || res;
+      const restored = res.data;
       toast.success("v" + selectedVer.version_number + " versiyonuna başarıyla geri dönüldü");
-      if (onRestored) {
+      if (onRestored && restored) {
         onRestored(restored);
       }
       onOpenChange(false);

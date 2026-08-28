@@ -10,11 +10,14 @@ import { toDateTimeLocal } from "@/lib/datetime";
 import { toast } from "sonner";
 import type { Note, LocationItem, Category, NoteType } from "@/types";
 
+import { hasSplitMarker, splitNoteContent } from "@/lib/noteSplitMerge";
+
 interface Props {
   defaultDate: string;
   defaultLocationId?: string;
   locations: LocationItem[];
   noteTypes?: NoteType[];
+  categories?: any[];
   onCreated: (n: Note) => void;
   onLocationsChanged?: () => void;
 }
@@ -82,6 +85,33 @@ export default function NoteComposer({
     }
     setBusy(true);
     try {
+      if (hasSplitMarker(content)) {
+        const { part1, part2, title2 } = splitNoteContent(content, title);
+        const { data: note1 } = await api.post<Note>("/notes", {
+          title: title.trim() || undefined,
+          content: part1,
+          date: noteDateTime || defaultDate,
+          location_id: locationId,
+          note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
+          custom_fields: customFields,
+        });
+        onCreated(note1);
+
+        if (part2) {
+          await api.post<Note>("/notes", {
+            title: title2,
+            content: part2,
+            date: noteDateTime || defaultDate,
+            location_id: locationId,
+            note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
+            custom_fields: customFields,
+          });
+        }
+        reset();
+        toast.success("Not 2 ayrı nota bölündü ve eklendi");
+        return;
+      }
+
       const { data } = await api.post<Note>("/notes", {
         title,
         content,
