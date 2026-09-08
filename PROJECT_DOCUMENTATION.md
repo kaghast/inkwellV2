@@ -1,6 +1,6 @@
 # 🖋️ Inkwell V2 — Kapsamlı Proje Dokümantasyonu
 
-Bu belge, **Inkwell V2** projesinin başlangıcından bugüne kadar gerçekleştirilen tüm geliştirme adımlarını, sistemin teknolojik altyapısını, veritabanı mimarisini ve veri modellerini ayrıntılı olarak içermektedir.
+Bu belge, **Inkwell V2** projesinin başlangıcından bugüne kadar gerçekleştirilen tüm geliştirme adımlarını, sistemin teknolojik altyapısını, veritabanı mimarisini, özel motorlarını ve veri modellerini ayrıntılı olarak içermektedir.
 
 ---
 
@@ -16,14 +16,15 @@ Bu belge, **Inkwell V2** projesinin başlangıcından bugüne kadar gerçekleşt
 
 ## 1. Proje Özeti ve Vizyon
 
-**Inkwell V2**, modern bilgi yönetimi, düşünce haritalama, görsel çizim, hiyerarşik taslak çıkarma ve lokasyon bazlı not tutma ihtiyaçlarını tek bir çatıda birleştiren **Next-Generation Personal Knowledge Management (PKM)** platformudur.
+**Inkwell V2**, modern bilgi yönetimi, zihin haritalama, görsel çizim, hiyerarşik taslak çıkarma ve lokasyon bazlı not tutma ihtiyaçlarını tek bir çatıda birleştiren **Next-Generation Personal Knowledge Management (PKM)** platformudur.
 
 ### Temel Yetenekler:
-- **3'ü 1 Arada Not Motoru:** Zengin Markdown metin, Excalidraw benzeri serbest vektörel çizim tuvali ve sürükle-bırak hiyerarşik taslak (Outline) üreticisi.
+- **4'ü 1 Arada Not Motoru:** Zengin Markdown metin, Excalidraw benzeri serbest vektörel çizim tuvali, sürükle-bırak hiyerarşik taslak (Outline) üreticisi ve etkileşimli **Zihin Haritası (Mindmap)** motoru.
 - **İki Yönlü Bağlantılar & Bilgi Ağı:** `[[Not Adı]]` sözdizimi ile notlar arası çift yönlü wikilink bağlantıları, referans listeleri ve 2D/3D Etkileşimli Ağ Grafiği (Graph View).
 - **Kanban & Görev Yönetimi:** Not tipleriyle entegre, dinamik kolonlu görsel iş akış panosu.
 - **Akıllı Harita & Canlı Konum:** Çift motorlu harita (Google Maps + Leaflet / OpenStreetMap), GPS otomatik konum tespiti ve Nominatim destekli küresel canlı arama.
-- **Gelişmiş Organizasyon:** Çoklu sekmede (Etiketler, Kişiler, Konumlar) sürükle-bırak destekli hiyerarşik klasör/grup yönetimi.
+- **Gelişmiş Organizasyon:** Sola sabit modern menubar, "+ Yeni Not Ekle" hızlı erişimi ve çoklu sekmede (Etiketler, Kişiler, Konumlar) sürükle-bırak destekli hiyerarşik klasör/grup yönetimi.
+- **Blok Tabanlı Not İşleme:** Notu Kes (Split Note) ve Notu Birleştir (Merge Note) dinamik blokları ile kesintisiz not parçalama ve zengin metadata aktarımıyla not birleştirme.
 - **Yapay Zeka ve Vektör Arama:** Google Gemini ve pgvector 768 boyutlu metin embedding'leri ile anlamsal arama ve otomatik özetleme.
 
 ---
@@ -43,12 +44,12 @@ graph TD
 ### 2.1. Frontend Mimarisi
 - **Çekirdek:** React 18, TypeScript, Vite.
 - **Stil & Tasarım:** Tailwind CSS, Tailwind Animate, PostCSS.
-- **Bileşen Kütüphanesi:** Radix UI Primitives (Dialog, Dropdown, Tabs, Popover, Progress, Checkbox vb.).
+- **Bileşen Kütüphanesi:** Radix UI Primitives (Dialog, Dropdown, Tabs, Popover, Progress, Checkbox, Sheet, Tooltip vb.).
 - **İkonografi:** Lucide React.
 - **Yönlendirme & Durum:** React Router v6, React Context API (`FilterContext`, `AuthContext`), SWR & React Hook Form.
 - **Markdown İşleme:** `react-markdown`, `remark-gfm` (Tablolar, checklist'ler, otomatik URL algılama ve kelime kaydırma koruması).
+- **Görselleştirme & Zihin Haritası:** SVG Bézier Curve Mindmap Engine, Recharts, Force-directed 2D Canvas Graph Engine.
 - **Harita Motoru:** `@vis.gl/react-google-maps`, Leaflet, React-Leaflet, CartoDB Voyager ve OSM Nominatim Geocoder.
-- **Grafik & Görselleştirme:** Recharts, Force-directed 2D Canvas Graph Engine.
 
 ### 2.2. Backend Mimarisi
 - **Çalışma Ortamı:** Node.js, `tsx` (TypeScript Execution Engine).
@@ -103,14 +104,14 @@ erDiagram
 | `created_at` | `timestamp` | Kayıt tarihi |
 | `updated_at` | `timestamp` | Son güncelleme |
 
-#### `notes` (Notlar ve Çizim/Outline İçerikleri)
+#### `notes` (Notlar, Çizim, Outline ve Zihin Haritası İçerikleri)
 | Alan Adı | Tip | Açıklama |
 | :--- | :--- | :--- |
 | `note_id` | `text` (PK) | Benzersiz not kimliği |
 | `user_id` | `text` (FK -> users) | Notun sahibi |
 | `slug` | `text` (Index) | SEO ve doğrudan erişim bağlantı adı |
 | `title` | `text` | Not başlığı |
-| `content` | `text` | Markdown metin / Vektör Çizim / Outline verisi |
+| `content` | `text` | Markdown metin / Vektör Çizim / Outline / Zihin Haritası verisi |
 | `date` | `text` (Index) | ISO Tarih damgası |
 | `tags` | `jsonb` (`string[]`) | Not etiketleri dizisi |
 | `people` | `jsonb` (`string[]`) | Bahsedilen kişiler (`@isim`) |
@@ -163,7 +164,7 @@ erDiagram
 | `user_id` | `text` (FK -> users) | Değişikliği yapan kullanıcı |
 | `version_number` | `integer` | Sıralı versiyon numarası (`1`, `2`, `3`...) |
 | `title` | `text` | İlgili versiyondaki başlık |
-| `content` | `text` | İlgili versiyondaki Markdown/Çizim/Outline içeriği |
+| `content` | `text` | İlgili versiyondaki Markdown/Çizim/Outline/Mindmap içeriği |
 | `date` | `text` | ISO Tarih damgası |
 | `tags` | `jsonb` (`string[]`) | Etiketler dizisi |
 | `people` | `jsonb` (`string[]`) | Bahsedilen kişiler |
@@ -188,44 +189,80 @@ erDiagram
 
 ## 4. Özel Motorlar ve Bileşen Mimarisi
 
-### 4.1. 3'ü 1 Arada Not Formatı Serileştirme Standardı
+### 4.1. 4'ü 1 Arada Not Formatı Serileştirme Standardı
 Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklanır:
 1. **Zengin Markdown:** Standart GFM markdown metinleri, başlıklar, listeler ve `[[wikilink]]` referansları.
 2. **Vektörel Çizim Tuvali (Drawing):** 
-   ````markdown
-   ```drawing
-   {
-     "version": 1,
-     "elements": [
-       { "id": "1", "type": "rectangle", "x": 100, "y": 80, "width": 120, "height": 60, "strokeColor": "#3b82f6" }
-     ],
-     "gridMode": "dots"
-   }
-   ```
-   ````
+```drawing
+{
+  "version": 1,
+  "elements": [
+    { "id": "1", "type": "rectangle", "x": 100, "y": 80, "width": 120, "height": 60, "strokeColor": "#3b82f6" }
+  ],
+  "gridMode": "dots"
+}
+```
 3. **Hiyerarşik Taslak (Outline Generator):**
-   ```markdown
-   - [ ] 1. Proje Analizi ve Gereksinimler
-     - [x] 1.1 Veritabanı Şemasının Hazırlanması
-     - [-] 1.2 Arayüz Mockup Tasarımları
-   - [•] 2. Uygulama Geliştirme Aşaması
-   ```
+```markdown
+- [ ] 1. Proje Analizi ve Gereksinimler
+  - [x] 1.1 Veritabanı Şemasının Hazırlanması
+  - [-] 1.2 Arayüz Mockup Tasarımları
+- [•] 2. Uygulama Geliştirme Aşaması
+```
+4. **Zihin Haritası (Mindmap Engine):**
+```mindmap
+# Ana Fikir / Proje Başlığı
+- [blue] Araştırma ve Analiz
+  - Rakip İncelemesi
+  - Kullanıcı Görüşmeleri
+- [amber] Mimari ve Altyapı
+  - Veritabanı Şeması
+  - Güvenlik ve Şifreleme
+- [emerald] Arayüz ve Tasarım
+  - [rose] Mobil Menubar
+```
 
-### 4.2. Canlı Geocoding ve Çift Motorlu Harita
-- **Leaflet Fallback & ResizeObserver:** Harita kapsayıcısının boyut değişimlerini dinleyen `ResizeObserver` ve 3 kademeli `map.invalidateSize()` çağrısı ile gri/boş harita render hataları engellenmiştir.
-- **Global OSM Arama:** Arama kutusuna yazıldığı anda yerel kayıtlı yerler ile OpenStreetMap Nominatim Geocoder sonuçları anında birleştirilerek `z-[2000]` katmanında listelenir.
+### 4.2. Dördüncü İçerik Modu: Zihin Haritası (Mindmap) Motoru
+- **Çift Yönlü Ayrıştırıcı (`src/lib/mindmapParser.ts`):** Zihin haritaları hiyerarşik Markdown (`#`, `##`, `-`) ve `MindmapNode` ağacı arasında kayıpsız dönüştürülür. Düğüm renkleri `[blue]`, `[emerald]`, `[amber]`, `[purple]`, `[rose]` gibi etiketlerle markdown'a gömülür.
+- **Etkileşimli Editör (`MindmapEditor.tsx`):**
+  - Gerçek zamanlı dinamik genişlik ve Bézier eğrisi bağlantıları.
+  - Alt dal (`+ Dal Ekle`), kardeş düğüm ekleme, düğüm silme, dal katlama/açma (`toggle collapse`).
+  - Hızlı renk seçici paleti, düğüm üzerinde anında metin düzenleme (inline editing).
+  - Tuval üzerinde Pan / Zoom (yakınlaştırma/uzaklaştırma), merkeze sıfırlama ve yüksek kaliteli SVG dışa aktarma (export).
+  - Canlı Markdown taslak sekmesi ile anında ham metin senkronizasyonu.
+- **Görsel Görüntüleyici (`MindmapViewer.tsx`):** Not kartlarında (`NoteCard.tsx`), not detayında (`NoteDetail.tsx`) ve Markdown kod bloklarında (`MarkdownView.tsx`) zihin haritalarını kompakt ve şık SVG ağaçları olarak canlı görselleştirir.
 
-### 4.3. Not Şifreleme ve Kilit Mekanizması (Web Crypto API)
+### 4.3. Sola Sabit Menubar ve Temiz Not Sayfası Mimarisi
+- **Sola Sabit Menubar (`src/components/AppMenubar.tsx`):**
+  - Masaüstü görünümünde `w-64 fixed left-0 top-0 bottom-0` sabit menü; mobil görünümde ise kompakt başlık ve kayar panel (Sheet Drawer).
+  - Üst kısımda parlak degrade efektli prominent **"+ Yeni Not Ekle"** butonu.
+  - Günlük Notlar (`/`), Tüm Notlar (`/notes`), Ağ Grafiği (`/graph`), Harita (`/map`), Kanban (`/kanban`), Bildirimler ve Ayarlar rotaları.
+  - Alt kısımda tema değiştirici (Açık/Koyu/Sistem) ve kullanıcı profil/çıkış alanı.
+  - Tüm sayfa gövdeleri `lg:pl-64` düzeni ile menubarla tam uyumlu şekilde hizalanmıştır.
+- **Temiz Yeni Not Ekleme Sayfası (`src/pages/NewNotePage.tsx`):**
+  - `/new` ve `/notes/new` rotalarında çalışan, dikkat dağıtıcı unsurlardan arındırılmış tam özellikli not editörü.
+  - 4 içerik modu seçimi (Markdown, Çizim, Outline, Zihin Haritası), başlık, tarih, konum, dinamik not tipi alanları, parola korumalı şifreleme ve Tam Odaklanma Modu (Full Focus Mode) desteği.
+
+### 4.4. Notu Kes (Split) ve Notu Birleştir (Merge) Blokları
+- **Notu Kes (Split Note) Bloğu (`src/lib/splitMerge.ts` & `SplitNoteDialog.tsx`):**
+  - İçerikte imlecin bulunduğu veya seçilen ayrım noktasına `<!-- inkwell:split-note -->` bloğu yerleştirilir.
+  - Not kaydedildiğinde veya onaylandığında, ayrım noktasından önceki kısım mevcut notta kalır; sonraki kısım ise aynı etiket, kişi ve konum bilgileriyle yeni bir not olarak sisteme eklenir (`POST /notes`).
+- **Notu Birleştir (Merge Note) Bloğu (`MergeNoteDialog.tsx`):**
+  - Editörden "Notu Birleştir" seçildiğinde kullanıcının diğer notları aranabilir modalda listelenir (veya içerikteki `[[...]]` referansı seçilebilir).
+  - Birleştirilen notun Markdown içeriği, konumu, etiketleri, kişileri, oluşturulma tarihi ve özel alanları mevcut notun altına zengin formatlanmış bir alıntı ve metadata bloğu olarak eklenir.
+  - Birleştirme işlemi başarıyla tamamlandığında kaynak not veritabanından güvenli biçimde silinir (`DELETE /notes/:note_id`).
+
+### 4.5. Not Şifreleme ve Kilit Mekanizması (Web Crypto API)
 - **Kriptografik Güvenlik:** Parolalar SHA-256 ve 16-byte rastgele salt ile hashlenir (`src/lib/crypto.ts`). Parolanın kendisi asla düz metin olarak iletilmez veya saklanmaz.
 - **Kilit Ekranı ve İçerik Koruma:** Şifreli notlar (`is_encrypted: true`), istemcide parola girilip doğrulanana kadar Markdown içeriğini, çizimleri, etiketleri ve gömülü yorumları gizler.
 - **Kesintisiz Arama ve Takvim Uyumluluğu:** Not içeriği, başlığı ve etiketleri arka uç arama indeksinde (`GET /notes?q=...`) ve takvim filtrelerinde listelenmeye devam eder.
 
-### 4.4. Genel Dosya ve Belge Yönetimi
+### 4.6. Genel Dosya ve Belge Yönetimi
 - **Evrensel Format Desteği:** PDF, TXT, DOCX, XLSX, PPTX, MP4, MP3, ZIP vb. tüm yaygın dosya tipleri desteklenir (`FileUploadDialog.tsx`).
 - **Markdown Entegrasyonu & Yeni Sekmede Açılma:** Yüklenen dosyalar metin içerisine `[📄 dosya_adi.pdf](/api/files/:file_id)` formatında yerleştirilir ve tıklandığında `target="_blank" rel="noreferrer"` ile yeni sekmede açılır.
 - **Dinamik MIME ve Inline Dağıtım:** Sunucu tarafında `GET /files/:file_id` endpoint'i doğru `Content-Type` ve `Content-Disposition: inline` başlıklarıyla yanıt verir.
 
-### 4.5. Gömülü Yorumlar ve Dinamik Etkileşim
+### 4.7. Gömülü Yorumlar ve Dinamik Etkileşim
 - **İsteğe Bağlı (On-Demand) Yorum Formu:** Yorum ekleme alanı varsayılan olarak gizlidir; "Yorum Ekle" butonu ile açılır ve "İptal" veya başarılı gönderim ile kapanır (`NoteCommentsSection.tsx`).
 - **Takvim Rozet Entegrasyonu:** Yorum tarihleri ayıklanarak dashboard takvim rozet sayımlarına ve gün bazlı filtrelere dahil edilir.
 
@@ -337,6 +374,45 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 
 ---
 
+### 📅 28 Ağustos 2026
+
+- **Notu Kes (Split Note) ve Notu Birleştir (Merge Note) Blok Yapısı:**
+  - **Notu Kes Bloğu:** Editör araç çubuğuna ve `/split` slash menüsüne "Notu Kes" butonu eklendi. `<!-- inkwell:split-note -->` bloğu yerleştirilerek onaylandığında not ayrım yerinden iki bağımsız nota bölünür; ikinci bölüm yeni bir not olarak oluşturulur (`SplitNoteDialog.tsx`).
+  - **Notu Birleştir Bloğu:** Editör araç çubuğuna ve `/merge` slash menüsüne "Notu Birleştir" butonu eklendi. Modal üzerinde aranabilir mevcut not listesi veya `[[Not Adı]]` wikilink referansları sunulur.
+  - **Zengin Metadata Aktarımı:** Birleştirilen notun içeriğinin yanı sıra konumu, etiketleri, kişileri, oluşturulma tarihi ve dinamik alanları Markdown alıntı bloğuna formatlı olarak eklenir ve ardından birleştirilen not veritabanından güvenli bir şekilde silinir.
+
+- **Global Not Filtreleme ve Pinleme Hatalarının Giderilmesi:**
+  - **Tüm Notları Kapsayan Filtreleme:** Dashboard üzerindeki "Not Filtresi" (Tamamlanmamış görevler, tamamlanmış görevler, çizim içeren notlar, bağlantılı notlar vb.) yalnızca bugünün notlarına değil, sistemdeki tüm notlara uygulanacak şekilde revize edildi.
+  - **Sabitlenmiş (Pinned) Not Kartı Yönlendirmesi:** Pin'lenen not kartlarına tıklandığında doğru `/note/:slug` veya `/note/:note_id` rotasına sorunsuz geçişi sağlandı.
+
+---
+
+### 📅 8 Eylül 2026 (Sola Sabit Menubar & 4. İçerik Modu Zihin Haritası)
+
+- **Sola Sabit Modern Menubar Mimarisi (`AppMenubar.tsx`):**
+  - Üst gezinme çubuğu (header/navbar) kaldırılarak sol tarafta `w-64 fixed left-0 top-0 bottom-0` sabit dikey menubar kurgulandı.
+  - **Prominent "+ Yeni Not Ekle" Butonu:** Menü üzerinde dikkat çekici renk geçişine sahip doğrudan hızlı not oluşturma eylemi konumlandırıldı.
+  - Navigasyon bağlantıları: *Bugün* (`/`), *Tüm Notlar* (`/notes`), *Ağ Grafiği* (`/graph`), *Harita* (`/map`), *Kanban* (`/kanban`), *Bildirimler* ve *Ayarlar*.
+  - Alt kısıma tema seçici ve kullanıcı profili/çıkış menüsü entegre edildi.
+  - Mobil cihazlarda kompakt üst çubuk ve akıcı slide-out drawer (Sheet) ile kusursuz responsive deneyim sağlandı.
+  - `Dashboard.tsx`, `AllNotes.tsx`, `GraphView.tsx`, `MapView.tsx`, `KanbanPage.tsx`, `NoteDetail.tsx` ve `SettingsPage.tsx` sayfaları `lg:pl-64` düzenine uyarlandı (`2508dce`).
+
+- **Temiz Yeni Not Ekleme Sayfası (`NewNotePage.tsx`):**
+  - `/new` ve `/notes/new` rotalarında çalışan, temiz ve dikkat dağıtmayan tam ekran not oluşturma sayfası geliştirildi.
+  - 4 içerik modu, başlık, tarih, konum, özel alanlar, şifreleme ve tam odak modu entegrasyonu sağlandı.
+
+- **Dördüncü İçerik Düzenleme Modu: Zihin Haritası (Mindmap Engine):**
+  - **`src/lib/mindmapParser.ts`:** Markdown hiyerarşisi (`#`, `##`, `-`) ve `MindmapNode` ağacı arasında kayıpsız iki yönlü ayrıştırıcı ve serileştirici geliştirildi. Renk kodları (`[blue]`, `[emerald]`, `[amber]` vb.) doğrudan markdown etiketleri olarak tutulur.
+  - **`src/components/mindmap/MindmapEditor.tsx`:**
+    - Dinamik Bézier bağlantılı etkileşimli SVG ağacı.
+    - Alt ve kardeş dal ekleme/çıkarma, dal katlama/açma, satır içi metin düzenleme (inline editing).
+    - Canlı renk paleti seçimi, tuval Pan & Zoom kontrolleri, merkeze hizalama ve SVG olarak dışa aktarma.
+    - Canlı Markdown taslak sekmesi ile anlık metin düzenleme senkronizasyonu.
+  - **`src/components/mindmap/MindmapViewer.tsx`:**
+    - Not kartlarında (`NoteCard.tsx`), not detayında (`NoteDetail.tsx`) ve Markdown kod bloklarında (`MarkdownView.tsx`) zihin haritalarını canlı ve estetik olarak render eden görüntüleyici motoru.
+
+---
+
 ## 6. Dağıtım ve DevOps Yapılandırması
 
 Inkwell V2, Docker konteyner mimarisi ile Coolify veya herhangi bir Docker Host üzerinde sıfır kesintiyle çalışacak şekilde yapılandırılmıştır.
@@ -374,4 +450,4 @@ CMD ["npm", "start"]
 
 ---
 
-*Belge son güncelleme tarihi: 22 Ağustos 2026*
+*Belge son güncelleme tarihi: 8 Eylül 2026*
