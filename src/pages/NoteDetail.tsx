@@ -436,7 +436,7 @@ export default function NoteDetail() {
   return (
     <div className="paper min-h-screen flex flex-col">
       <AppMenubar />
-      <div className="lg:pl-64 flex-1 flex flex-col min-w-0">
+      <div className="pt-14 lg:pl-16 flex-1 flex flex-col min-w-0">
         <main className="flex-1 max-w-3xl w-full mx-auto px-5 py-8" data-testid="note-detail">
           {/* Navigation & Actions Top Bar */}
           <div className="flex items-center justify-between gap-2 mb-6">

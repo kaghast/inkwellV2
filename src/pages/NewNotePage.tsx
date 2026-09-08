@@ -130,7 +130,7 @@ export default function NewNotePage() {
       <AppMenubar />
 
       {/* Main Container with desktop left padding for menubar */}
-      <div className="lg:pl-64 flex-1 flex flex-col min-w-0">
+      <div className="pt-14 lg:pl-16 flex-1 flex flex-col min-w-0">
         <main
           className={`min-w-0 w-full mx-auto p-4 sm:p-6 lg:p-10 transition-all ${
             fullFocus ? "fixed inset-0 z-50 bg-background overflow-y-auto p-6 lg:p-12" : "max-w-4xl"

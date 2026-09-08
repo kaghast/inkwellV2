@@ -203,7 +203,7 @@ export default function AllNotes() {
     <div className="min-h-screen bg-background text-foreground flex flex-col antialiased">
       <AppMenubar />
 
-      <div className="lg:pl-64 flex-1 flex flex-col min-w-0">
+      <div className="pt-14 lg:pl-16 flex-1 flex flex-col min-w-0">
         <div className="flex-1 flex w-full max-w-(--breakpoint-2xl) mx-auto">
           {/* Left Sidebar (Desktop) */}
           <aside className="hidden lg:block w-64 xl:w-72 shrink-0 border-r border-border p-4 sticky top-0 h-screen overflow-y-auto">

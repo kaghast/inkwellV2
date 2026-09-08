@@ -232,13 +232,18 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
   - Canlı Markdown taslak sekmesi ile anında ham metin senkronizasyonu.
 - **Görsel Görüntüleyici (`MindmapViewer.tsx`):** Not kartlarında (`NoteCard.tsx`), not detayında (`NoteDetail.tsx`) ve Markdown kod bloklarında (`MarkdownView.tsx`) zihin haritalarını kompakt ve şık SVG ağaçları olarak canlı görselleştirir.
 
-### 4.3. Sola Sabit Menubar ve Temiz Not Sayfası Mimarisi
-- **Sola Sabit Menubar (`src/components/AppMenubar.tsx`):**
-  - Masaüstü görünümünde `w-64 fixed left-0 top-0 bottom-0` sabit menü; mobil görünümde ise kompakt başlık ve kayar panel (Sheet Drawer).
-  - Üst kısımda parlak degrade efektli prominent **"+ Yeni Not Ekle"** butonu.
-  - Günlük Notlar (`/`), Tüm Notlar (`/notes`), Ağ Grafiği (`/graph`), Harita (`/map`), Kanban (`/kanban`), Bildirimler ve Ayarlar rotaları.
-  - Alt kısımda tema değiştirici (Açık/Koyu/Sistem) ve kullanıcı profil/çıkış alanı.
-  - Tüm sayfa gövdeleri `lg:pl-64` düzeni ile menubarla tam uyumlu şekilde hizalanmıştır.
+### 4.3. Üst Header ve Sol İkon Menü Çubuğu Mimarisi
+- **Üst Header (`fixed top-0 left-0 lg:left-16 right-0 h-14`):**
+  - Tüm sayfalarda üstte sabitlenmiş modern başlık çubuğu.
+  - **Sağ Tarafta:** Inkwell Logosu ve Başlığı ("Inkwell" + tüy ikonu), Bildirimler & Hatırlatmalar dropdown menüsü, Tema değiştirici (Güneş/Ay) ve Kişisel Menü (Kullanıcı avatarı, e-posta, ayarlar ve çıkış).
+  - **Sol Tarafta:** Mobil cihazlar için açılır menü (drawer) butonu.
+- **Sol Bar (Sadece İkon Menü - `w-16 fixed left-0 top-0 bottom-0`):**
+  - Masaüstü görünümünde `w-16` kompakt dikey menubar.
+  - Üstte hızlı **"+ Yeni Not Ekle"** ikon butonu (`Plus`).
+  - Ortada dikey gezinme ikonları: *Günlük Akış* (`/`), *Bütün Notlar* (`/all-notes`), *Ağ Görünümü* (`/graph`), *Harita* (`/map`), *Kanban* (`/kanban`).
+  - Altta *Ayarlar* (`/settings`) ikon butonu.
+  - Her ikon için zengin CSS floating hover tooltip ve sol kenar aktiflik indikatörü.
+  - Sayfa içerikleri `pt-14 lg:pl-16` düzeni ile header ve sol bar ile kusursuz hizalanmıştır.
 - **Temiz Yeni Not Ekleme Sayfası (`src/pages/NewNotePage.tsx`):**
   - `/new` ve `/notes/new` rotalarında çalışan, dikkat dağıtıcı unsurlardan arındırılmış tam özellikli not editörü.
   - 4 içerik modu seçimi (Markdown, Çizim, Outline, Zihin Haritası), başlık, tarih, konum, dinamik not tipi alanları, parola korumalı şifreleme ve Tam Odaklanma Modu (Full Focus Mode) desteği.

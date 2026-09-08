@@ -492,7 +492,7 @@ export default function Dashboard({ mode }: Props) {
       <div className="min-h-screen flex flex-col paper">
         <AppMenubar />
 
-        <div className="lg:pl-64 flex-1 flex flex-col min-w-0">
+        <div className="pt-14 lg:pl-16 flex-1 flex flex-col min-w-0">
           <div className="flex-1 grid grid-cols-1 lg:grid-cols-[270px_1fr_300px] min-h-0">
             {/* Left Sidebar (Desktop) */}
             <div className="hidden lg:block border-r border-border min-h-0 overflow-hidden">

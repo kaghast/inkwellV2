@@ -40,6 +40,7 @@ import {
   ShieldCheck,
   CheckCheck,
   Boxes,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import AppMenubar from "@/components/AppMenubar";
 import NoteTypeManager from "@/components/NoteTypeManager";
@@ -347,9 +348,9 @@ export default function SettingsPage() {
     <div className="min-h-screen bg-background text-foreground flex flex-col paper select-none" data-testid="settings-page">
       <AppMenubar />
 
-      <div className="lg:pl-64 flex-1 flex flex-col min-w-0">
-        {/* Top Header Bar */}
-        <header className="sticky top-0 z-30 h-14 border-b border-border bg-background/80 backdrop-blur-xl flex items-center justify-between px-4 lg:px-8">
+      <div className="pt-14 lg:pl-16 flex-1 flex flex-col min-w-0">
+        {/* Settings Page Sub-Header */}
+        <div className="border-b border-border bg-background/50 flex items-center justify-between px-4 lg:px-8 py-3">
           <div className="flex items-center gap-3">
             <Link
               to="/"
@@ -361,7 +362,7 @@ export default function SettingsPage() {
             </Link>
             <div className="h-4 w-px bg-border/60 mx-1" />
             <div className="flex items-center gap-2">
-              <Feather className="w-4 h-4 text-foreground" strokeWidth={1.5} />
+              <SettingsIcon className="w-4 h-4 text-primary" strokeWidth={1.75} />
               <h1 className="font-serif text-lg font-bold tracking-tight">Ayarlar & Yedekleme</h1>
             </div>
           </div>
@@ -374,7 +375,7 @@ export default function SettingsPage() {
               </div>
             )}
           </div>
-        </header>
+        </div>
 
         {/* Main Settings Container */}
         <div className="flex-1 max-w-6xl w-full mx-auto p-4 lg:p-8 flex flex-col md:flex-row gap-6 items-start">

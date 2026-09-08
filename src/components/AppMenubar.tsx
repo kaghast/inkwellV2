@@ -93,100 +93,299 @@ export default function AppMenubar({
     },
   ];
 
-  const renderNavLinks = (onItemClick?: () => void) => (
-    <div className="space-y-1">
-      {navItems.map((item) => {
-        const Icon = item.icon;
-        const isActive =
-          item.path === "/"
-            ? location.pathname === "/" || location.pathname.startsWith("/day/")
-            : location.pathname === item.path;
-
-        return (
-          <Link
-            key={item.path}
-            to={item.path}
-            data-testid={item.testId}
-            onClick={() => {
-              if (onItemClick) onItemClick();
-            }}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-              isActive
-                ? "bg-primary/10 text-primary font-semibold border border-primary/20 shadow-2xs"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-            }`}
-          >
-            <Icon className={`w-4 h-4 ${isActive ? "text-primary" : "text-muted-foreground"}`} strokeWidth={1.75} />
-            <span>{item.label}</span>
-          </Link>
-        );
-      })}
-    </div>
-  );
-
   return (
     <>
-      {/* Mobile Top Header (Visible only on < lg screens) */}
-      <header className="lg:hidden sticky top-0 z-40 h-14 border-b border-border bg-background/95 backdrop-blur-md flex items-center justify-between px-3 select-none">
+      {/* 1. TOP HEADER (Header'ı tamamen kaldırma - Inkwell logo ve başlık sağda, bildirimler ve kişisel menü sağda) */}
+      <header
+        className="fixed top-0 left-0 lg:left-16 right-0 h-14 z-30 bg-background/95 backdrop-blur-md border-b border-border flex items-center justify-between px-3 sm:px-5 select-none"
+        data-testid="app-header"
+      >
+        {/* Left Area: Mobile Menu Toggle & Optional Breadcrumb */}
         <div className="flex items-center gap-2">
           <Button
             size="icon"
             variant="ghost"
-            className="h-8 w-8"
+            className="lg:hidden h-8 w-8 text-muted-foreground hover:text-foreground"
             onClick={() => setMobileMenuOpen(true)}
             data-testid="mobile-menubar-toggle-btn"
           >
             <Menu className="w-4 h-4" strokeWidth={1.5} />
           </Button>
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-              <Feather className="w-4 h-4" strokeWidth={1.75} />
-            </div>
-            <span className="font-serif text-base font-bold text-foreground">Inkwell</span>
-          </Link>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Quick New Note Button Mobile */}
+        {/* Right Area: Inkwell Logo + Başlık & Bildirimler & Tema & Kişisel Menü */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Inkwell Logo ve Başlık (Header üzerinde sağda) */}
+          <Link
+            to="/"
+            className="flex items-center gap-2 px-2.5 py-1 rounded-lg hover:bg-muted/50 transition-colors group cursor-pointer"
+            data-testid="header-logo-link"
+          >
+            <div className="w-7 h-7 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all shadow-2xs">
+              <Feather className="w-3.5 h-3.5" strokeWidth={1.75} />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-serif text-base font-bold tracking-tight text-foreground leading-none">
+                Inkwell
+              </span>
+              <span className="hidden sm:inline-block text-[9px] font-mono text-muted-foreground leading-none mt-0.5">
+                v2
+              </span>
+            </div>
+          </Link>
+
+          <div className="h-4 w-[1px] bg-border/80 hidden sm:block" />
+
+          {/* Quick New Note Button for Mobile */}
           <Link
             to="/new"
-            className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-primary text-primary-foreground font-semibold rounded-md shadow-2xs hover:opacity-90 transition-opacity"
+            className="lg:hidden flex items-center gap-1 text-xs px-2.5 py-1.5 bg-primary text-primary-foreground font-semibold rounded-md shadow-2xs hover:opacity-90 transition-opacity"
             data-testid="mobile-quick-new-note-btn"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Yeni Not</span>
+            <span className="hidden xs:inline">Yeni Not</span>
           </Link>
 
-          {/* Theme Toggle */}
+          {/* Notifications Dropdown (Bildirimler - Header üzerinde sağda) */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="relative h-8 w-8 text-muted-foreground hover:text-foreground cursor-pointer rounded-lg"
+                data-testid="header-notifications-btn"
+                title="Bildirimler & Hatırlatmalar"
+              >
+                <Bell className="w-4 h-4" strokeWidth={1.5} />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 px-1 py-0.2 min-w-4 h-4 bg-[hsl(var(--accent-tag))] text-white text-[9px] font-mono font-bold rounded-full flex items-center justify-center">
+                    {unreadCount}
+                  </span>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80 bg-popover border-border p-0 shadow-xl mt-1">
+              <div className="flex items-center justify-between p-3 border-b border-border">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-serif font-semibold text-sm">Bildirimler & Hatırlatmalar</span>
+                  {unreadCount > 0 && (
+                    <span className="bg-[hsl(var(--accent-tag))/0.15] text-[hsl(var(--accent-tag))] font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                      {unreadCount} yeni
+                    </span>
+                  )}
+                </div>
+                {unreadCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={markAllAsRead}
+                    className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer"
+                  >
+                    <CheckCheck className="w-3 h-3" /> Tümünü oku
+                  </button>
+                )}
+              </div>
+
+              <div className="max-h-72 overflow-y-auto divide-y divide-border/40">
+                {sortedReminders.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-muted-foreground italic">
+                    Henüz kayıtlı bir hatırlatma yok
+                  </div>
+                ) : (
+                  sortedReminders.slice(0, 10).map((r) => {
+                    const targetTime = new Date(r.targetIso).getTime();
+                    const isPast = Date.now() >= targetTime;
+                    return (
+                      <div
+                        key={r.id}
+                        onClick={() => {
+                          markAsRead(r.id);
+                          navigate(r.noteId ? `/note/${r.noteId}` : `/day/${r.date}`);
+                        }}
+                        className={`p-3 cursor-pointer transition-colors flex items-start gap-2.5 ${
+                          !r.read && isPast
+                            ? "bg-accent/40 hover:bg-accent/60"
+                            : "hover:bg-muted/40"
+                        }`}
+                      >
+                        <div
+                          className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                            !r.read && isPast
+                              ? "bg-[hsl(var(--accent-tag))]"
+                              : "bg-transparent"
+                          }`}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-foreground font-serif leading-snug">
+                            {r.text}
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-1 font-mono">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              {r.date}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {new Date(r.targetIso).toLocaleTimeString("tr-TR", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Theme Toggle Button */}
           <Button
             size="icon"
             variant="ghost"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground cursor-pointer rounded-lg"
             onClick={toggle}
+            title="Açık / Koyu Tema"
           >
             {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </Button>
 
-          {/* Mobile User Avatar */}
+          {/* User Account / Profile Dropdown Menu (Kişisel Menü - Header üzerinde sağda) */}
           {u && u.user_id && (
-            <Avatar className="h-7 w-7 ring-1 ring-border" onClick={() => navigate("/settings")}>
-              {u.picture && <AvatarImage src={u.picture} alt={u.name || ""} />}
-              <AvatarFallback className="text-[10px] font-mono bg-secondary font-bold">{initials}</AvatarFallback>
-            </Avatar>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 p-1 rounded-full hover:ring-2 hover:ring-primary/40 transition-all cursor-pointer select-none"
+                  data-testid="header-user-btn"
+                  title={u.name || u.email}
+                >
+                  <Avatar className="h-7 w-7 ring-1 ring-border shadow-2xs">
+                    {u.picture && <AvatarImage src={u.picture} alt={u.name || ""} />}
+                    <AvatarFallback className="text-[10px] font-mono bg-primary/10 text-primary font-bold">
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 bg-popover border-border shadow-xl mt-1">
+                <DropdownMenuLabel className="font-mono text-xs">
+                  <div className="truncate font-semibold">{u.name}</div>
+                  <div className="text-muted-foreground truncate font-normal text-[11px]">{u.email}</div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+
+                <DropdownMenuItem
+                  onClick={() => navigate("/settings")}
+                  data-testid="header-settings-item"
+                  className="cursor-pointer"
+                >
+                  <Settings className="w-3.5 h-3.5 mr-2 text-muted-foreground" strokeWidth={1.5} /> Ayarlar
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+
+                <DropdownMenuItem
+                  onClick={logout}
+                  data-testid="header-logout-item"
+                  className="cursor-pointer text-destructive focus:text-destructive"
+                >
+                  <LogOut className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> Çıkış yap
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </header>
 
-      {/* Mobile Drawer Sheet */}
+      {/* 2. SOL BAR: SADECE ICON MENU (w-16 on lg+ screens) */}
+      <aside
+        className="hidden lg:flex fixed left-0 top-0 bottom-0 w-16 bg-card border-r border-border flex-col items-center justify-between py-3 z-40 select-none"
+        data-testid="desktop-icon-menubar"
+      >
+        {/* Top: + Yeni Not Ekle Icon Button */}
+        <div className="flex flex-col items-center gap-3 w-full">
+          <Link
+            to="/new"
+            className="w-10 h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-sm hover:scale-105 active:scale-95 transition-all group relative cursor-pointer"
+            data-testid="menubar-new-note-btn"
+            title="Yeni Not Ekle"
+          >
+            <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-200" />
+            <span className="absolute left-14 px-2.5 py-1 bg-popover text-popover-foreground text-xs font-semibold rounded-md shadow-md border border-border pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap">
+              Yeni Not Ekle
+            </span>
+          </Link>
+
+          <div className="w-8 h-[1px] bg-border/80" />
+
+          {/* Navigation Icon Menu */}
+          <nav className="flex flex-col items-center gap-1.5 w-full px-2">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive =
+                item.path === "/"
+                  ? location.pathname === "/" || location.pathname.startsWith("/day/")
+                  : location.pathname === item.path;
+
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  data-testid={item.testId}
+                  title={item.label}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all group relative cursor-pointer ${
+                    isActive
+                      ? "bg-primary/15 text-primary border border-primary/25 shadow-2xs font-semibold"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/70"
+                  }`}
+                >
+                  {isActive && (
+                    <span className="absolute -left-2 top-1/2 -translate-y-1/2 w-1 h-4 bg-primary rounded-r-full" />
+                  )}
+                  <Icon className="w-4 h-4" strokeWidth={isActive ? 2 : 1.75} />
+                  {/* Floating Hover Tooltip */}
+                  <span className="absolute left-14 px-2.5 py-1 bg-popover text-popover-foreground text-xs font-medium rounded-md shadow-md border border-border pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap">
+                    {item.label}
+                  </span>
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Bottom: Settings Icon */}
+        <div className="flex flex-col items-center gap-2 w-full px-2">
+          <Link
+            to="/settings"
+            data-testid="menubar-settings-btn"
+            title="Ayarlar"
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all group relative cursor-pointer ${
+              location.pathname === "/settings"
+                ? "bg-primary/15 text-primary border border-primary/25 shadow-2xs font-semibold"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/70"
+            }`}
+          >
+            {location.pathname === "/settings" && (
+              <span className="absolute -left-2 top-1/2 -translate-y-1/2 w-1 h-4 bg-primary rounded-r-full" />
+            )}
+            <Settings className="w-4 h-4" strokeWidth={1.75} />
+            <span className="absolute left-14 px-2.5 py-1 bg-popover text-popover-foreground text-xs font-medium rounded-md shadow-md border border-border pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap">
+              Ayarlar
+            </span>
+          </Link>
+        </div>
+      </aside>
+
+      {/* 3. MOBILE DRAWER SHEET */}
       {mobileMenuOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          {/* Backdrop */}
           <div
             className="fixed inset-0 bg-background/80 backdrop-blur-xs transition-opacity"
             onClick={() => setMobileMenuOpen(false)}
           />
 
-          {/* Drawer Content */}
           <div className="relative flex flex-col w-72 max-w-full bg-card border-r border-border p-4 shadow-2xl z-10 animate-in slide-in-from-left duration-200">
             <div className="flex items-center justify-between pb-4 border-b border-border/80 mb-4">
               <Link
@@ -210,7 +409,6 @@ export default function AppMenubar({
               </Button>
             </div>
 
-            {/* Primary Action Button */}
             <div className="mb-4">
               <Link
                 to="/new"
@@ -222,12 +420,32 @@ export default function AppMenubar({
               </Link>
             </div>
 
-            {/* Navigation Links */}
-            <div className="flex-1 overflow-y-auto">
-              {renderNavLinks(() => setMobileMenuOpen(false))}
+            <div className="flex-1 overflow-y-auto space-y-1">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive =
+                  item.path === "/"
+                    ? location.pathname === "/" || location.pathname.startsWith("/day/")
+                    : location.pathname === item.path;
+
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                      isActive
+                        ? "bg-primary/10 text-primary font-semibold border border-primary/20"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" strokeWidth={1.75} />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
             </div>
 
-            {/* Footer */}
             <div className="pt-4 border-t border-border/80 flex items-center justify-between">
               <button
                 type="button"
@@ -253,213 +471,6 @@ export default function AppMenubar({
           </div>
         </div>
       )}
-
-      {/* Desktop Fixed Left Menubar (Permanent on lg+ screens) */}
-      <aside
-        className="hidden lg:flex fixed left-0 top-0 bottom-0 w-64 bg-card border-r border-border flex-col justify-between p-4 z-40 select-none"
-        data-testid="desktop-menubar"
-      >
-        {/* Top Area: Brand & New Note CTA Button */}
-        <div className="space-y-4">
-          {/* Brand Logo */}
-          <Link
-            to="/"
-            className="flex items-center gap-2.5 px-2 py-1 group cursor-pointer transition-colors"
-          >
-            <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all shadow-2xs">
-              <Feather className="w-4 h-4" strokeWidth={1.75} />
-            </div>
-            <div>
-              <span className="font-serif text-lg tracking-tight font-bold text-foreground">
-                Inkwell
-              </span>
-              <span className="block text-[10px] font-mono text-muted-foreground leading-none">
-                Kişisel Not & Zihin Defteri
-              </span>
-            </div>
-          </Link>
-
-          {/* Prominent Primary CTA Button */}
-          <Link
-            to="/new"
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary text-primary-foreground font-semibold text-xs rounded-xl shadow-xs hover:opacity-95 transition-all cursor-pointer group"
-            data-testid="menubar-new-note-btn"
-          >
-            <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-200" />
-            <span>Yeni Not Ekle</span>
-          </Link>
-
-          {/* Main Navigation Links */}
-          <nav className="pt-2">{renderNavLinks()}</nav>
-        </div>
-
-        {/* Bottom Area: Notifications, Theme Toggle, User Profile & Settings */}
-        <div className="pt-4 border-t border-border/80 space-y-2">
-          {/* Quick Actions Bar (Notifications + Theme) */}
-          <div className="flex items-center justify-between px-2 py-1 rounded-lg bg-secondary/50 border border-border/60">
-            {/* Notifications Dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="relative h-8 px-2 text-muted-foreground hover:text-foreground cursor-pointer"
-                  data-testid="menubar-notifications-btn"
-                >
-                  <Bell className="w-4 h-4 mr-1.5" strokeWidth={1.5} />
-                  <span className="text-[11px] font-medium">Bildirimler</span>
-                  {unreadCount > 0 && (
-                    <span className="ml-1.5 px-1.5 py-0.2 bg-[hsl(var(--accent-tag))] text-white text-[9px] font-mono font-bold rounded-full">
-                      {unreadCount}
-                    </span>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-80 bg-popover border-border p-0 shadow-xl ml-2">
-                <div className="flex items-center justify-between p-3 border-b border-border">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-serif font-semibold text-sm">Bildirimler & Hatırlatmalar</span>
-                    {unreadCount > 0 && (
-                      <span className="bg-[hsl(var(--accent-tag))/0.15] text-[hsl(var(--accent-tag))] font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                        {unreadCount} yeni
-                      </span>
-                    )}
-                  </div>
-                  {unreadCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={markAllAsRead}
-                      className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer"
-                    >
-                      <CheckCheck className="w-3 h-3" /> Tümünü oku
-                    </button>
-                  )}
-                </div>
-
-                <div className="max-h-72 overflow-y-auto divide-y divide-border/40">
-                  {sortedReminders.length === 0 ? (
-                    <div className="py-8 text-center text-xs text-muted-foreground italic">
-                      Henüz kayıtlı bir hatırlatma yok
-                    </div>
-                  ) : (
-                    sortedReminders.slice(0, 10).map((r) => {
-                      const targetTime = new Date(r.targetIso).getTime();
-                      const isPast = Date.now() >= targetTime;
-                      return (
-                        <div
-                          key={r.id}
-                          onClick={() => {
-                            markAsRead(r.id);
-                            navigate(r.noteId ? `/note/${r.noteId}` : `/day/${r.date}`);
-                          }}
-                          className={`p-3 cursor-pointer transition-colors flex items-start gap-2.5 ${
-                            !r.read && isPast
-                              ? "bg-accent/40 hover:bg-accent/60"
-                              : "hover:bg-muted/40"
-                          }`}
-                        >
-                          <div
-                            className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
-                              !r.read && isPast
-                                ? "bg-[hsl(var(--accent-tag))]"
-                                : "bg-transparent"
-                            }`}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-medium text-foreground font-serif leading-snug">
-                              {r.text}
-                            </div>
-                            <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-1 font-mono">
-                              <span className="flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />
-                                {r.date}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
-                                {new Date(r.targetIso).toLocaleTimeString("tr-TR", {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {/* Theme Toggle */}
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground cursor-pointer"
-              onClick={toggle}
-              title="Açık / Koyu Tema"
-            >
-              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </Button>
-          </div>
-
-          {/* User Account / Profile Row */}
-          {u && u.user_id && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="w-full flex items-center justify-between p-2 rounded-xl border border-border/70 hover:border-primary/40 bg-card hover:bg-secondary/40 transition-all cursor-pointer text-left group"
-                  data-testid="menubar-user-btn"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Avatar className="h-8 w-8 ring-1 ring-border">
-                      {u.picture && <AvatarImage src={u.picture} alt={u.name || ""} />}
-                      <AvatarFallback className="text-xs font-mono bg-primary/10 text-primary font-bold">
-                        {initials}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
-                        {u.name || "Kullanıcı"}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground font-mono truncate">
-                        {u.email}
-                      </div>
-                    </div>
-                  </div>
-                  <Settings className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground shrink-0 ml-1" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 bg-popover border-border shadow-xl">
-                <DropdownMenuLabel className="font-mono text-xs">
-                  <div className="truncate font-semibold">{u.name}</div>
-                  <div className="text-muted-foreground truncate font-normal text-[11px]">{u.email}</div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-
-                <DropdownMenuItem
-                  onClick={() => navigate("/settings")}
-                  data-testid="menubar-settings-item"
-                  className="cursor-pointer"
-                >
-                  <Settings className="w-3.5 h-3.5 mr-2 text-muted-foreground" strokeWidth={1.5} /> Ayarlar
-                </DropdownMenuItem>
-
-                <DropdownMenuSeparator />
-
-                <DropdownMenuItem
-                  onClick={logout}
-                  data-testid="menubar-logout-item"
-                  className="cursor-pointer text-destructive focus:text-destructive"
-                >
-                  <LogOut className="w-3.5 h-3.5 mr-2" strokeWidth={1.5} /> Çıkış yap
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
-      </aside>
 
       {/* Settings Modal Dialog */}
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

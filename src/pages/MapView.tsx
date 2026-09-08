@@ -419,7 +419,7 @@ export default function MapView() {
     <div className="min-h-screen bg-background text-foreground flex flex-col antialiased">
       <AppMenubar />
 
-      <div className="lg:pl-64 flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+      <div className="pt-14 lg:pl-16 flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <div className="flex-1 flex flex-col lg:flex-row h-full overflow-hidden">
           {/* Left Panel: Location Directory */}
           <aside className="w-full lg:w-80 xl:w-96 border-r border-border bg-card/60 flex flex-col shrink-0 h-1/3 lg:h-full overflow-hidden">

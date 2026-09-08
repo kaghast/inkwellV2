@@ -763,7 +763,7 @@ export default function GraphView() {
     <div className="min-h-screen flex flex-col bg-background text-foreground overflow-hidden">
       <AppMenubar />
 
-      <div className="lg:pl-64 flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="pt-14 lg:pl-16 flex-1 flex flex-col min-w-0 overflow-hidden">
         <div className="flex-1 flex overflow-hidden relative">
           {/* Mobile Left Sidebar */}
           <Sheet open={leftOpen} onOpenChange={setLeftOpen}>

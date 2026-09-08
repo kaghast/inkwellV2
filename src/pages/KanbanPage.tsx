@@ -417,7 +417,7 @@ export default function KanbanPage() {
     <div className="min-h-screen bg-background text-foreground flex flex-col antialiased">
       <AppMenubar />
 
-      <div className="lg:pl-64 flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+      <div className="pt-14 lg:pl-16 flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <div className="flex-1 flex h-full overflow-hidden">
           {/* Left Drag & Drop Sidebar (Tags, People, Locations, Categories) */}
         <aside className="w-64 xl:w-72 border-r border-border bg-card/60 flex flex-col shrink-0 overflow-hidden select-none">
