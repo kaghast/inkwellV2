@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Link } from "react-router-dom";
 import api, { formatApiError } from "@/lib/api";
 import type { Note, Category, LocationItem, NoteType, Tag, Person, ItemGroup } from "@/types";
-import TopBar from "@/components/TopBar";
+import AppMenubar from "@/components/AppMenubar";
 import Sidebar from "@/components/Sidebar";
 import NoteCard from "@/components/NoteCard";
 import NoteComposer from "@/components/NoteComposer";
@@ -201,12 +201,13 @@ export default function AllNotes() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col antialiased">
-      <TopBar onLeftMenu={() => setLeftOpen(true)} />
+      <AppMenubar />
 
-      <div className="flex-1 flex w-full max-w-(--breakpoint-2xl) mx-auto">
-        {/* Left Sidebar (Desktop) */}
-        <aside className="hidden lg:block w-64 xl:w-72 shrink-0 border-r border-border p-4 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto">
-          <Sidebar
+      <div className="lg:pl-64 flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex w-full max-w-(--breakpoint-2xl) mx-auto">
+          {/* Left Sidebar (Desktop) */}
+          <aside className="hidden lg:block w-64 xl:w-72 shrink-0 border-r border-border p-4 sticky top-0 h-screen overflow-y-auto">
+            <Sidebar
             categories={categories}
             groups={groups}
             tags={tags}
@@ -440,6 +441,7 @@ export default function AllNotes() {
             </div>
           )}
         </main>
+      </div>
       </div>
     </div>
   );

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "@/lib/api";
 import type { Note, Category, ItemGroup, Tag, Person, LocationItem, NoteType, KanbanColumn } from "@/types";
-import TopBar from "@/components/TopBar";
+import AppMenubar from "@/components/AppMenubar";
 import Sidebar from "@/components/Sidebar";
 import MarkdownView from "@/components/MarkdownView";
 import { Button } from "@/components/ui/button";
@@ -761,11 +761,12 @@ export default function GraphView() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground overflow-hidden">
-      <TopBar onLeftMenu={() => setLeftOpen(true)} />
+      <AppMenubar />
 
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Mobile Left Sidebar */}
-        <Sheet open={leftOpen} onOpenChange={setLeftOpen}>
+      <div className="lg:pl-64 flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="flex-1 flex overflow-hidden relative">
+          {/* Mobile Left Sidebar */}
+          <Sheet open={leftOpen} onOpenChange={setLeftOpen}>
           <SheetContent side="left" className="p-0 w-80 bg-sidebar border-border">
             <div className="p-4 h-full overflow-y-auto">
               <Sidebar
@@ -1109,6 +1110,7 @@ export default function GraphView() {
             </div>
           )}
         </main>
+      </div>
       </div>
     </div>
   );

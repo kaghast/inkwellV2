@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
 import api, { formatApiError } from "@/lib/api";
-import TopBar from "@/components/TopBar";
+import AppMenubar from "@/components/AppMenubar";
 import MarkdownEditor from "@/components/MarkdownEditor";
 import MarkdownView, { toggleTaskInMarkdown } from "@/components/MarkdownView";
 import MiniMap from "@/components/MiniMap";
@@ -47,6 +47,8 @@ import DrawingEditor from "@/components/drawing/DrawingEditor";
 import DrawingViewer from "@/components/drawing/DrawingViewer";
 import OutlineEditor from "@/components/outline/OutlineEditor";
 import OutlineViewer from "@/components/outline/OutlineViewer";
+import MindmapEditor from "@/components/mindmap/MindmapEditor";
+import MindmapViewer from "@/components/mindmap/MindmapViewer";
 import NoteCommentsSection from "@/components/NoteCommentsSection";
 import NoteVersionsDialog from "@/components/NoteVersionsDialog";
 import EncryptNoteDialog from "@/components/EncryptNoteDialog";
@@ -65,7 +67,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-export type ContentMode = "markdown" | "drawing" | "outline";
+export type ContentMode = "markdown" | "drawing" | "outline" | "mindmap";
 
 function detectContentMode(content: string, customFields?: Record<string, any>): ContentMode {
   if (customFields?.content_mode) {
@@ -73,6 +75,9 @@ function detectContentMode(content: string, customFields?: Record<string, any>):
   }
   if (/```drawing\s*[\s\S]*?```/.test(content)) {
     return "drawing";
+  }
+  if (/```mindmap\s*[\s\S]*?```/.test(content)) {
+    return "mindmap";
   }
   const lines = (content || "").trim().split("\n").filter((l) => l.trim().length > 0);
   if (lines.length >= 2 && lines.every((l) => /^([ \t]*[-*+]|\d+\.)/.test(l))) {
@@ -421,7 +426,7 @@ export default function NoteDetail() {
   if (!note) {
     return (
       <div className="paper min-h-screen">
-        <TopBar />
+        <AppMenubar />
       </div>
     );
   }
@@ -430,17 +435,18 @@ export default function NoteDetail() {
 
   return (
     <div className="paper min-h-screen flex flex-col">
-      <TopBar />
-      <main className="flex-1 max-w-3xl w-full mx-auto px-5 py-8" data-testid="note-detail">
-        {/* Navigation & Actions Top Bar */}
-        <div className="flex items-center justify-between gap-2 mb-6">
-          <button
-            className="flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-            onClick={() => navigate(-1)}
-            data-testid="note-back-btn"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" strokeWidth={1.25} /> Geri
-          </button>
+      <AppMenubar />
+      <div className="lg:pl-64 flex-1 flex flex-col min-w-0">
+        <main className="flex-1 max-w-3xl w-full mx-auto px-5 py-8" data-testid="note-detail">
+          {/* Navigation & Actions Top Bar */}
+          <div className="flex items-center justify-between gap-2 mb-6">
+            <button
+              className="flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+              onClick={() => navigate(-1)}
+              data-testid="note-back-btn"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" strokeWidth={1.25} /> Geri
+            </button>
 
           <div className="flex items-center gap-2">
             {/* Direct Slug Share Button */}
@@ -701,6 +707,23 @@ export default function NoteDetail() {
                   >
                     <ListTree className="w-3.5 h-3.5" /> Hiyerarşik Outline
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContentMode("mindmap");
+                      setCustomFields((prev) => ({ ...prev, content_mode: "mindmap" }));
+                      if (!content.trim() || /```drawing/.test(content)) {
+                        setContent("# " + (title || "Ana Konu") + "\n## Fikir 1\n- Alt madde 1\n- Alt madde 2\n## Fikir 2\n- Alt madde 3");
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-all cursor-pointer ${
+                      contentMode === "mindmap"
+                        ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Network className="w-3.5 h-3.5" /> Zihin Haritası
+                  </button>
                 </div>
 
                 {/* Global Full Focus Button */}
@@ -726,6 +749,8 @@ export default function NoteDetail() {
               <DrawingEditor initialContent={content} onChange={setContent} height={520} />
             ) : contentMode === "outline" ? (
               <OutlineEditor initialContent={content} onChange={setContent} />
+            ) : contentMode === "mindmap" ? (
+              <MindmapEditor initialContent={content} onChange={setContent} height={520} isFullFocus={detailFullFocus} />
             ) : (
               <MarkdownEditor
                 value={content}
@@ -1001,6 +1026,14 @@ export default function NoteDetail() {
                   } catch {
                     toast.error("Güncellenemedi");
                   }
+                }}
+              />
+            ) : contentMode === "mindmap" || /```mindmap\s*[\s\S]*?```/.test(note.content) ? (
+              <MindmapViewer
+                content={note.content}
+                onEdit={() => {
+                  setContentMode("mindmap");
+                  setEditing(true);
                 }}
               />
             ) : (
@@ -1312,6 +1345,7 @@ export default function NoteDetail() {
           setIsUnlocked(false);
         }}
       />
+      </div>
     </div>
   );
 }

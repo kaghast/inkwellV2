@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import api, { formatApiError } from "@/lib/api";
 import type { Note, LocationItem, Category, ItemGroup, NoteType } from "@/types";
-import TopBar from "@/components/TopBar";
+import AppMenubar from "@/components/AppMenubar";
 import NoteCard from "@/components/NoteCard";
 import NoteComposer from "@/components/NoteComposer";
 import GoogleMapWrapper, { MapMaskTheme } from "@/components/GoogleMapWrapper";
@@ -417,11 +417,12 @@ export default function MapView() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col antialiased">
-      <TopBar />
+      <AppMenubar />
 
-      <div className="flex-1 flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] overflow-hidden">
-        {/* Left Panel: Location Directory */}
-        <aside className="w-full lg:w-80 xl:w-96 border-r border-border bg-card/60 flex flex-col shrink-0 h-1/3 lg:h-full overflow-hidden">
+      <div className="lg:pl-64 flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        <div className="flex-1 flex flex-col lg:flex-row h-full overflow-hidden">
+          {/* Left Panel: Location Directory */}
+          <aside className="w-full lg:w-80 xl:w-96 border-r border-border bg-card/60 flex flex-col shrink-0 h-1/3 lg:h-full overflow-hidden">
           <div className="p-3.5 border-b border-border space-y-2.5 shrink-0 bg-background/50">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1047,6 +1048,7 @@ export default function MapView() {
           </form>
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   );
 }

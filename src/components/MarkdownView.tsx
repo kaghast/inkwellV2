@@ -7,6 +7,7 @@ import { BellRing, MapPin, Youtube, Check, Loader2, Maximize2, X, Clock, Calenda
 import { isGmap, isYoutube, extractYoutubeId } from "@/lib/blocks";
 import { highlightText } from "@/lib/highlight";
 import DrawingViewer from "@/components/drawing/DrawingViewer";
+import MindmapViewer from "@/components/mindmap/MindmapViewer";
 import TimeSlotCard from "@/components/TimeSlotCard";
 import {
   Dialog,
@@ -458,6 +459,7 @@ function CodeRenderer(props: any) {
   const looksReminder = info === "reminder" || info.startsWith("reminder");
   const looksTimeslot = info === "timeslot" || info.startsWith("timeslot");
   const looksDrawing = info === "drawing" || info.startsWith("drawing");
+  const looksMindmap = info === "mindmap" || info.startsWith("mindmap");
 
   if (looksTimeslot) {
     let raw = "";
@@ -496,6 +498,22 @@ function CodeRenderer(props: any) {
     return (
       <div className="my-2 not-prose">
         <DrawingViewer content={drawingMd} height={220} />
+      </div>
+    );
+  }
+
+  if (looksMindmap) {
+    let raw = "";
+    const walk = (c: any) => {
+      if (typeof c === "string") raw += c;
+      else if (Array.isArray(c)) c.forEach(walk);
+      else if (React.isValidElement(c)) walk((c as any).props?.children);
+    };
+    walk(props.children);
+    const mindmapMd = "```mindmap\n" + raw.trim() + "\n```";
+    return (
+      <div className="my-2 not-prose">
+        <MindmapViewer content={mindmapMd} height={260} />
       </div>
     );
   }

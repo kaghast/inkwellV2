@@ -11,7 +11,7 @@ import type {
   NoteType,
   KanbanColumn,
 } from "@/types";
-import TopBar from "@/components/TopBar";
+import AppMenubar from "@/components/AppMenubar";
 import { CustomFieldsView } from "@/components/CustomFieldsRenderer";
 import {
   Kanban as KanbanIcon,
@@ -415,10 +415,11 @@ export default function KanbanPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col antialiased">
-      <TopBar />
+      <AppMenubar />
 
-      <div className="flex-1 flex h-[calc(100vh-3.5rem)] overflow-hidden">
-        {/* Left Drag & Drop Sidebar (Tags, People, Locations, Categories) */}
+      <div className="lg:pl-64 flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        <div className="flex-1 flex h-full overflow-hidden">
+          {/* Left Drag & Drop Sidebar (Tags, People, Locations, Categories) */}
         <aside className="w-64 xl:w-72 border-r border-border bg-card/60 flex flex-col shrink-0 overflow-hidden select-none">
           <div className="p-3.5 border-b border-border bg-background/50 space-y-1">
             <div className="flex items-center justify-between">
@@ -1042,6 +1043,7 @@ export default function KanbanPage() {
           </form>
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   );
 }

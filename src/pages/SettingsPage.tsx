@@ -41,6 +41,7 @@ import {
   CheckCheck,
   Boxes,
 } from "lucide-react";
+import AppMenubar from "@/components/AppMenubar";
 import NoteTypeManager from "@/components/NoteTypeManager";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -344,36 +345,39 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col paper select-none" data-testid="settings-page">
-      {/* Top Header Bar */}
-      <header className="sticky top-0 z-30 h-14 border-b border-border bg-background/80 backdrop-blur-xl flex items-center justify-between px-4 lg:px-8">
-        <div className="flex items-center gap-3">
-          <Link
-            to="/"
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground p-1.5 rounded-md hover:bg-muted transition-colors cursor-pointer"
-            data-testid="settings-back-btn"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span className="font-medium">Notlara Dön</span>
-          </Link>
-          <div className="h-4 w-px bg-border/60 mx-1" />
-          <div className="flex items-center gap-2">
-            <Feather className="w-4 h-4 text-foreground" strokeWidth={1.5} />
-            <h1 className="font-serif text-lg font-bold tracking-tight">Ayarlar & Yedekleme</h1>
-          </div>
-        </div>
+      <AppMenubar />
 
-        <div className="flex items-center gap-2">
-          {u && (
-            <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-md border border-border/50">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span className="truncate max-w-[160px]">{u.email}</span>
+      <div className="lg:pl-64 flex-1 flex flex-col min-w-0">
+        {/* Top Header Bar */}
+        <header className="sticky top-0 z-30 h-14 border-b border-border bg-background/80 backdrop-blur-xl flex items-center justify-between px-4 lg:px-8">
+          <div className="flex items-center gap-3">
+            <Link
+              to="/"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground p-1.5 rounded-md hover:bg-muted transition-colors cursor-pointer"
+              data-testid="settings-back-btn"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span className="font-medium">Notlara Dön</span>
+            </Link>
+            <div className="h-4 w-px bg-border/60 mx-1" />
+            <div className="flex items-center gap-2">
+              <Feather className="w-4 h-4 text-foreground" strokeWidth={1.5} />
+              <h1 className="font-serif text-lg font-bold tracking-tight">Ayarlar & Yedekleme</h1>
             </div>
-          )}
-        </div>
-      </header>
+          </div>
 
-      {/* Main Settings Container */}
-      <div className="flex-1 max-w-6xl w-full mx-auto p-4 lg:p-8 flex flex-col md:flex-row gap-6 items-start">
+          <div className="flex items-center gap-2">
+            {u && (
+              <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-md border border-border/50">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span className="truncate max-w-[160px]">{u.email}</span>
+              </div>
+            )}
+          </div>
+        </header>
+
+        {/* Main Settings Container */}
+        <div className="flex-1 max-w-6xl w-full mx-auto p-4 lg:p-8 flex flex-col md:flex-row gap-6 items-start">
         {/* Left Sidebar Navigation Tabs */}
         <div className="w-full md:w-64 shrink-0 bg-card border border-border rounded-xl p-2 shadow-xs space-y-1">
           <button
@@ -1031,6 +1035,7 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

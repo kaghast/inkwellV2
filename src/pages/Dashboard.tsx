@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import type { Note, Tag, Person, LocationItem, Category, ItemGroup, CalendarCounts, NoteType } from "@/types";
-import TopBar from "@/components/TopBar";
+import AppMenubar from "@/components/AppMenubar";
 import Sidebar from "@/components/Sidebar";
 import NoteCard from "@/components/NoteCard";
 import NoteComposer from "@/components/NoteComposer";
@@ -490,12 +490,13 @@ export default function Dashboard({ mode }: Props) {
   return (
     <FilterProvider value={filterCtx}>
       <div className="min-h-screen flex flex-col paper">
-        <TopBar onLeftMenu={() => setLeftOpen(true)} onRightMenu={() => setRightOpen(true)} />
+        <AppMenubar />
 
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[290px_1fr_320px] min-h-0">
-          {/* Left Sidebar (Desktop) */}
-          <div className="hidden lg:block border-r border-border min-h-0 overflow-hidden">
-            <Sidebar
+        <div className="lg:pl-64 flex-1 flex flex-col min-w-0">
+          <div className="flex-1 grid grid-cols-1 lg:grid-cols-[270px_1fr_300px] min-h-0">
+            {/* Left Sidebar (Desktop) */}
+            <div className="hidden lg:block border-r border-border min-h-0 overflow-hidden">
+              <Sidebar
               categories={categories}
               groups={groups}
               tags={tags}
@@ -648,6 +649,7 @@ export default function Dashboard({ mode }: Props) {
               }}
             />
           </div>
+        </div>
         </div>
 
         {/* Mobile 3-Tab Bottom Navigation Bar */}

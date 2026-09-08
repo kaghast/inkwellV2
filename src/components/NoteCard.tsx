@@ -25,6 +25,9 @@ import api from "@/lib/api";
 import type { Note, LocationItem, Category, NoteType } from "@/types";
 import MarkdownView from "@/components/MarkdownView";
 import MarkdownEditor from "@/components/MarkdownEditor";
+import DrawingViewer from "@/components/drawing/DrawingViewer";
+import OutlineViewer from "@/components/outline/OutlineViewer";
+import MindmapViewer from "@/components/mindmap/MindmapViewer";
 import NoteCommentsSection from "@/components/NoteCommentsSection";
 import NoteVersionsDialog from "@/components/NoteVersionsDialog";
 import EncryptNoteDialog from "@/components/EncryptNoteDialog";
@@ -643,6 +646,18 @@ export default function NoteCard({
                   </Button>
                 </div>
               </div>
+            </div>
+          ) : note.custom_fields?.content_mode === "mindmap" || /```mindmap\s*[\s\S]*?```/.test(note.content) ? (
+            <div className="mt-2">
+              <MindmapViewer content={note.content} onEdit={() => setEditing(true)} height={260} />
+            </div>
+          ) : note.custom_fields?.content_mode === "drawing" || /```drawing\s*[\s\S]*?```/.test(note.content) ? (
+            <div className="mt-2">
+              <DrawingViewer content={note.content} onEdit={() => setEditing(true)} height={220} />
+            </div>
+          ) : note.custom_fields?.content_mode === "outline" ? (
+            <div className="mt-2">
+              <OutlineViewer content={note.content} onEdit={() => setEditing(true)} />
             </div>
           ) : (
             <MarkdownView content={note.content} />
