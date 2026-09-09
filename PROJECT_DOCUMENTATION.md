@@ -423,7 +423,18 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 
 ---
 
-### 📅 9 Eylül 2026 (Kesintisiz CTRL+S Hızlı Kaydetme Motoru)
+### 📅 9 Eylül 2026 (Kesintisiz CTRL+S & Sürükle-Bırak Etiket/Konum/Kişi Entegrasyonu)
+
+- **Sol Kenar Çubuğundan Notlara Sürükle-Bırak (Drag & Drop) Entegrasyonu:**
+  - **Kenar Çubuğu Veri Aktarımı (`Sidebar.tsx`):** Sol kenar çubuğundaki etiketler (`#etiket`), kişiler (`@kişi`) ve konumlar (`📍 konum`) draggable hale getirilerek hem zengin JSON veri modeli (`application/json`) hem de doğrudan metin editörlerine bırakılabilen düz metin formatı (`text/plain`) ile donatıldı.
+  - **Not Kartlarına Bırakma (`NoteCard.tsx`):**
+    - Dashboard ve Tüm Notlar sayfalarındaki not kartlarının üzerine sürüklenen etiket, kişi veya konum bırakıldığında, görsel vurgu (ring & shadow) eşliğinde notun meta verileri (`tags`, `people`, `location_id`) ve içeriği otomatik güncellenir.
+    - Arka uç `PUT /notes/:id` API isteği ile anında kaydedilir ve bildirim bildirimi (toast) görüntülenir.
+  - **Not Detay Sayfası (`NoteDetail.tsx`):**
+    - Düzenleme (Edit) modunda içeriğe ve metadata durumuna anlık ekleme yapılır.
+    - Görüntüleme (View) modunda doğrudan API üzerinden not güncellenerek sayfa içeriği yenilenir.
+  - **Yeni Not Ekle Sayfası (`NewNotePage.tsx`) & Hızlı Not Oluşturucu (`NoteComposer.tsx`):**
+    - Sürüklenen etiketler veya kişiler taslak içeriğe otomatik eklenir; sürüklenen konumlar hem seçili konum olarak atanır hem de içerik gövdesine işlenir.
 
 - **Tüm İçerik Modlarında Kesintisiz CTRL+S Desteği:**
   - **Düzenleme / Güncelleme Modu (`NoteDetail.tsx`):** Kullanıcı Markdown, Çizim, Outline veya Zihin Haritası (Mindmap) modlarından hangisinde olursa olsun, klavyeden `Ctrl+S` (veya Mac için `Cmd+S`) tuşladığında düzenleme oturumundan (`editing: true`) çıkılmaksızın tüm değişiklikler doğrudan veritabanına ve versiyon geçmişine kaydedilir.

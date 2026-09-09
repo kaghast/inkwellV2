@@ -148,6 +148,66 @@ export default function NewNotePage() {
     }
   };
 
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const rawData = e.dataTransfer.getData("application/json");
+    if (!rawData) return;
+
+    try {
+      const payload = JSON.parse(rawData);
+      const itemType = payload.type || payload.filterType;
+      const itemName = payload.name || payload.label || payload.filterValue || payload.itemId;
+
+      if (!itemName) return;
+
+      if (itemType === "tag") {
+        const tagName = String(itemName).replace(/^#/, "").trim().toLowerCase();
+        const tagStr = `#${tagName}`;
+        if (!content.toLowerCase().includes(tagStr)) {
+          setContent((prev) => (prev ? `${prev}\n${tagStr}` : tagStr));
+        }
+        toast.success(`"#${tagName}" etiketi eklendi`);
+      } else if (itemType === "person") {
+        const personName = String(itemName).replace(/^@/, "").trim().toLowerCase();
+        const personStr = `@${personName}`;
+        if (!content.toLowerCase().includes(personStr)) {
+          setContent((prev) => (prev ? `${prev}\n${personStr}` : personStr));
+        }
+        toast.success(`"@${personName}" kişi bilgisi eklendi`);
+      } else if (itemType === "location") {
+        const locId = payload.location_id || payload.itemId;
+        const locName = payload.name || payload.label || "Konum";
+        setLocationId(locId);
+        const foundLoc = locations.find((l) => l.location_id === locId) || ({ location_id: locId, name: locName } as LocationItem);
+        setLoc(foundLoc);
+        const locTag = `📍 ${locName}`;
+        if (!content.includes(locTag)) {
+          setContent((prev) => (prev ? `${prev}\n${locTag}` : locTag));
+        }
+        toast.success(`"${locName}" konumu eklendi`);
+      }
+    } catch (err) {
+      console.warn("Drop on new note page failed:", err);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-background paper">
       <AppMenubar />
@@ -155,9 +215,12 @@ export default function NewNotePage() {
       {/* Main Container with desktop left padding for menubar */}
       <div className="pt-14 lg:pl-16 flex-1 flex flex-col min-w-0">
         <main
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
           className={`min-w-0 w-full mx-auto p-4 sm:p-6 lg:p-10 transition-all ${
             fullFocus ? "fixed inset-0 z-50 bg-background overflow-y-auto p-6 lg:p-12" : "max-w-4xl"
-          }`}
+          } ${isDragOver ? "ring-2 ring-primary/40 border border-primary bg-primary/5 shadow-lg rounded-2xl" : ""}`}
         >
           {/* Top Bar / Navigation Header */}
           <div className="flex items-center justify-between pb-4 mb-6 border-b border-border/80 flex-wrap gap-3">

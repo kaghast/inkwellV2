@@ -155,6 +155,64 @@ export default function NoteComposer({
 
   const selectedLoc = locations.find((l) => l.location_id === locationId);
 
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const rawData = e.dataTransfer.getData("application/json");
+    if (!rawData) return;
+
+    try {
+      const payload = JSON.parse(rawData);
+      const itemType = payload.type || payload.filterType;
+      const itemName = payload.name || payload.label || payload.filterValue || payload.itemId;
+
+      if (!itemName) return;
+
+      if (itemType === "tag") {
+        const tagName = String(itemName).replace(/^#/, "").trim().toLowerCase();
+        const tagStr = `#${tagName}`;
+        if (!content.toLowerCase().includes(tagStr)) {
+          setContent((prev) => (prev ? `${prev}\n${tagStr}` : tagStr));
+        }
+        toast.success(`"#${tagName}" etiketi eklendi`);
+      } else if (itemType === "person") {
+        const personName = String(itemName).replace(/^@/, "").trim().toLowerCase();
+        const personStr = `@${personName}`;
+        if (!content.toLowerCase().includes(personStr)) {
+          setContent((prev) => (prev ? `${prev}\n${personStr}` : personStr));
+        }
+        toast.success(`"@${personName}" kişi bilgisi eklendi`);
+      } else if (itemType === "location") {
+        const locId = payload.location_id || payload.itemId;
+        const locName = payload.name || payload.label || "Konum";
+        setLocationId(locId);
+        const locTag = `📍 ${locName}`;
+        if (!content.includes(locTag)) {
+          setContent((prev) => (prev ? `${prev}\n${locTag}` : locTag));
+        }
+        toast.success(`"${locName}" konumu eklendi`);
+      }
+    } catch (err) {
+      console.warn("Drop on note composer failed:", err);
+    }
+  };
+
   if (!open) {
     return (
       <button
@@ -169,7 +227,17 @@ export default function NoteComposer({
   }
 
   return (
-    <div className="border border-border rounded-sm p-5 bg-card space-y-3" data-testid="note-composer">
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`border rounded-sm p-5 bg-card space-y-3 transition-all ${
+        isDragOver
+          ? "border-primary ring-2 ring-primary/40 bg-primary/5 shadow-md"
+          : "border-border"
+      }`}
+      data-testid="note-composer"
+    >
       {/* Note Type & DateTime Top Selectors */}
       <div className="flex items-center justify-between flex-wrap gap-2 pb-1 border-b border-border/40">
         <div className="flex items-center gap-2 flex-wrap">

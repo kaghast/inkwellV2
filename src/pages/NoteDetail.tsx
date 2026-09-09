@@ -445,13 +445,137 @@ export default function NoteDetail() {
     );
   }
 
-  const formattedDate = formatDisplayDatetime(note.date, true);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    if (!note || note.archived) {
+      toast.error("Arşivlenmiş veya geçersiz not güncellenemez");
+      return;
+    }
+
+    const rawData = e.dataTransfer.getData("application/json");
+    if (!rawData) return;
+
+    try {
+      const payload = JSON.parse(rawData);
+      const itemType = payload.type || payload.filterType;
+      const itemName = payload.name || payload.label || payload.filterValue || payload.itemId;
+
+      if (!itemName) return;
+
+      if (editing) {
+        if (itemType === "tag") {
+          const tagName = String(itemName).replace(/^#/, "").trim().toLowerCase();
+          const tagStr = `#${tagName}`;
+          if (!content.toLowerCase().includes(tagStr)) {
+            setContent((prev) => (prev ? `${prev}\n${tagStr}` : tagStr));
+          }
+          toast.success(`"#${tagName}" etiketi not içeriğine eklendi`);
+        } else if (itemType === "person") {
+          const personName = String(itemName).replace(/^@/, "").trim().toLowerCase();
+          const personStr = `@${personName}`;
+          if (!content.toLowerCase().includes(personStr)) {
+            setContent((prev) => (prev ? `${prev}\n${personStr}` : personStr));
+          }
+          toast.success(`"@${personName}" kişi bilgisi not içeriğine eklendi`);
+        } else if (itemType === "location") {
+          const locId = payload.location_id || payload.itemId;
+          const locName = payload.name || payload.label || "Konum";
+          setLocationId(locId);
+          const foundLoc = locations.find((l) => l.location_id === locId) || ({ location_id: locId, name: locName } as LocationItem);
+          setLoc(foundLoc);
+          const locTag = `📍 ${locName}`;
+          if (!content.includes(locTag)) {
+            setContent((prev) => (prev ? `${prev}\n${locTag}` : locTag));
+          }
+          toast.success(`"${locName}" konumu nota eklendi`);
+        }
+      } else {
+        let updatedTags = Array.isArray(note.tags) ? [...note.tags] : [];
+        let updatedPeople = Array.isArray(note.people) ? [...note.people] : [];
+        let updatedLocationId = note.location_id;
+        let updatedContent = note.content || "";
+
+        if (itemType === "tag") {
+          const tagName = String(itemName).replace(/^#/, "").trim().toLowerCase();
+          if (!updatedTags.includes(tagName)) updatedTags.push(tagName);
+          if (!updatedContent.toLowerCase().includes(`#${tagName}`)) {
+            updatedContent = updatedContent ? `${updatedContent}\n#${tagName}` : `#${tagName}`;
+          }
+          toast.success(`"#${tagName}" etiketi nota eklendi`);
+        } else if (itemType === "person") {
+          const personName = String(itemName).replace(/^@/, "").trim().toLowerCase();
+          if (!updatedPeople.includes(personName)) updatedPeople.push(personName);
+          if (!updatedContent.toLowerCase().includes(`@${personName}`)) {
+            updatedContent = updatedContent ? `${updatedContent}\n@${personName}` : `@${personName}`;
+          }
+          toast.success(`"@${personName}" kişi bilgisi nota eklendi`);
+        } else if (itemType === "location") {
+          const locId = payload.location_id || payload.itemId;
+          const locName = payload.name || payload.label || "Konum";
+          updatedLocationId = locId;
+          const locTag = `📍 ${locName}`;
+          if (!updatedContent.includes(locTag)) {
+            updatedContent = updatedContent ? `${updatedContent}\n${locTag}` : locTag;
+          }
+          toast.success(`"${locName}" konumu nota eklendi`);
+        } else {
+          return;
+        }
+
+        const { data: updatedNote } = await api.put<Note>(`/notes/${note.note_id}`, {
+          title: note.title,
+          content: updatedContent,
+          date: note.date,
+          tags: updatedTags,
+          people: updatedPeople,
+          location_id: updatedLocationId,
+          note_type_id: note.note_type_id,
+          custom_fields: note.custom_fields,
+        });
+
+        setNote(updatedNote);
+        setContent(extractCommentsFromContent(updatedNote.content || "").mainContent);
+        if (updatedLocationId) {
+          setLocationId(updatedLocationId);
+          setLoc(locations.find((l) => l.location_id === updatedLocationId) || null);
+        }
+      }
+    } catch (err: any) {
+      console.error("Drop on note detail failed:", err);
+      toast.error("Not güncellenirken bir hata oluştu");
+    }
+  };
 
   return (
     <div className="paper min-h-screen flex flex-col">
       <AppMenubar />
       <div className="pt-14 lg:pl-16 flex-1 flex flex-col min-w-0">
-        <main className="flex-1 max-w-3xl w-full mx-auto px-5 py-8" data-testid="note-detail">
+        <main
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`flex-1 max-w-3xl w-full mx-auto px-5 py-8 transition-all duration-200 rounded-2xl ${
+            isDragOver ? "ring-2 ring-primary/40 border border-primary bg-primary/5 shadow-lg" : ""
+          }`}
+          data-testid="note-detail"
+        >
           {/* Navigation & Actions Top Bar */}
           <div className="flex items-center justify-between gap-2 mb-6">
             <button

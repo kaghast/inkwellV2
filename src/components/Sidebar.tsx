@@ -154,12 +154,29 @@ function EditableRow({
     <div
       draggable
       onDragStart={(e) => {
-        e.dataTransfer.setData(
-          "application/json",
-          JSON.stringify({ itemId, filterType, sourceGroupId: groupId || null })
-        );
-        e.dataTransfer.setData("text/plain", itemId);
-        e.dataTransfer.effectAllowed = "move";
+        const payload = {
+          type: filterType,
+          filterType,
+          itemId,
+          name: label,
+          label,
+          filterValue,
+          sourceGroupId: groupId || null,
+          location_id: filterType === "location" ? itemId : undefined,
+          tag_id: filterType === "tag" ? itemId : undefined,
+          person_id: filterType === "person" ? itemId : undefined,
+          data: {
+            id: itemId,
+            name: label,
+            location_id: filterType === "location" ? itemId : undefined,
+            tag_id: filterType === "tag" ? itemId : undefined,
+            person_id: filterType === "person" ? itemId : undefined,
+          },
+        };
+        e.dataTransfer.setData("application/json", JSON.stringify(payload));
+        const textPayload = filterType === "tag" ? `#${label}` : filterType === "person" ? `@${label}` : `📍 ${label}`;
+        e.dataTransfer.setData("text/plain", textPayload);
+        e.dataTransfer.effectAllowed = "copyMove";
         onDragStart?.(e);
       }}
       className={`group flex items-center justify-between px-2 py-1.5 rounded-md text-xs transition-all cursor-grab active:cursor-grabbing select-none ${

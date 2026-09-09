@@ -235,14 +235,111 @@ export default function NoteCard({
     }
   }
 
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    if (isArchived) {
+      toast.error("Arşivlenmiş notlar güncellenemez");
+      return;
+    }
+
+    const rawData = e.dataTransfer.getData("application/json");
+    if (!rawData) return;
+
+    try {
+      const payload = JSON.parse(rawData);
+      const itemType = payload.type || payload.filterType;
+      const itemName = payload.name || payload.label || payload.filterValue || payload.itemId;
+
+      if (!itemName) return;
+
+      let updatedTags = Array.isArray(note.tags) ? [...note.tags] : [];
+      let updatedPeople = Array.isArray(note.people) ? [...note.people] : [];
+      let updatedLocationId = note.location_id;
+      let updatedContent = note.content || "";
+
+      if (itemType === "tag") {
+        const tagName = String(itemName).replace(/^#/, "").trim().toLowerCase();
+        if (!updatedTags.includes(tagName)) {
+          updatedTags.push(tagName);
+        }
+        if (!updatedContent.toLowerCase().includes(`#${tagName}`)) {
+          updatedContent = updatedContent ? `${updatedContent}\n#${tagName}` : `#${tagName}`;
+        }
+        toast.success(`"#${tagName}" etiketi nota eklendi`);
+      } else if (itemType === "person") {
+        const personName = String(itemName).replace(/^@/, "").trim().toLowerCase();
+        if (!updatedPeople.includes(personName)) {
+          updatedPeople.push(personName);
+        }
+        if (!updatedContent.toLowerCase().includes(`@${personName}`)) {
+          updatedContent = updatedContent ? `${updatedContent}\n@${personName}` : `@${personName}`;
+        }
+        toast.success(`"@${personName}" kişi bilgisi nota eklendi`);
+      } else if (itemType === "location") {
+        const locId = payload.location_id || payload.itemId;
+        const locName = payload.name || payload.label || "Konum";
+        updatedLocationId = locId;
+        const locTag = `📍 ${locName}`;
+        if (!updatedContent.includes(locTag)) {
+          updatedContent = updatedContent ? `${updatedContent}\n${locTag}` : locTag;
+        }
+        toast.success(`"${locName}" konumu nota eklendi`);
+      } else {
+        return;
+      }
+
+      await api.put(`/notes/${note.note_id}`, {
+        title: note.title,
+        content: updatedContent,
+        date: note.date,
+        tags: updatedTags,
+        people: updatedPeople,
+        location_id: updatedLocationId,
+        category_id: note.category_id,
+        note_type_id: note.note_type_id,
+        custom_fields: note.custom_fields,
+        pinned: note.pinned,
+      });
+
+      setContent(updatedContent);
+      if (updatedLocationId) setLocationId(updatedLocationId);
+      onChanged();
+    } catch (err: any) {
+      console.error("Drop on note card failed:", err);
+      toast.error("Not güncellenirken bir hata oluştu");
+    }
+  };
+
   // Check if content has task items
   const taskTotal = (note.content.match(/(^|\n)\s*- \[[ xX]\]/g) || []).length;
   const taskDone = (note.content.match(/(^|\n)\s*- \[[xX]\]/g) || []).length;
 
   return (
     <article
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       className={`relative group rounded-xl border transition-all duration-200 p-5 ${
-        isArchived
+        isDragOver
+          ? "border-primary ring-2 ring-primary/40 bg-primary/5 scale-[1.01] shadow-md"
+          : isArchived
           ? "opacity-60 grayscale-[40%] bg-muted/30 border-dashed border-border/80 hover:opacity-85 hover:grayscale-[15%]"
           : note.pinned
           ? "bg-card border-primary/40 shadow-xs ring-1 ring-primary/20"
