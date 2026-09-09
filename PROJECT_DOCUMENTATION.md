@@ -271,6 +271,11 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 - **İsteğe Bağlı (On-Demand) Yorum Formu:** Yorum ekleme alanı varsayılan olarak gizlidir; "Yorum Ekle" butonu ile açılır ve "İptal" veya başarılı gönderim ile kapanır (`NoteCommentsSection.tsx`).
 - **Takvim Rozet Entegrasyonu:** Yorum tarihleri ayıklanarak dashboard takvim rozet sayımlarına ve gün bazlı filtrelere dahil edilir.
 
+### 4.8. Kesintisiz CTRL+S Hızlı Kaydetme Motoru
+- **Tüm İçerik Modlarında Kesintisiz Kayıt:** Kullanıcı *Metin (Markdown)*, *Çizim & Şema (Canvas)*, *Hiyerarşik Outline* veya *Zihin Haritası (Mindmap)* modlarından hangisinde çalışırsa çalışsın, `CTRL+S` (Mac için `Cmd+S`) yapıldığında düzenleme oturumundan (`editing: true`) çıkılmaksızın ve odak kaybolmaksızın not arka planda veritabanına (`PUT /notes/:id`) ve versiyon geçmişine kaydedilir.
+- **Yeni Not Ekleme Akışında Kesintisiz Oturum (`NewNotePage.tsx`):** Yeni not oluştururken basılan ilk `CTRL+S`, notu veritabanında oluşturur (`POST /notes`) ve rota durumunu sessizce günceller; kullanıcının yazma/çizme akışını kesmeden sonraki tüm `CTRL+S` eylemleri mevcut notu güncellemeye (`PUT /notes/:id`) devam eder.
+- **Evrensel Kısayol Yakalama:** Editör içindeki metin kutuları, tuval veya başlık alanlarında tarayıcının varsayılan sayfa kaydetme diyaloğu engellenerek anında sistem kayıt mekanizması tetiklenir.
+
 ---
 
 ## 5. Gün Gün Kronolojik Geliştirme Günlüğü
