@@ -248,7 +248,7 @@ export default function NoteDetail() {
     (nt) => nt.type_id === (editing ? noteTypeId : note?.note_type_id || "type_plain")
   );
 
-  async function save() {
+  async function save(keepEditing = false) {
     if (!note) return;
     setBusy(true);
     try {
@@ -288,11 +288,11 @@ export default function NoteDetail() {
         setDateTime(toDateTimeLocal(updatedNote.date));
         setInlineDateVal(toDateTimeLocal(updatedNote.date));
         setSlug(updatedNote.slug || "");
-        setEditing(false);
+        if (!keepEditing) setEditing(false);
         setContent(extractCommentsFromContent(updatedNote.content || "").mainContent);
         setContentMode(detectContentMode(updatedNote.content || "", updatedNote.custom_fields));
         setLoc(locations.find((l) => l.location_id === updatedNote.location_id) || null);
-        toast.success("Not 2 ayrı nota bölündü ve kaydedildi");
+        toast.success(keepEditing ? "Değişiklikler kaydedildi" : "Not 2 ayrı nota bölündü ve kaydedildi");
 
         if (updatedNote.slug && updatedNote.slug !== id) {
           navigate(`/note/${updatedNote.slug}`, { replace: true });
@@ -315,11 +315,11 @@ export default function NoteDetail() {
       setDateTime(toDateTimeLocal(data.date));
       setInlineDateVal(toDateTimeLocal(data.date));
       setSlug(data.slug || "");
-      setEditing(false);
+      if (!keepEditing) setEditing(false);
       setContent(extractCommentsFromContent(data.content || "").mainContent);
       setContentMode(detectContentMode(data.content || "", data.custom_fields));
       setLoc(locations.find((l) => l.location_id === data.location_id) || null);
-      toast.success("Not kaydedildi");
+      toast.success(keepEditing ? "Değişiklikler kaydedildi" : "Not kaydedildi");
 
       if (data.slug && data.slug !== id) {
         navigate(`/note/${data.slug}`, { replace: true });
@@ -330,6 +330,20 @@ export default function NoteDetail() {
       setBusy(false);
     }
   }
+
+  // Global Ctrl+S shortcut: Save note without exiting editing mode, regardless of active content mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
+        e.preventDefault();
+        if (note && !note.archived) {
+          save(true);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [note, content, title, dateTime, slug, locationId, noteTypeId, customFields, contentMode, editing]);
 
   async function handleTogglePin() {
     if (!note) return;
@@ -757,7 +771,7 @@ export default function NoteDetail() {
                 onChange={setContent}
                 title={title}
                 onTitleChange={setTitle}
-                onSubmit={save}
+                onSubmit={() => save(true)}
                 noteId={note.note_id}
               />
             )}
@@ -809,7 +823,7 @@ export default function NoteDetail() {
                   <X className="w-3.5 h-3.5 mr-1.5" /> İptal
                 </Button>
                 <Button
-                  onClick={save}
+                  onClick={() => save(false)}
                   disabled={busy}
                   data-testid="save-edit-btn"
                   className="bg-foreground text-background hover:bg-foreground/90 rounded-sm cursor-pointer"

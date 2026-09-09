@@ -30,7 +30,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { LocationItem, NoteType, Category } from "@/types";
+import type { Note, LocationItem, NoteType, Category } from "@/types";
 
 export type ContentMode = "markdown" | "drawing" | "outline" | "mindmap";
 
@@ -56,6 +56,9 @@ export default function NewNotePage() {
   const [isEncrypted, setIsEncrypted] = useState(false);
   const [passwordHash, setPasswordHash] = useState<string | null>(null);
 
+  const [savedNoteId, setSavedNoteId] = useState<string | null>(null);
+  const [savedNoteSlug, setSavedNoteSlug] = useState<string | null>(null);
+
   useEffect(() => {
     async function loadAux() {
       try {
@@ -74,24 +77,27 @@ export default function NewNotePage() {
     loadAux();
   }, []);
 
-  // Keyboard shortcut: Esc to exit full focus, Ctrl+Enter or Ctrl+S to save
+  // Keyboard shortcut: Esc to exit full focus, Ctrl+S to save and continue editing, Ctrl+Enter to save & exit
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && fullFocus) {
         setFullFocus(false);
       }
-      if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "Enter")) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
         e.preventDefault();
-        handleSave();
+        handleSave(true);
+      } else if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        handleSave(false);
       }
     };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [fullFocus, title, content, dateTime, locationId, categoryId, noteTypeId, customFields, contentMode, isEncrypted, passwordHash]);
+    window.addEventListener("keydown", handleKey, true);
+    return () => window.removeEventListener("keydown", handleKey, true);
+  }, [fullFocus, title, content, dateTime, locationId, categoryId, noteTypeId, customFields, contentMode, isEncrypted, passwordHash, savedNoteId]);
 
   const currentType = noteTypes.find((t) => t.type_id === noteTypeId);
 
-  const handleSave = async () => {
+  const handleSave = async (keepAdding = false) => {
     if (!title.trim() && !content.trim()) {
       toast.error("Lütfen bir başlık veya içerik giriniz");
       return;
@@ -114,10 +120,27 @@ export default function NewNotePage() {
         password_hash: passwordHash,
       };
 
-      const res = await api.post("/notes", payload);
-      toast.success("Yeni not başarıyla oluşturuldu");
-      const targetSlug = res.data.slug || res.data.note_id;
-      navigate(`/note/${targetSlug}`);
+      if (savedNoteId) {
+        const res = await api.put<Note>(`/notes/${savedNoteId}`, payload);
+        const targetSlug = res.data.slug || res.data.note_id;
+        setSavedNoteSlug(targetSlug);
+        toast.success(keepAdding ? "Değişiklikler kaydedildi" : "Not kaydedildi");
+        if (!keepAdding) {
+          navigate(`/note/${targetSlug}`);
+        }
+      } else {
+        const res = await api.post<Note>("/notes", payload);
+        const createdId = res.data.note_id;
+        const targetSlug = res.data.slug || res.data.note_id;
+        setSavedNoteId(createdId);
+        setSavedNoteSlug(targetSlug);
+        toast.success(keepAdding ? "Not kaydedildi (Ekleme/Düzenleme devam ediyor)" : "Yeni not başarıyla oluşturuldu");
+        if (keepAdding) {
+          window.history.replaceState(null, "", `/note/${targetSlug}?edit=true`);
+        } else {
+          navigate(`/note/${targetSlug}`);
+        }
+      }
     } catch (err) {
       toast.error(formatApiError(err) || "Not kaydedilirken bir hata oluştu");
     } finally {
@@ -192,7 +215,7 @@ export default function NewNotePage() {
 
               {/* Save Button */}
               <Button
-                onClick={handleSave}
+                onClick={() => handleSave(false)}
                 disabled={saving}
                 className="h-8 px-4 text-xs font-semibold rounded-lg bg-primary text-primary-foreground shadow-xs hover:opacity-90 transition-opacity cursor-pointer"
                 data-testid="new-note-save-btn"
@@ -273,38 +296,39 @@ export default function NewNotePage() {
 
               {/* Location Selector */}
               <Button
+                type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => setPicker(true)}
-                className="h-8 text-xs rounded-lg bg-background"
+                className="h-8 text-xs bg-background rounded-lg border-border cursor-pointer text-muted-foreground hover:text-foreground"
               >
-                <MapPin className="w-3.5 h-3.5 mr-1.5 text-rose-500" strokeWidth={1.5} />
+                <MapPin className="w-3.5 h-3.5 mr-1 text-muted-foreground" />
                 <span>{loc ? loc.name : "Konum Ekle"}</span>
               </Button>
             </div>
 
-            {/* Dynamic Custom Fields (if specialized Note Type selected) */}
-            {currentType && Array.isArray(currentType.fields) && currentType.fields.length > 0 && (
-              <div className="p-3.5 rounded-xl bg-card border border-border/80 shadow-2xs">
+            {/* Custom Fields if Note Type has fields */}
+            {currentType && currentType.fields && currentType.fields.length > 0 && (
+              <div className="p-3 bg-secondary/30 border border-border/70 rounded-xl">
                 <CustomFieldsForm
                   fields={currentType.fields}
                   values={customFields}
                   onChange={(fieldId, val) =>
                     setCustomFields((prev) => ({ ...prev, [fieldId]: val }))
                   }
+                  disabled={saving}
                 />
               </div>
             )}
 
-            {/* 4 Content Modes Switcher */}
+            {/* 4 Content Mode Tabs */}
             <div className="flex items-center justify-between gap-2 p-1.5 rounded-xl bg-secondary/60 border border-border/80 flex-wrap">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground px-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-primary" />
-                <span>İçerik Modu:</span>
-              </div>
+              <span className="text-xs font-semibold text-foreground px-2">
+                İçerik Düzenleme Modu:
+              </span>
 
               <div className="flex items-center gap-1 bg-background p-0.5 rounded-lg border border-border flex-wrap">
-                {/* 1. Markdown */}
+                {/* 1. Markdown Metin */}
                 <button
                   type="button"
                   onClick={() => {
@@ -317,17 +341,19 @@ export default function NewNotePage() {
                       : "hover:bg-muted text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  <FileText className="w-3.5 h-3.5" /> Metin (Markdown)
+                  <FileText className="w-3.5 h-3.5" /> Metin
                 </button>
 
-                {/* 2. Drawing */}
+                {/* 2. Drawing Canvas */}
                 <button
                   type="button"
                   onClick={() => {
                     setContentMode("drawing");
                     setCustomFields((prev) => ({ ...prev, content_mode: "drawing" }));
                     if (!/\`\`\`drawing/.test(content)) {
-                      setContent(`\`\`\`drawing\n{\n  "version": 1,\n  "elements": [],\n  "gridMode": "dots"\n}\n\`\`\``);
+                      setContent(
+                        '```drawing\n{\n  "version": 1,\n  "elements": [],\n  "gridMode": "dots"\n}\n```'
+                      );
                     }
                   }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer ${
@@ -336,7 +362,7 @@ export default function NewNotePage() {
                       : "hover:bg-muted text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  <PenTool className="w-3.5 h-3.5" /> Çizim & Şema
+                  <PenTool className="w-3.5 h-3.5" /> Çizim
                 </button>
 
                 {/* 3. Outline */}
@@ -392,7 +418,7 @@ export default function NewNotePage() {
                 onChange={setContent}
                 title={title}
                 onTitleChange={setTitle}
-                onSubmit={handleSave}
+                onSubmit={() => handleSave(true)}
               />
             )}
           </div>

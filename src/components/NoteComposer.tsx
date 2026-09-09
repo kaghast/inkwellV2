@@ -60,6 +60,18 @@ export default function NoteComposer({
     }
   }, [initialNoteTypes]);
 
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
+        e.preventDefault();
+        save();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [open, content, title, noteDateTime, locationId, noteTypeId, customFields]);
+
   function reset() {
     setTitle("");
     setContent("");

@@ -418,6 +418,15 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 
 ---
 
+### 📅 9 Eylül 2026 (Kesintisiz CTRL+S Hızlı Kaydetme Motoru)
+
+- **Tüm İçerik Modlarında Kesintisiz CTRL+S Desteği:**
+  - **Düzenleme / Güncelleme Modu (`NoteDetail.tsx`):** Kullanıcı Markdown, Çizim, Outline veya Zihin Haritası (Mindmap) modlarından hangisinde olursa olsun, klavyeden `Ctrl+S` (veya Mac için `Cmd+S`) tuşladığında düzenleme oturumundan (`editing: true`) çıkılmaksızın tüm değişiklikler doğrudan veritabanına ve versiyon geçmişine kaydedilir.
+  - **Yeni Not Ekleme Modu (`NewNotePage.tsx`):** Yeni not oluşturulurken ilk `Ctrl+S` ile not sisteme kaydedilir ve sayfa/odak bozulmadan sonraki `Ctrl+S` eylemleri mevcut notu güncellemeye devam eder; kullanıcının yazma akışı ve içerik modu kesintiye uğramaz.
+  - **Editörler Arası Yakalama (`MarkdownEditor.tsx` & `NoteComposer.tsx`):** Metin alanı, başlık veya tuval odaklıyken tarayıcının varsayılan "Sayfayı Kaydet" diyaloğu engellenerek arka uç kayıt fonksiyonu tetiklenir.
+
+---
+
 ## 6. Dağıtım ve DevOps Yapılandırması
 
 Inkwell V2, Docker konteyner mimarisi ile Coolify veya herhangi bir Docker Host üzerinde sıfır kesintiyle çalışacak şekilde yapılandırılmıştır.
@@ -455,4 +464,4 @@ CMD ["npm", "start"]
 
 ---
 
-*Belge son güncelleme tarihi: 8 Eylül 2026*
+*Belge son güncelleme tarihi: 9 Eylül 2026*

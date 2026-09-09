@@ -386,9 +386,15 @@ export default function MarkdownEditor({
         return;
       }
     }
+    if ((e.key === "s" || e.key === "S") && (e.metaKey || e.ctrlKey) && onSubmit) {
+      e.preventDefault();
+      onSubmit();
+      return;
+    }
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && onSubmit) {
       e.preventDefault();
       onSubmit();
+      return;
     }
     if (e.key === "Escape" && !popup) {
       if (fullFocus) {
