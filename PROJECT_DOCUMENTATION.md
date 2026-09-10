@@ -445,9 +445,10 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 
 ### 📅 10 Eylül 2026 (React Hook Sırası Güvenliği & Stabilite İyileştirmesi)
 
-- **React Error #310 (Hook Çağrı Sırası İhlali) Giderilmesi:**
+- **React Error #310 (Hook Çağrı Sırası İhlali) & Tarih Formatlama Referans Düzeltmesi:**
   - `NoteDetail.tsx` içerisinde sayfa yükleme anında tetiklenen erken dönüş (`if (!note) return (...)`) koşulunun altında kalan durum hook'u (`isDragOver`) bileşenin en üst seviyesine taşındı.
   - Sürükle-bırak olay işleyicileri (`handleDragOver`, `handleDragLeave`, `handleDrop`) erken dönüşlerden önce tanımlanarak bileşenin yaşam döngüsü boyunca çağrılan Hook sayısının ve sırasının her render'da birebir tutarlı olması sağlandı.
+  - `NoteDetail.tsx` tarih gösterge bloğundaki `formattedDate` referans hatası (`da7d574`) giderilerek `formatDisplayDatetime(note.date)` ile güvenli entegrasyonu sağlandı.
   - Yükleme esnasında kullanıcıya akıcı bir yükleniyor göstergesi sunuldu (`deaa6ae`).
 
 ---
