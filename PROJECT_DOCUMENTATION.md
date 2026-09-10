@@ -443,6 +443,15 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 
 ---
 
+### 📅 10 Eylül 2026 (React Hook Sırası Güvenliği & Stabilite İyileştirmesi)
+
+- **React Error #310 (Hook Çağrı Sırası İhlali) Giderilmesi:**
+  - `NoteDetail.tsx` içerisinde sayfa yükleme anında tetiklenen erken dönüş (`if (!note) return (...)`) koşulunun altında kalan durum hook'u (`isDragOver`) bileşenin en üst seviyesine taşındı.
+  - Sürükle-bırak olay işleyicileri (`handleDragOver`, `handleDragLeave`, `handleDrop`) erken dönüşlerden önce tanımlanarak bileşenin yaşam döngüsü boyunca çağrılan Hook sayısının ve sırasının her render'da birebir tutarlı olması sağlandı.
+  - Yükleme esnasında kullanıcıya akıcı bir yükleniyor göstergesi sunuldu (`deaa6ae`).
+
+---
+
 ## 6. Dağıtım ve DevOps Yapılandırması
 
 Inkwell V2, Docker konteyner mimarisi ile Coolify veya herhangi bir Docker Host üzerinde sıfır kesintiyle çalışacak şekilde yapılandırılmıştır.
@@ -480,4 +489,4 @@ CMD ["npm", "start"]
 
 ---
 
-*Belge son güncelleme tarihi: 9 Eylül 2026*
+*Belge son güncelleme tarihi: 10 Eylül 2026*
