@@ -565,6 +565,8 @@ export default function NoteDetail() {
     );
   }
 
+  const formattedDate = formatDisplayDatetime(note.date) || note.date;
+
   return (
     <div className="paper min-h-screen flex flex-col">
       <AppMenubar />
