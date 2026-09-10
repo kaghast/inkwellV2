@@ -115,6 +115,7 @@ export default function NoteDetail() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [unlockPass, setUnlockPass] = useState("");
   const [unlocking, setUnlocking] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const isEncrypted = Boolean(note?.is_encrypted);
 
@@ -437,16 +438,6 @@ export default function NoteDetail() {
     }
   }
 
-  if (!note) {
-    return (
-      <div className="paper min-h-screen">
-        <AppMenubar />
-      </div>
-    );
-  }
-
-  const [isDragOver, setIsDragOver] = useState(false);
-
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -562,6 +553,17 @@ export default function NoteDetail() {
       toast.error("Not güncellenirken bir hata oluştu");
     }
   };
+
+  if (!note) {
+    return (
+      <div className="paper min-h-screen flex flex-col">
+        <AppMenubar />
+        <div className="pt-14 lg:pl-16 flex-1 flex items-center justify-center">
+          <div className="animate-pulse text-muted-foreground text-sm font-mono">Not yükleniyor...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="paper min-h-screen flex flex-col">
