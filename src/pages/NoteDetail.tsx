@@ -496,6 +496,14 @@ export default function NoteDetail() {
             setContent((prev) => (prev ? `${prev}\n${locTag}` : locTag));
           }
           toast.success(`"${locName}" konumu nota eklendi`);
+        } else if (itemType === "sticker") {
+          const stickerContent = payload.content || itemName;
+          setContent((prev) => (prev ? `${prev} ${stickerContent}` : stickerContent));
+          toast.success(`"${stickerContent}" sticker/emoji nota eklendi`);
+        } else if (itemType === "phrase") {
+          const phraseText = payload.phrase || payload.content || itemName;
+          setContent((prev) => (prev ? `${prev}\n${phraseText}` : phraseText));
+          toast.success(`"${itemName}" cümlesi nota eklendi`);
         }
       } else {
         let updatedTags = Array.isArray(note.tags) ? [...note.tags] : [];
@@ -526,6 +534,14 @@ export default function NoteDetail() {
             updatedContent = updatedContent ? `${updatedContent}\n${locTag}` : locTag;
           }
           toast.success(`"${locName}" konumu nota eklendi`);
+        } else if (itemType === "sticker") {
+          const stickerContent = payload.content || itemName;
+          updatedContent = updatedContent ? `${updatedContent} ${stickerContent}` : stickerContent;
+          toast.success(`"${stickerContent}" sticker/emoji nota eklendi`);
+        } else if (itemType === "phrase") {
+          const phraseText = payload.phrase || payload.content || itemName;
+          updatedContent = updatedContent ? `${updatedContent}\n${phraseText}` : phraseText;
+          toast.success(`"${itemName}" cümlesi nota eklendi`);
         } else {
           return;
         }

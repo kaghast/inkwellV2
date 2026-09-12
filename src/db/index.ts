@@ -151,6 +151,23 @@ export async function initDatabaseSchema() {
       group_id TEXT REFERENCES item_groups(group_id) ON DELETE SET NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS stickers (
+      sticker_id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'emoji',
+      group_id TEXT REFERENCES item_groups(group_id) ON DELETE SET NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS phrases (
+      phrase_id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      phrase TEXT NOT NULL,
+      group_id TEXT REFERENCES item_groups(group_id) ON DELETE SET NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS notes (
       note_id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,

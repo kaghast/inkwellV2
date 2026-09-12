@@ -7,7 +7,7 @@ export interface User {
   created_at?: string;
 }
 
-export type GroupType = "tags" | "people" | "locations" | "categories";
+export type GroupType = "tags" | "people" | "locations" | "categories" | "stickers" | "phrases";
 
 export interface ItemGroup {
   group_id: string;
@@ -51,6 +51,25 @@ export interface LocationItem {
   name: string;
   lat: number;
   lng: number;
+  group_id?: string | null;
+  created_at?: string;
+}
+
+export interface StickerItem {
+  sticker_id: string;
+  user_id?: string;
+  name: string;
+  content: string; // emoji, icon identifier, or sticker text/url
+  type: "emoji" | "icon" | "sticker";
+  group_id?: string | null;
+  created_at?: string;
+}
+
+export interface PhraseItem {
+  phrase_id: string;
+  user_id?: string;
+  name: string; // Anahtar sözcük
+  phrase: string; // Max 120 chars sentence
   group_id?: string | null;
   created_at?: string;
 }

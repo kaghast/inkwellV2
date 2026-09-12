@@ -202,6 +202,14 @@ export default function NewNotePage() {
           setContent((prev) => (prev ? `${prev}\n${locTag}` : locTag));
         }
         toast.success(`"${locName}" konumu eklendi`);
+      } else if (itemType === "sticker") {
+        const stickerContent = payload.content || itemName;
+        setContent((prev) => (prev ? `${prev} ${stickerContent}` : stickerContent));
+        toast.success(`"${stickerContent}" sticker/emoji eklendi`);
+      } else if (itemType === "phrase") {
+        const phraseText = payload.phrase || payload.content || itemName;
+        setContent((prev) => (prev ? `${prev}\n${phraseText}` : phraseText));
+        toast.success(`"${itemName}" cümlesi eklendi`);
       }
     } catch (err) {
       console.warn("Drop on new note page failed:", err);

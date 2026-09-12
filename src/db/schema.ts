@@ -98,6 +98,27 @@ export const locations = pgTable('locations', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// Stickers, Icons and Emojis table
+export const stickers = pgTable('stickers', {
+  stickerId: text('sticker_id').primaryKey(),
+  userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }).notNull(),
+  name: text('name').notNull(),
+  content: text('content').notNull(),
+  type: text('type').default('emoji').notNull(), // 'emoji' | 'icon' | 'sticker'
+  groupId: text('group_id').references(() => itemGroups.groupId, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Keywords and Phrases (max 120 chars) table
+export const phrases = pgTable('phrases', {
+  phraseId: text('phrase_id').primaryKey(),
+  userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }).notNull(),
+  name: text('name').notNull(),
+  phrase: text('phrase').notNull(),
+  groupId: text('group_id').references(() => itemGroups.groupId, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // Notes table with pgvector embeddings for AI training and semantic search
 export const notes = pgTable(
   'notes',
@@ -190,6 +211,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   tags: many(tags),
   people: many(people),
   locations: many(locations),
+  stickers: many(stickers),
+  phrases: many(phrases),
   groups: many(itemGroups),
   reminders: many(reminders),
 }));

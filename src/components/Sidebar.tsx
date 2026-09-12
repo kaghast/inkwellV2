@@ -1,9 +1,11 @@
-import React, { useState, ComponentType } from "react";
+import React, { useState, useEffect, useCallback, ComponentType } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Hash,
   Users,
   MapPin,
+  Sparkles,
+  MessageSquareQuote,
   Folder,
   FolderPlus,
   Pencil,
@@ -15,7 +17,11 @@ import {
   ChevronRight,
   GripVertical,
   ArrowRightLeft,
-  MoveRight,
+  Plus,
+  Copy,
+  Smile,
+  Type,
+  FileText,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -25,34 +31,49 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useFilter } from "@/contexts/FilterContext";
 import api, { formatApiError } from "@/lib/api";
 import { toast } from "sonner";
-import type { Tag, Person, LocationItem, ItemGroup } from "@/types";
+import type { Tag, Person, LocationItem, ItemGroup, StickerItem, PhraseItem } from "@/types";
+import LocationPicker from "@/components/LocationPicker";
 
-type RowFilterType = "tag" | "person" | "location";
-export type SidebarTab = "tags" | "people" | "locations";
+export type RowFilterType = "tag" | "person" | "location" | "sticker" | "phrase";
+export type SidebarTab = "tags" | "people" | "locations" | "stickers" | "phrases";
 
 interface EditableRowProps {
   icon: ComponentType<{ className?: string; strokeWidth?: number | string; style?: React.CSSProperties }>;
+  emojiContent?: string;
   label: string;
-  to: string;
+  subLabel?: string;
+  to?: string;
   filterType: RowFilterType;
   filterValue: string;
   itemId: string;
   groupId?: string | null;
   groups: ItemGroup[];
   iconColor?: string;
-  onRename: (newName: string) => Promise<void>;
+  onRename: (newName: string, extra?: any) => Promise<void>;
   onDelete: () => Promise<void>;
   onMoveToGroup: (targetGroupId: string | null) => Promise<void>;
   onDragStart?: (e: React.DragEvent) => void;
+  onClickCopy?: () => void;
   testIdPrefix?: string;
 }
 
 function EditableRow({
   icon: Icon,
+  emojiContent,
   label,
+  subLabel,
   to,
   filterType,
   filterValue,
@@ -64,28 +85,30 @@ function EditableRow({
   onDelete,
   onMoveToGroup,
   onDragStart,
+  onClickCopy,
   testIdPrefix = "sidebar-item",
 }: EditableRowProps) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(label);
+  const [subVal, setSubVal] = useState(subLabel || "");
   const [loading, setLoading] = useState(false);
   const location = useLocation();
   const { tryAddFilter } = useFilter();
 
-  const isActive = location.pathname === to;
+  const isActive = to ? location.pathname === to : false;
 
   const handleSave = async (e: React.MouseEvent | React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const trimmed = val.trim();
-    if (!trimmed || trimmed === label) {
+    if (!trimmed) {
       setEditing(false);
       setVal(label);
       return;
     }
     setLoading(true);
     try {
-      await onRename(trimmed);
+      await onRename(trimmed, subVal.trim());
       setEditing(false);
       toast.success("Güncellendi");
     } catch (err: any) {
@@ -114,46 +137,85 @@ function EditableRow({
     return (
       <form
         onSubmit={handleSave}
-        className="flex items-center gap-1.5 px-2 py-1 bg-muted/70 rounded text-xs"
+        className="flex flex-col gap-1 px-2 py-1.5 bg-muted/80 rounded text-xs"
         onClick={(e) => e.stopPropagation()}
       >
-        <Icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" style={iconColor ? { color: iconColor } : undefined} />
-        <input
-          type="text"
-          value={val}
-          onChange={(e) => setVal(e.target.value)}
-          autoFocus
-          disabled={loading}
-          className="flex-1 bg-transparent text-foreground outline-none border-b border-primary text-xs px-0.5 py-0.5"
-          data-testid={`${testIdPrefix}-input`}
-        />
-        <button
-          type="submit"
-          disabled={loading}
-          className="text-emerald-600 hover:text-emerald-700 p-0.5 cursor-pointer"
-          data-testid={`${testIdPrefix}-save`}
-        >
-          <Check className="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => {
-            setEditing(false);
-            setVal(label);
-          }}
-          className="text-muted-foreground hover:text-foreground p-0.5 cursor-pointer"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          {emojiContent ? (
+            <span className="text-sm shrink-0 leading-none">{emojiContent}</span>
+          ) : (
+            <Icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" style={iconColor ? { color: iconColor } : undefined} />
+          )}
+          <input
+            type="text"
+            value={val}
+            onChange={(e) => setVal(e.target.value)}
+            autoFocus
+            disabled={loading}
+            placeholder={filterType === "phrase" ? "Anahtar Sözcük" : "İsim"}
+            className="flex-1 bg-transparent text-foreground outline-none border-b border-primary text-xs px-0.5 py-0.5"
+            data-testid={`${testIdPrefix}-input`}
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="text-emerald-600 hover:text-emerald-700 p-0.5 cursor-pointer"
+            data-testid={`${testIdPrefix}-save`}
+          >
+            <Check className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => {
+              setEditing(false);
+              setVal(label);
+              setSubVal(subLabel || "");
+            }}
+            className="text-muted-foreground hover:text-foreground p-0.5 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {filterType === "phrase" && (
+          <div className="space-y-0.5 pt-0.5">
+            <textarea
+              value={subVal}
+              onChange={(e) => setSubVal(e.target.value)}
+              maxLength={120}
+              placeholder="Cümle metni (Maks 120 karakter)..."
+              className="w-full bg-background/80 text-foreground border border-border rounded p-1 text-[11px] outline-none focus:border-primary resize-none h-12"
+            />
+            <div className="text-[10px] text-right text-muted-foreground font-mono">
+              {subVal.length}/120
+            </div>
+          </div>
+        )}
       </form>
     );
   }
+
+  const handleCopyText = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const textToCopy = subLabel || emojiContent || label;
+    navigator.clipboard.writeText(textToCopy);
+    toast.success(`"${textToCopy}" kopyalandı`);
+    onClickCopy?.();
+  };
 
   return (
     <div
       draggable
       onDragStart={(e) => {
+        let textPayload = "";
+        if (filterType === "tag") textPayload = `#${label}`;
+        else if (filterType === "person") textPayload = `@${label}`;
+        else if (filterType === "location") textPayload = `📍 ${label}`;
+        else if (filterType === "sticker") textPayload = emojiContent || label;
+        else if (filterType === "phrase") textPayload = subLabel || label;
+
         const payload = {
           type: filterType,
           filterType,
@@ -161,20 +223,22 @@ function EditableRow({
           name: label,
           label,
           filterValue,
+          content: emojiContent || subLabel || label,
+          phrase: subLabel || undefined,
           sourceGroupId: groupId || null,
           location_id: filterType === "location" ? itemId : undefined,
           tag_id: filterType === "tag" ? itemId : undefined,
           person_id: filterType === "person" ? itemId : undefined,
+          sticker_id: filterType === "sticker" ? itemId : undefined,
+          phrase_id: filterType === "phrase" ? itemId : undefined,
           data: {
             id: itemId,
             name: label,
-            location_id: filterType === "location" ? itemId : undefined,
-            tag_id: filterType === "tag" ? itemId : undefined,
-            person_id: filterType === "person" ? itemId : undefined,
+            content: emojiContent || subLabel || label,
           },
         };
+
         e.dataTransfer.setData("application/json", JSON.stringify(payload));
-        const textPayload = filterType === "tag" ? `#${label}` : filterType === "person" ? `@${label}` : `📍 ${label}`;
         e.dataTransfer.setData("text/plain", textPayload);
         e.dataTransfer.effectAllowed = "copyMove";
         onDragStart?.(e);
@@ -187,23 +251,61 @@ function EditableRow({
     >
       <div className="flex items-center gap-1.5 min-w-0 flex-1">
         <GripVertical className="w-3 h-3 text-muted-foreground/30 group-hover:text-muted-foreground transition-colors shrink-0 cursor-grab" />
-        <Link
-          to={to}
-          onClick={(e) => {
-            if (tryAddFilter(filterType, filterValue, e)) {
-              e.preventDefault();
-            }
-          }}
-          className="flex items-center gap-2 min-w-0 flex-1 truncate"
-          data-testid={`${testIdPrefix}-link`}
-        >
-          <Icon className="w-3.5 h-3.5 shrink-0" style={iconColor ? { color: iconColor } : undefined} />
-          <span className="truncate">{label}</span>
-        </Link>
+        {to ? (
+          <Link
+            to={to}
+            onClick={(e) => {
+              if (tryAddFilter(filterType as any, filterValue, e)) {
+                e.preventDefault();
+              }
+            }}
+            className="flex items-center gap-1.5 min-w-0 flex-1 truncate"
+            data-testid={`${testIdPrefix}-link`}
+          >
+            {emojiContent ? (
+              <span className="text-sm shrink-0 leading-none">{emojiContent}</span>
+            ) : (
+              <Icon className="w-3.5 h-3.5 shrink-0" style={iconColor ? { color: iconColor } : undefined} />
+            )}
+            <span className="truncate">{label}</span>
+          </Link>
+        ) : (
+          <div
+            onClick={handleCopyText}
+            className="flex items-center gap-1.5 min-w-0 flex-1 truncate cursor-pointer"
+            title={subLabel ? `${label}: "${subLabel}" (Kopyalamak için tıklayın)` : `${label} (Kopyalamak için tıklayın)`}
+          >
+            {emojiContent ? (
+              <span className="text-sm shrink-0 leading-none">{emojiContent}</span>
+            ) : (
+              <Icon className="w-3.5 h-3.5 shrink-0" style={iconColor ? { color: iconColor } : undefined} />
+            )}
+            <div className="min-w-0 flex-1 truncate">
+              <span className="font-medium text-foreground truncate block">{label}</span>
+              {subLabel && (
+                <span className="text-[10px] text-muted-foreground truncate block leading-tight opacity-80">
+                  {subLabel}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 ml-1 transition-opacity">
-        {/* Move to Group Dropdown Menu (Accessible 1-Click Grouping) */}
+        {/* Copy Quick Button */}
+        {(filterType === "sticker" || filterType === "phrase") && (
+          <button
+            type="button"
+            onClick={handleCopyText}
+            className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-background/80 transition-colors cursor-pointer"
+            title="Metni Kopyala"
+          >
+            <Copy className="w-3 h-3" />
+          </button>
+        )}
+
+        {/* Move to Group Dropdown Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -264,7 +366,7 @@ function EditableRow({
             setEditing(true);
           }}
           className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-background/80 transition-colors cursor-pointer"
-          title="Yeniden adlandır"
+          title="Düzenle"
           data-testid={`${testIdPrefix}-edit`}
         >
           <Pencil className="w-3 h-3" />
@@ -283,10 +385,19 @@ function EditableRow({
   );
 }
 
+// Popular Emojis quick palette
+const QUICK_EMOJIS = [
+  "⭐", "🔥", "🚀", "❤️", "🎉", "💡", "☕", "📌", "✅", "⚠️",
+  "🎯", "📝", "🏆", "👍", "🧠", "⚡", "🔔", "💎", "📅", "🏷️",
+  "🌟", "✨", "🎨", "💼", "📚", "🌍", "✈️", "🍕", "🎵", "💰"
+];
+
 interface SidebarProps {
   tags: Tag[];
   people: Person[];
   locations: LocationItem[];
+  stickers?: StickerItem[];
+  phrases?: PhraseItem[];
   groups: ItemGroup[];
   onChange?: () => void;
   defaultTab?: SidebarTab;
@@ -295,9 +406,11 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
-  tags,
-  people,
-  locations,
+  tags = [],
+  people = [],
+  locations = [],
+  stickers: initialStickers,
+  phrases: initialPhrases,
   groups = [],
   onChange,
   defaultTab = "tags",
@@ -305,6 +418,10 @@ export default function Sidebar({
 }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>(defaultTab);
   const [filterQuery, setFilterQuery] = useState("");
+
+  // Internal state for stickers & phrases if not passed directly
+  const [stickersList, setStickersList] = useState<StickerItem[]>(initialStickers || []);
+  const [phrasesList, setPhrasesList] = useState<PhraseItem[]>(initialPhrases || []);
 
   // Group collapsed states
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -316,6 +433,46 @@ export default function Sidebar({
 
   // Drag-over styling state
   const [dragOverGroupId, setDragOverGroupId] = useState<string | "ungrouped" | null>(null);
+
+  // New Sticker Modal State
+  const [stickerModalOpen, setStickerModalOpen] = useState(false);
+  const [newStickerName, setNewStickerName] = useState("");
+  const [newStickerContent, setNewStickerContent] = useState("⭐");
+  const [newStickerType, setNewStickerType] = useState<"emoji" | "icon" | "sticker">("emoji");
+  const [newStickerGroupId, setNewStickerGroupId] = useState<string | null>(null);
+  const [isSavingSticker, setIsSavingSticker] = useState(false);
+
+  // New Phrase Modal State
+  const [phraseModalOpen, setPhraseModalOpen] = useState(false);
+  const [newPhraseName, setNewPhraseName] = useState("");
+  const [newPhraseText, setNewPhraseText] = useState("");
+  const [newPhraseGroupId, setNewPhraseGroupId] = useState<string | null>(null);
+  const [isSavingPhrase, setIsSavingPhrase] = useState(false);
+
+  // Location Picker Modal for adding location
+  const [locPickerOpen, setLocPickerOpen] = useState(false);
+
+  // Fetch stickers and phrases from backend
+  const fetchStickersAndPhrases = useCallback(async () => {
+    try {
+      const [stkRes, phrRes] = await Promise.all([
+        api.get<StickerItem[]>("/stickers"),
+        api.get<PhraseItem[]>("/phrases"),
+      ]);
+      setStickersList(Array.isArray(stkRes.data) ? stkRes.data : []);
+      setPhrasesList(Array.isArray(phrRes.data) ? phrRes.data : []);
+    } catch (e) {
+      console.warn("Could not load stickers/phrases:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (initialStickers) setStickersList(initialStickers);
+    if (initialPhrases) setPhrasesList(initialPhrases);
+    if (!initialStickers || !initialPhrases) {
+      fetchStickersAndPhrases();
+    }
+  }, [initialStickers, initialPhrases, fetchStickersAndPhrases]);
 
   const toggleGroup = (groupId: string) => {
     setCollapsedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
@@ -373,6 +530,8 @@ export default function Sidebar({
         tag: "tags",
         person: "people",
         location: "locations",
+        sticker: "stickers",
+        phrase: "phrases",
       };
       const apiType = typeMap[itemType] || activeTab;
 
@@ -384,6 +543,7 @@ export default function Sidebar({
 
       toast.success(targetGroupId ? "Öğe gruba taşındı" : "Öğe serbest bırakıldı");
       onChange?.();
+      fetchStickersAndPhrases();
     } catch (err: any) {
       toast.error(formatApiError(err) || "Taşıma başarısız oldu");
     }
@@ -439,18 +599,115 @@ export default function Sidebar({
     onChange?.();
   };
 
+  // Stickers actions
+  const handleCreateSticker = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStickerName.trim() || !newStickerContent.trim()) {
+      toast.error("İsim ve emoji/sticker içeriği zorunludur");
+      return;
+    }
+    setIsSavingSticker(true);
+    try {
+      await api.post("/stickers", {
+        name: newStickerName.trim(),
+        content: newStickerContent.trim(),
+        type: newStickerType,
+        group_id: newStickerGroupId,
+      });
+      setNewStickerName("");
+      setNewStickerContent("⭐");
+      setStickerModalOpen(false);
+      toast.success("Sticker / Emoji eklendi");
+      fetchStickersAndPhrases();
+      onChange?.();
+    } catch (err: any) {
+      toast.error(formatApiError(err) || "Sticker eklenemedi");
+    } finally {
+      setIsSavingSticker(false);
+    }
+  };
+
+  const handleUpdateSticker = async (stickerId: string, newName: string, newContent?: string) => {
+    await api.put(`/stickers/${stickerId}`, {
+      name: newName,
+      ...(newContent ? { content: newContent } : {}),
+    });
+    fetchStickersAndPhrases();
+    onChange?.();
+  };
+
+  const handleDeleteSticker = async (stickerId: string) => {
+    await api.delete(`/stickers/${stickerId}`);
+    fetchStickersAndPhrases();
+    onChange?.();
+  };
+
+  // Phrases actions
+  const handleCreatePhrase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPhraseName.trim() || !newPhraseText.trim()) {
+      toast.error("Anahtar sözcük ve cümle metni zorunludur");
+      return;
+    }
+    if (newPhraseText.trim().length > 120) {
+      toast.error("Cümle metni en fazla 120 karakter olabilir");
+      return;
+    }
+    setIsSavingPhrase(true);
+    try {
+      await api.post("/phrases", {
+        name: newPhraseName.trim(),
+        phrase: newPhraseText.trim(),
+        group_id: newPhraseGroupId,
+      });
+      setNewPhraseName("");
+      setNewPhraseText("");
+      setPhraseModalOpen(false);
+      toast.success("Cümle / Şablon eklendi");
+      fetchStickersAndPhrases();
+      onChange?.();
+    } catch (err: any) {
+      toast.error(formatApiError(err) || "Cümle eklenemedi");
+    } finally {
+      setIsSavingPhrase(false);
+    }
+  };
+
+  const handleUpdatePhrase = async (phraseId: string, newName: string, newPhraseText?: string) => {
+    await api.put(`/phrases/${phraseId}`, {
+      name: newName,
+      ...(newPhraseText ? { phrase: newPhraseText } : {}),
+    });
+    fetchStickersAndPhrases();
+    onChange?.();
+  };
+
+  const handleDeletePhrase = async (phraseId: string) => {
+    await api.delete(`/phrases/${phraseId}`);
+    fetchStickersAndPhrases();
+    onChange?.();
+  };
+
+  // Filtering
   const q = filterQuery.toLowerCase().trim();
   const filteredTags = tags.filter((t) => !q || t.name.toLowerCase().includes(q));
   const filteredPeople = people.filter((p) => !q || p.name.toLowerCase().includes(q));
   const filteredLocations = locations.filter((l) => !q || l.name.toLowerCase().includes(q));
+  const filteredStickers = stickersList.filter(
+    (s) => !q || s.name.toLowerCase().includes(q) || s.content.toLowerCase().includes(q)
+  );
+  const filteredPhrases = phrasesList.filter(
+    (p) => !q || p.name.toLowerCase().includes(q) || p.phrase.toLowerCase().includes(q)
+  );
 
   // Current tab's groups
   const currentGroups = groups.filter((g) => g.type === activeTab);
 
   return (
-    <aside className="w-full h-full flex flex-col p-3.5 select-none overflow-hidden" data-testid="sidebar-component">
-      {/* 3-Tab Header Switcher: Etiketler, Kişiler, Konumlar */}
-      <div className="grid grid-cols-3 p-1 bg-muted/60 rounded-md border border-border/60 mb-2.5 shrink-0 gap-0.5">
+    <aside className="w-full h-full flex flex-col p-3 select-none overflow-hidden" data-testid="sidebar-component">
+      {/* 5-Tab Header Switcher: Etiketler, Kişiler, Konumlar, Sticker/Emoji, Cümleler */}
+      <div className="grid grid-cols-5 p-1 bg-muted/60 rounded-md border border-border/60 mb-2 shrink-0 gap-0.5">
+        {/* Tab 1: Tags */}
         <button
           type="button"
           onClick={() => {
@@ -459,18 +716,18 @@ export default function Sidebar({
             setIsCreatingGroup(false);
           }}
           data-testid="sidebar-tab-tags"
-          className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded text-xs font-medium transition-all cursor-pointer ${
+          className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 py-1 px-1 rounded text-xs font-medium transition-all cursor-pointer ${
             activeTab === "tags"
               ? "bg-card text-foreground shadow-2xs font-semibold"
               : "text-muted-foreground hover:text-foreground"
           }`}
-          title="Etiketler"
+          title="Etiketler (#)"
         >
           <Hash className="w-3.5 h-3.5 text-sky-500 shrink-0" />
-          <span className="truncate">Etiket</span>
-          <span className="text-[10px] font-mono opacity-70">({tags.length})</span>
+          <span className="truncate text-[11px]">Etiket</span>
         </button>
 
+        {/* Tab 2: People */}
         <button
           type="button"
           onClick={() => {
@@ -479,18 +736,18 @@ export default function Sidebar({
             setIsCreatingGroup(false);
           }}
           data-testid="sidebar-tab-people"
-          className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded text-xs font-medium transition-all cursor-pointer ${
+          className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 py-1 px-1 rounded text-xs font-medium transition-all cursor-pointer ${
             activeTab === "people"
               ? "bg-card text-foreground shadow-2xs font-semibold"
               : "text-muted-foreground hover:text-foreground"
           }`}
-          title="Kişiler"
+          title="Kişiler (@)"
         >
           <Users className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-          <span className="truncate">Kişi</span>
-          <span className="text-[10px] font-mono opacity-70">({people.length})</span>
+          <span className="truncate text-[11px]">Kişi</span>
         </button>
 
+        {/* Tab 3: Locations */}
         <button
           type="button"
           onClick={() => {
@@ -499,23 +756,62 @@ export default function Sidebar({
             setIsCreatingGroup(false);
           }}
           data-testid="sidebar-tab-locations"
-          className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded text-xs font-medium transition-all cursor-pointer ${
+          className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 py-1 px-1 rounded text-xs font-medium transition-all cursor-pointer ${
             activeTab === "locations"
               ? "bg-card text-foreground shadow-2xs font-semibold"
               : "text-muted-foreground hover:text-foreground"
           }`}
-          title="Konumlar"
+          title="Konumlar (📍)"
         >
           <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-          <span className="truncate">Konum</span>
-          <span className="text-[10px] font-mono opacity-70">({locations.length})</span>
+          <span className="truncate text-[11px]">Konum</span>
+        </button>
+
+        {/* Tab 4: Stickers & Emojis */}
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("stickers");
+            setFilterQuery("");
+            setIsCreatingGroup(false);
+          }}
+          data-testid="sidebar-tab-stickers"
+          className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 py-1 px-1 rounded text-xs font-medium transition-all cursor-pointer ${
+            activeTab === "stickers"
+              ? "bg-card text-foreground shadow-2xs font-semibold"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          title="Sticker, İkon ve Emojiler"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span className="truncate text-[11px]">Emoji</span>
+        </button>
+
+        {/* Tab 5: Keywords & Phrases */}
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("phrases");
+            setFilterQuery("");
+            setIsCreatingGroup(false);
+          }}
+          data-testid="sidebar-tab-phrases"
+          className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 py-1 px-1 rounded text-xs font-medium transition-all cursor-pointer ${
+            activeTab === "phrases"
+              ? "bg-card text-foreground shadow-2xs font-semibold"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          title="Anahtar Sözcükler & Cümleler (Maks 120 Karakter)"
+        >
+          <MessageSquareQuote className="w-3.5 h-3.5 text-violet-500 shrink-0" />
+          <span className="truncate text-[11px]">Cümle</span>
         </button>
       </div>
 
-      {/* In-tab Quick Search Filter & Add Group Button */}
-      <div className="flex items-center gap-1.5 mb-2.5 shrink-0">
+      {/* In-tab Quick Search Filter, Add Item & Add Group Buttons */}
+      <div className="flex items-center gap-1 mb-2 shrink-0">
         <div className="relative flex-1">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
             type="text"
             value={filterQuery}
@@ -525,20 +821,58 @@ export default function Sidebar({
                 ? "Etiketlerde ara…"
                 : activeTab === "people"
                 ? "Kişilerde ara…"
-                : "Konumlarda ara…"
+                : activeTab === "locations"
+                ? "Konumlarda ara…"
+                : activeTab === "stickers"
+                ? "Emoji / Sticker ara…"
+                : "Cümle / Sözcük ara…"
             }
-            className="w-full bg-muted/40 hover:bg-muted/60 focus:bg-background border border-border/70 rounded-md pl-8 pr-7 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/70 outline-none focus:ring-1 focus:ring-primary transition-all"
+            className="w-full bg-muted/40 hover:bg-muted/60 focus:bg-background border border-border/70 rounded-md pl-7 pr-6 py-1 text-xs text-foreground placeholder:text-muted-foreground/70 outline-none focus:ring-1 focus:ring-primary transition-all"
           />
           {filterQuery && (
             <button
               type="button"
               onClick={() => setFilterQuery("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 cursor-pointer"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 cursor-pointer"
             >
               <X className="w-3 h-3" />
             </button>
           )}
         </div>
+
+        {/* Add Item Button (Stickers, Phrases, Locations) */}
+        {activeTab === "stickers" && (
+          <button
+            type="button"
+            onClick={() => setStickerModalOpen(true)}
+            className="p-1 rounded-md border border-border/70 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+            title="Yeni Sticker / Emoji Ekle"
+          >
+            <Plus className="w-3.5 h-3.5 text-amber-500" />
+          </button>
+        )}
+
+        {activeTab === "phrases" && (
+          <button
+            type="button"
+            onClick={() => setPhraseModalOpen(true)}
+            className="p-1 rounded-md border border-border/70 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+            title="Yeni Cümle / Şablon Ekle"
+          >
+            <Plus className="w-3.5 h-3.5 text-violet-500" />
+          </button>
+        )}
+
+        {activeTab === "locations" && (
+          <button
+            type="button"
+            onClick={() => setLocPickerOpen(true)}
+            className="p-1 rounded-md border border-border/70 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+            title="Yeni Konum Ekle"
+          >
+            <Plus className="w-3.5 h-3.5 text-rose-500" />
+          </button>
+        )}
 
         {/* Add Group Button */}
         <button
@@ -546,7 +880,7 @@ export default function Sidebar({
           onClick={() => {
             setIsCreatingGroup(!isCreatingGroup);
           }}
-          className={`p-1.5 rounded-md border text-xs flex items-center gap-1 cursor-pointer transition-colors ${
+          className={`p-1 rounded-md border text-xs flex items-center gap-1 cursor-pointer transition-colors ${
             isCreatingGroup
               ? "bg-primary text-primary-foreground border-primary"
               : "bg-muted/50 border-border/70 text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -561,11 +895,21 @@ export default function Sidebar({
       {isCreatingGroup && (
         <form
           onSubmit={handleCreateGroup}
-          className="mb-2.5 p-2 bg-muted/70 rounded-md border border-border/80 text-xs space-y-2 shrink-0 animate-in fade-in duration-150"
+          className="mb-2 p-2 bg-muted/70 rounded-md border border-border/80 text-xs space-y-1.5 shrink-0 animate-in fade-in duration-150"
         >
           <div className="flex items-center justify-between text-[11px] font-medium text-foreground">
             <span className="flex items-center gap-1 font-semibold">
-              <Folder className="w-3.5 h-3.5 text-primary" /> Yeni Grup ({activeTab === "tags" ? "Etiketler" : activeTab === "people" ? "Kişiler" : "Konumlar"})
+              <Folder className="w-3.5 h-3.5 text-primary" /> Yeni Grup ({
+                activeTab === "tags"
+                  ? "Etiketler"
+                  : activeTab === "people"
+                  ? "Kişiler"
+                  : activeTab === "locations"
+                  ? "Konumlar"
+                  : activeTab === "stickers"
+                  ? "Sticker / Emoji"
+                  : "Cümleler"
+              })
             </span>
             <button
               type="button"
@@ -580,7 +924,7 @@ export default function Sidebar({
               type="text"
               value={newGroupName}
               onChange={(e) => setNewGroupName(e.target.value)}
-              placeholder="Grup adı (örn. İş, Projeler, Seyahat)..."
+              placeholder="Grup adı (örn. Favoriler, İş)..."
               autoFocus
               className="flex-1 bg-background border border-border/80 rounded px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
             />
@@ -602,7 +946,7 @@ export default function Sidebar({
       )}
 
       {/* Tab Content Panel with Groups and Drag-and-Drop */}
-      <div className="flex-1 overflow-y-auto min-h-0 space-y-2 pr-1">
+      <div className="flex-1 overflow-y-auto min-h-0 space-y-1.5 pr-1">
         {/* Render Groups for current tab */}
         {currentGroups.map((group) => {
           const isCollapsed = collapsedGroups[group.group_id] ?? false;
@@ -671,6 +1015,46 @@ export default function Sidebar({
                 onDelete={() => handleDeleteLocation(loc.location_id)}
                 onMoveToGroup={(tId) => handleMoveItemToGroup(loc.location_id, "location", tId)}
                 testIdPrefix={`location-${loc.location_id}`}
+              />
+            ));
+          } else if (activeTab === "stickers") {
+            const items = filteredStickers.filter((s) => s.group_id === group.group_id);
+            count = items.length;
+            groupItems = items.map((stk) => (
+              <EditableRow
+                key={stk.sticker_id}
+                icon={Smile}
+                emojiContent={stk.content}
+                label={stk.name}
+                filterType="sticker"
+                filterValue={stk.content}
+                itemId={stk.sticker_id}
+                groupId={group.group_id}
+                groups={currentGroups}
+                onRename={(newName, newContent) => handleUpdateSticker(stk.sticker_id, newName, newContent)}
+                onDelete={() => handleDeleteSticker(stk.sticker_id)}
+                onMoveToGroup={(tId) => handleMoveItemToGroup(stk.sticker_id, "sticker", tId)}
+                testIdPrefix={`sticker-${stk.sticker_id}`}
+              />
+            ));
+          } else if (activeTab === "phrases") {
+            const items = filteredPhrases.filter((p) => p.group_id === group.group_id);
+            count = items.length;
+            groupItems = items.map((phr) => (
+              <EditableRow
+                key={phr.phrase_id}
+                icon={MessageSquareQuote}
+                label={phr.name}
+                subLabel={phr.phrase}
+                filterType="phrase"
+                filterValue={phr.name}
+                itemId={phr.phrase_id}
+                groupId={group.group_id}
+                groups={currentGroups}
+                onRename={(newName, newPhraseText) => handleUpdatePhrase(phr.phrase_id, newName, newPhraseText)}
+                onDelete={() => handleDeletePhrase(phr.phrase_id)}
+                onMoveToGroup={(tId) => handleMoveItemToGroup(phr.phrase_id, "phrase", tId)}
+                testIdPrefix={`phrase-${phr.phrase_id}`}
               />
             ));
           }
@@ -895,13 +1279,276 @@ export default function Sidebar({
               )}
             </div>
           )}
+
+          {/* Stickers Tab Ungrouped */}
+          {activeTab === "stickers" && (
+            <div>
+              {filteredStickers.filter((s) => !s.group_id).length === 0 && currentGroups.length === 0 ? (
+                <div className="py-8 text-center text-xs text-muted-foreground/70 italic space-y-2">
+                  <p>{filterQuery ? "Eşleşen sticker/emoji bulunamadı." : "Henüz sticker veya emoji eklenmemiş"}</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setStickerModalOpen(true)}
+                    className="text-xs h-7 gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-amber-500" /> Sticker Ekle
+                  </Button>
+                </div>
+              ) : (
+                filteredStickers
+                  .filter((s) => !s.group_id)
+                  .map((stk) => (
+                    <EditableRow
+                      key={stk.sticker_id}
+                      icon={Smile}
+                      emojiContent={stk.content}
+                      label={stk.name}
+                      filterType="sticker"
+                      filterValue={stk.content}
+                      itemId={stk.sticker_id}
+                      groups={currentGroups}
+                      onRename={(newName, newContent) => handleUpdateSticker(stk.sticker_id, newName, newContent)}
+                      onDelete={() => handleDeleteSticker(stk.sticker_id)}
+                      onMoveToGroup={(tId) => handleMoveItemToGroup(stk.sticker_id, "sticker", tId)}
+                      testIdPrefix={`sticker-${stk.sticker_id}`}
+                    />
+                  ))
+              )}
+            </div>
+          )}
+
+          {/* Phrases Tab Ungrouped */}
+          {activeTab === "phrases" && (
+            <div>
+              {filteredPhrases.filter((p) => !p.group_id).length === 0 && currentGroups.length === 0 ? (
+                <div className="py-8 text-center text-xs text-muted-foreground/70 italic space-y-2">
+                  <p>{filterQuery ? "Eşleşen cümle bulunamadı." : "Henüz cümle veya şablon eklenmemiş"}</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPhraseModalOpen(true)}
+                    className="text-xs h-7 gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-violet-500" /> Cümle Ekle
+                  </Button>
+                </div>
+              ) : (
+                filteredPhrases
+                  .filter((p) => !p.group_id)
+                  .map((phr) => (
+                    <EditableRow
+                      key={phr.phrase_id}
+                      icon={MessageSquareQuote}
+                      label={phr.name}
+                      subLabel={phr.phrase}
+                      filterType="phrase"
+                      filterValue={phr.name}
+                      itemId={phr.phrase_id}
+                      groups={currentGroups}
+                      onRename={(newName, newPhraseText) => handleUpdatePhrase(phr.phrase_id, newName, newPhraseText)}
+                      onDelete={() => handleDeletePhrase(phr.phrase_id)}
+                      onMoveToGroup={(tId) => handleMoveItemToGroup(phr.phrase_id, "phrase", tId)}
+                      testIdPrefix={`phrase-${phr.phrase_id}`}
+                    />
+                  ))
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Tip footer */}
-      <div className="pt-3 mt-2 border-t border-border/50 text-[10px] text-muted-foreground/80 flex items-center justify-between shrink-0">
-        <span>İpucu: Öğeleri gruplara sürükleyip bırakabilir veya klasör simgesine tıklayabilirsiniz</span>
+      <div className="pt-2.5 mt-1.5 border-t border-border/50 text-[10px] text-muted-foreground/80 flex items-center justify-between shrink-0">
+        <span>Sürükleyip nota bırakabilir veya tıklayabilirsiniz</span>
       </div>
+
+      {/* Add Sticker / Emoji Dialog */}
+      <Dialog open={stickerModalOpen} onOpenChange={setStickerModalOpen}>
+        <DialogContent className="max-w-md bg-card border-border p-5">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-base flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <span>Yeni Sticker / İkon / Emoji Ekle</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateSticker} className="space-y-3.5 pt-2">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Sticker / Emoji Adı</label>
+              <Input
+                value={newStickerName}
+                onChange={(e) => setNewStickerName(e.target.value)}
+                placeholder="Örn: Yıldız, Önemli, Kalp, Ateş..."
+                autoFocus
+                className="text-xs h-8"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Emoji veya Simge İçeriği</label>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={newStickerContent}
+                  onChange={(e) => setNewStickerContent(e.target.value)}
+                  placeholder="Emoji veya simge girin..."
+                  className="text-base h-9 w-24 text-center"
+                />
+                <div className="text-xs text-muted-foreground flex-1">
+                  Seçilen: <span className="text-lg font-mono ml-1">{newStickerContent}</span>
+                </div>
+              </div>
+
+              {/* Quick Emojis Grid */}
+              <div className="mt-2 p-2 bg-muted/40 rounded-lg border border-border/60">
+                <div className="text-[10px] text-muted-foreground mb-1.5 font-medium">Hızlı Emoji Seçimi:</div>
+                <div className="grid grid-cols-10 gap-1 text-center">
+                  {QUICK_EMOJIS.map((em) => (
+                    <button
+                      key={em}
+                      type="button"
+                      onClick={() => {
+                        setNewStickerContent(em);
+                        if (!newStickerName) {
+                          const nameMap: Record<string, string> = {
+                            "⭐": "Yıldız", "🔥": "Ateş", "🚀": "Roket", "❤️": "Kalp", "🎉": "Kutlama",
+                            "💡": "Fikir", "☕": "Kahve", "📌": "Önemli", "✅": "Tamamlandı", "⚠️": "Dikkat",
+                            "🎯": "Hedef", "📝": "Not", "🏆": "Başarı", "👍": "Onay", "⚡": "Hızlı"
+                          };
+                          if (nameMap[em]) setNewStickerName(nameMap[em]);
+                        }
+                      }}
+                      className="hover:scale-125 transition-transform p-0.5 text-base cursor-pointer rounded hover:bg-background"
+                    >
+                      {em}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {currentGroups.length > 0 && (
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Grup (Opsiyonel)</label>
+                <select
+                  value={newStickerGroupId || ""}
+                  onChange={(e) => setNewStickerGroupId(e.target.value || null)}
+                  className="w-full bg-background border border-border rounded-md px-2 py-1.5 text-xs text-foreground outline-none"
+                >
+                  <option value="">— Grupsuz (Serbest) —</option>
+                  {currentGroups.map((g) => (
+                    <option key={g.group_id} value={g.group_id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setStickerModalOpen(false)}>
+                İptal
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isSavingSticker || !newStickerName.trim() || !newStickerContent.trim()}
+                className="bg-primary text-primary-foreground"
+              >
+                Kaydet & Ekle
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Phrase Dialog */}
+      <Dialog open={phraseModalOpen} onOpenChange={setPhraseModalOpen}>
+        <DialogContent className="max-w-md bg-card border-border p-5">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-base flex items-center gap-2">
+              <MessageSquareQuote className="w-4 h-4 text-violet-500" />
+              <span>Yeni Cümle / Şablon Ekle</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleCreatePhrase} className="space-y-3 pt-2">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Anahtar Sözcük / Başlık</label>
+              <Input
+                value={newPhraseName}
+                onChange={(e) => setNewPhraseName(e.target.value)}
+                placeholder="Örn: Toplantı Şablonu, Haftalık Hedef, İmza..."
+                autoFocus
+                className="text-xs h-8"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                <span>Cümle / Metin (Maks. 120 Karakter)</span>
+                <span className={`font-mono text-[10px] ${newPhraseText.length > 120 ? "text-destructive font-bold" : ""}`}>
+                  {newPhraseText.length} / 120
+                </span>
+              </div>
+              <textarea
+                value={newPhraseText}
+                onChange={(e) => setNewPhraseText(e.target.value)}
+                maxLength={120}
+                placeholder="Notlarınıza sık eklediğiniz kısa bir cümle veya şablon metni yazın..."
+                className="w-full bg-background border border-border rounded-md p-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary h-20 resize-none"
+              />
+            </div>
+
+            {currentGroups.length > 0 && (
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Grup (Opsiyonel)</label>
+                <select
+                  value={newPhraseGroupId || ""}
+                  onChange={(e) => setNewPhraseGroupId(e.target.value || null)}
+                  className="w-full bg-background border border-border rounded-md px-2 py-1.5 text-xs text-foreground outline-none"
+                >
+                  <option value="">— Grupsuz (Serbest) —</option>
+                  {currentGroups.map((g) => (
+                    <option key={g.group_id} value={g.group_id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setPhraseModalOpen(false)}>
+                İptal
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isSavingPhrase || !newPhraseName.trim() || !newPhraseText.trim() || newPhraseText.length > 120}
+                className="bg-primary text-primary-foreground"
+              >
+                Kaydet & Ekle
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Location Picker for adding location */}
+      <LocationPicker
+        open={locPickerOpen}
+        onOpenChange={setLocPickerOpen}
+        onSave={async (newLoc) => {
+          try {
+            await api.post("/locations", newLoc);
+            toast.success("Konum eklendi");
+            onChange?.();
+          } catch (e: any) {
+            toast.error(formatApiError(e) || "Konum eklenemedi");
+          }
+        }}
+      />
     </aside>
   );
 }

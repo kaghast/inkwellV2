@@ -180,6 +180,10 @@ erDiagram
 - `tags`: `tag_id`, `user_id`, `name`, `group_id`, `created_at`
 - `people`: `person_id`, `user_id`, `name`, `group_id`, `created_at`
 
+#### `stickers` & `phrases` (Sticker/Emoji ve Anahtar Cümleler)
+- `stickers`: `sticker_id`, `user_id`, `name`, `content`, `type` (`emoji` | `icon` | `sticker`), `group_id`, `created_at`.
+- `phrases`: `phrase_id`, `user_id`, `name` (Anahtar Sözcük), `phrase` (Maks. 120 Karakterlik Metin), `group_id`, `created_at`.
+
 #### `kanban_columns` & `reminders` & `files`
 - `kanban_columns`: `column_id`, `user_id`, `name`, `color`, `order_index`.
 - `reminders`: `reminder_id`, `user_id`, `note_id`, `at`, `text`, `fired`, `fired_at`.
@@ -464,7 +468,20 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
   - **Otomatik Mekan Adı Belirleme ve Düzenleme:**
     - Arama sonucu seçildiğinde, haritaya tıklandığında veya pin sürüklendiğinde tersine coğrafi kodlama (Reverse Geocoding) ile bulunan mekan/adres adı otomatik olarak "Konum Adı" alanına yazılır.
     - Kullanıcı dilediği takdirde bu ismi özgürce düzenleyebilir (Örn: "Ev", "Kadıköy Starbucks", "Ofis").
-  - **Mevcut GPS Konumu:** Tek tıklamayla tarayıcı GPS'i üzerinden mevcut konumu bulma (`Crosshair` / `Navigation`) butonu eklendi.
+- **5 Sekmeli Zengin Kenar Çubuğu Mimarisi (`Sidebar.tsx`):**
+  - **4. Sekme: Sticker, İkon & Emoji Yönetimi:**
+    - Kullanıcılar notlarına sık ekledikleri sticker, ikon ve emojileri özel isimleriyle ekleyebilir, güncelleyebilir ve silebilir.
+    - Hızlı emoji seçim paleti (`QUICK_EMOJIS`: ⭐, 🔥, 🚀, ❤️, 🎉, 💡, ☕, 📌, ✅ vb.) ve serbest metin/simge girişi sunulur.
+    - Sticker ve emojiler `item_groups` üzerinden klasörlenip gruplanabilir.
+    - Anlık arama filtresi ile isim ve emoji içeriğine göre canlı arama yapılabilir.
+    - Notlara sürükle-bırak yapıldığında emoji/simge metni doğrudan nota eklenir.
+  - **5. Sekme: Anahtar Sözcükler & Cümle / Şablon Yönetimi (Maks. 120 Karakter):**
+    - Kullanıcılar sık kullandıkları şablon cümleleri, anahtar sözcükleri ve kısa not kalıplarını kaydedebilir.
+    - Canlı karakter sayacı (`X / 120`) ile 120 karakter sınırı güvenli bir şekilde denetlenir.
+    - Cümleler klasörlenip gruplanabilir, düzenlenebilir, silinebilir ve tek tıklamayla panoya kopyalanabilir (`Copy`).
+    - Anlık arama filtresi ile hem anahtar sözcük hem de cümle metni taranabilir.
+    - Not kartlarına, detay sayfasına ve not oluşturucuya sürükle-bırak ile anında metin aktarımı sağlanır.
+  - **Arka Uç CRUD Mimarisi:** `/stickers` ve `/phrases` RESTful uç noktaları ve `item_groups` tam entegrasyonu sağlandı.
 
 ---
 

@@ -14,7 +14,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { eq, and, or, desc, sql } from "drizzle-orm";
-import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions } from "./src/db/index";
+import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions, stickers, phrases } from "./src/db/index";
 import { generateTextEmbedding } from "./src/lib/embeddings";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1247,7 +1247,7 @@ api.post("/groups", authMiddleware, async (req: AuthRequest, res: Response) => {
   if (!name || !name.trim()) {
     return res.status(400).json({ detail: "Grup adı zorunludur" });
   }
-  if (!type || !["tags", "people", "locations", "categories"].includes(type)) {
+  if (!type || !["tags", "people", "locations", "categories", "stickers", "phrases"].includes(type)) {
     return res.status(400).json({ detail: "Geçersiz grup türü" });
   }
 
@@ -1315,6 +1315,8 @@ api.delete("/groups/:group_id", authMiddleware, async (req: AuthRequest, res: Re
     await db.update(people).set({ groupId: null }).where(and(eq(people.groupId, groupId), eq(people.userId, userId)));
     await db.update(locations).set({ groupId: null }).where(and(eq(locations.groupId, groupId), eq(locations.userId, userId)));
     await db.update(categories).set({ groupId: null }).where(and(eq(categories.groupId, groupId), eq(categories.userId, userId)));
+    await db.update(stickers).set({ groupId: null }).where(and(eq(stickers.groupId, groupId), eq(stickers.userId, userId)));
+    await db.update(phrases).set({ groupId: null }).where(and(eq(phrases.groupId, groupId), eq(phrases.userId, userId)));
 
     await db.delete(itemGroups).where(and(eq(itemGroups.groupId, groupId), eq(itemGroups.userId, userId)));
     res.json({ ok: true });
@@ -1343,6 +1345,10 @@ api.patch("/groups/assign", authMiddleware, async (req: AuthRequest, res: Respon
       await db.update(locations).set({ groupId: targetGroupId }).where(and(eq(locations.locationId, item_id), eq(locations.userId, userId)));
     } else if (type === "categories") {
       await db.update(categories).set({ groupId: targetGroupId }).where(and(eq(categories.categoryId, item_id), eq(categories.userId, userId)));
+    } else if (type === "stickers") {
+      await db.update(stickers).set({ groupId: targetGroupId }).where(and(eq(stickers.stickerId, item_id), eq(stickers.userId, userId)));
+    } else if (type === "phrases") {
+      await db.update(phrases).set({ groupId: targetGroupId }).where(and(eq(phrases.phraseId, item_id), eq(phrases.userId, userId)));
     } else {
       return res.status(400).json({ detail: "Geçersiz öğe türü" });
     }
@@ -2792,6 +2798,226 @@ api.delete("/locations/:location_id", authMiddleware, async (req: AuthRequest, r
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ detail: "Konum silinemedi", error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Stickers, Icons & Emoji Endpoints
+// ---------------------------------------------------------------------------
+api.get("/stickers", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const q = req.query.q ? String(req.query.q).toLowerCase() : "";
+  try {
+    const items = await db.select().from(stickers).where(eq(stickers.userId, userId)).orderBy(desc(stickers.createdAt));
+    let filtered = items.map((s: any) => ({
+      sticker_id: s.stickerId,
+      user_id: s.userId,
+      name: s.name,
+      content: s.content,
+      type: s.type,
+      group_id: s.groupId,
+      created_at: s.createdAt ? new Date(s.createdAt).toISOString() : new Date().toISOString(),
+    }));
+    if (q) {
+      filtered = filtered.filter((s: any) => s.name.toLowerCase().includes(q) || s.content.toLowerCase().includes(q));
+    }
+    res.json(filtered);
+  } catch (err: any) {
+    res.status(500).json({ detail: "Sticker ve emojiler alınamadı", error: err.message });
+  }
+});
+
+api.post("/stickers", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const { name, content, type, group_id } = req.body || {};
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ detail: "Sticker veya emoji adı zorunludur" });
+  }
+  if (!content || !content.trim()) {
+    return res.status(400).json({ detail: "İçerik (emoji / simge / sticker) zorunludur" });
+  }
+
+  const stickerId = genId("stk");
+  try {
+    await db.insert(stickers).values({
+      stickerId,
+      userId,
+      name: name.trim(),
+      content: content.trim(),
+      type: type || "emoji",
+      groupId: group_id || null,
+    });
+    const created = (await db.select().from(stickers).where(eq(stickers.stickerId, stickerId)).limit(1))[0];
+    res.json({
+      sticker_id: created.stickerId,
+      user_id: created.userId,
+      name: created.name,
+      content: created.content,
+      type: created.type,
+      group_id: created.groupId,
+      created_at: created.createdAt ? new Date(created.createdAt).toISOString() : new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Sticker kaydedilemedi", error: err.message });
+  }
+});
+
+api.put("/stickers/:sticker_id", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const stickerId = req.params.sticker_id;
+  const { name, content, type, group_id } = req.body || {};
+
+  try {
+    const found = await db.select().from(stickers).where(and(eq(stickers.stickerId, stickerId), eq(stickers.userId, userId))).limit(1);
+    if (found.length === 0) {
+      return res.status(404).json({ detail: "Sticker bulunamadı" });
+    }
+
+    const updateObj: any = {};
+    if (name !== undefined) updateObj.name = name.trim();
+    if (content !== undefined) updateObj.content = content.trim();
+    if (type !== undefined) updateObj.type = type;
+    if (group_id !== undefined) updateObj.groupId = group_id || null;
+
+    if (Object.keys(updateObj).length > 0) {
+      await db.update(stickers).set(updateObj).where(eq(stickers.stickerId, stickerId));
+    }
+
+    const updated = (await db.select().from(stickers).where(eq(stickers.stickerId, stickerId)).limit(1))[0];
+    res.json({
+      sticker_id: updated.stickerId,
+      user_id: updated.userId,
+      name: updated.name,
+      content: updated.content,
+      type: updated.type,
+      group_id: updated.groupId,
+      created_at: updated.createdAt ? new Date(updated.createdAt).toISOString() : new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Sticker güncellenemedi", error: err.message });
+  }
+});
+
+api.delete("/stickers/:sticker_id", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const stickerId = req.params.sticker_id;
+  try {
+    await db.delete(stickers).where(and(eq(stickers.stickerId, stickerId), eq(stickers.userId, userId)));
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Sticker silinemedi", error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Keywords & Max 120-char Phrases Endpoints
+// ---------------------------------------------------------------------------
+api.get("/phrases", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const q = req.query.q ? String(req.query.q).toLowerCase() : "";
+  try {
+    const items = await db.select().from(phrases).where(eq(phrases.userId, userId)).orderBy(desc(phrases.createdAt));
+    let filtered = items.map((p: any) => ({
+      phrase_id: p.phraseId,
+      user_id: p.userId,
+      name: p.name,
+      phrase: p.phrase,
+      group_id: p.groupId,
+      created_at: p.createdAt ? new Date(p.createdAt).toISOString() : new Date().toISOString(),
+    }));
+    if (q) {
+      filtered = filtered.filter((p: any) => p.name.toLowerCase().includes(q) || p.phrase.toLowerCase().includes(q));
+    }
+    res.json(filtered);
+  } catch (err: any) {
+    res.status(500).json({ detail: "Cümle ve anahtar sözcükler alınamadı", error: err.message });
+  }
+});
+
+api.post("/phrases", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const { name, phrase, group_id } = req.body || {};
+
+  if (!name || !name.trim()) {
+    return res.status(400).json({ detail: "Anahtar sözcük / başlık zorunludur" });
+  }
+  if (!phrase || !phrase.trim()) {
+    return res.status(400).json({ detail: "Cümle metni zorunludur" });
+  }
+  if (phrase.trim().length > 120) {
+    return res.status(400).json({ detail: "Cümle en fazla 120 karakter olabilir" });
+  }
+
+  const phraseId = genId("phr");
+  try {
+    await db.insert(phrases).values({
+      phraseId,
+      userId,
+      name: name.trim(),
+      phrase: phrase.trim(),
+      groupId: group_id || null,
+    });
+    const created = (await db.select().from(phrases).where(eq(phrases.phraseId, phraseId)).limit(1))[0];
+    res.json({
+      phrase_id: created.phraseId,
+      user_id: created.userId,
+      name: created.name,
+      phrase: created.phrase,
+      group_id: created.groupId,
+      created_at: created.createdAt ? new Date(created.createdAt).toISOString() : new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Cümle kaydedilemedi", error: err.message });
+  }
+});
+
+api.put("/phrases/:phrase_id", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const phraseId = req.params.phrase_id;
+  const { name, phrase, group_id } = req.body || {};
+
+  try {
+    const found = await db.select().from(phrases).where(and(eq(phrases.phraseId, phraseId), eq(phrases.userId, userId))).limit(1);
+    if (found.length === 0) {
+      return res.status(404).json({ detail: "Cümle bulunamadı" });
+    }
+
+    if (phrase && phrase.trim().length > 120) {
+      return res.status(400).json({ detail: "Cümle en fazla 120 karakter olabilir" });
+    }
+
+    const updateObj: any = {};
+    if (name !== undefined) updateObj.name = name.trim();
+    if (phrase !== undefined) updateObj.phrase = phrase.trim();
+    if (group_id !== undefined) updateObj.groupId = group_id || null;
+
+    if (Object.keys(updateObj).length > 0) {
+      await db.update(phrases).set(updateObj).where(eq(phrases.phraseId, phraseId));
+    }
+
+    const updated = (await db.select().from(phrases).where(eq(phrases.phraseId, phraseId)).limit(1))[0];
+    res.json({
+      phrase_id: updated.phraseId,
+      user_id: updated.userId,
+      name: updated.name,
+      phrase: updated.phrase,
+      group_id: updated.groupId,
+      created_at: updated.createdAt ? new Date(updated.createdAt).toISOString() : new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Cümle güncellenemedi", error: err.message });
+  }
+});
+
+api.delete("/phrases/:phrase_id", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const phraseId = req.params.phrase_id;
+  try {
+    await db.delete(phrases).where(and(eq(phrases.phraseId, phraseId), eq(phrases.userId, userId)));
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Cümle silinemedi", error: err.message });
   }
 });
 
