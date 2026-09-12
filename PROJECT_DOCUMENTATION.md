@@ -453,6 +453,21 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 
 ---
 
+### 📅 12 Eylül 2026 (Gelişmiş & Genişletilmiş Konum Seçici Modalı)
+
+- **Büyük Boyutlu ve Modern Konum Seçici (`LocationPicker.tsx`):**
+  - **Genişletilmiş Diyalog Alanı:** Notlara konum ekleme modalı `max-w-4xl w-[96vw]` boyutuna getirilerek `h-[380px]` - `h-[440px]` geniş ve ferah bir etkileşimli harita çalışma alanına kavuşturuldu.
+  - **Canlı Lokasyon Arama & Otomatik Tamamlama (Autocomplete):**
+    - Harita üzerinde global ve yerel mekan, sokak, mahalle ve şehir arama çubuğu entegre edildi (OpenStreetMap Nominatim geocoder).
+    - Kullanıcı yazdıkça anlık açılır listede (dropdown) mekan adı ve tam adres önerileri listelenir.
+    - Seçilen mekana harita üzerinde anında animasyonlu pan/zoom (`zoom: 16`) ile odaklanılır ve pin otomatik olarak konuma yerleştirilir.
+  - **Otomatik Mekan Adı Belirleme ve Düzenleme:**
+    - Arama sonucu seçildiğinde, haritaya tıklandığında veya pin sürüklendiğinde tersine coğrafi kodlama (Reverse Geocoding) ile bulunan mekan/adres adı otomatik olarak "Konum Adı" alanına yazılır.
+    - Kullanıcı dilediği takdirde bu ismi özgürce düzenleyebilir (Örn: "Ev", "Kadıköy Starbucks", "Ofis").
+  - **Mevcut GPS Konumu:** Tek tıklamayla tarayıcı GPS'i üzerinden mevcut konumu bulma (`Crosshair` / `Navigation`) butonu eklendi.
+
+---
+
 ## 6. Dağıtım ve DevOps Yapılandırması
 
 Inkwell V2, Docker konteyner mimarisi ile Coolify veya herhangi bir Docker Host üzerinde sıfır kesintiyle çalışacak şekilde yapılandırılmıştır.
@@ -490,4 +505,4 @@ CMD ["npm", "start"]
 
 ---
 
-*Belge son güncelleme tarihi: 10 Eylül 2026*
+*Belge son güncelleme tarihi: 12 Eylül 2026*
