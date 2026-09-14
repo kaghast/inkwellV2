@@ -1020,8 +1020,15 @@ export default function NoteDetail() {
           <>
             <div className="flex items-start justify-between gap-4 mb-4">
               <h1
-                className="font-serif text-4xl sm:text-5xl tracking-tight leading-[1.05]"
+                onDoubleClick={() => {
+                  if (!note.archived && (!note.is_encrypted || isUnlocked)) {
+                    setContent(extractCommentsFromContent(note.content).mainContent);
+                    setEditing(true);
+                  }
+                }}
+                className="font-serif text-4xl sm:text-5xl tracking-tight leading-[1.05] cursor-default select-text"
                 data-testid="note-title"
+                title="Düzenlemek için çift tıklayın"
               >
                 {note.title || <span className="text-muted-foreground">Başlıksız Not</span>}
               </h1>
@@ -1192,69 +1199,93 @@ export default function NoteDetail() {
                   </div>
                 )}
 
-            {/* Content View Modes */}
-            {contentMode === "drawing" || /```drawing\s*[\s\S]*?```/.test(note.content) ? (
-              <DrawingViewer
-                content={note.content}
-                onEdit={() => {
-                  setContentMode("drawing");
+            {/* Content View Modes with Double-Click to Edit */}
+            <div
+              onDoubleClick={(e) => {
+                const target = e.target as HTMLElement;
+                // Avoid triggering edit if double clicking on links, task checkboxes, buttons, or inputs
+                if (
+                  target.closest("a") ||
+                  target.closest("button") ||
+                  target.closest("input") ||
+                  target.closest("textarea") ||
+                  target.closest("select") ||
+                  target.closest("[role='checkbox']")
+                ) {
+                  return;
+                }
+                if (!editing && !note.archived && (!note.is_encrypted || isUnlocked)) {
+                  setContent(extractCommentsFromContent(note.content).mainContent);
                   setEditing(true);
-                }}
-              />
-            ) : contentMode === "outline" ? (
-              <OutlineViewer
-                content={note.content}
-                onEdit={() => {
-                  setContentMode("outline");
-                  setEditing(true);
-                }}
-                onUpdateContent={async (newContent) => {
-                  try {
-                    const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
-                      title: note.title,
-                      content: newContent,
-                      date: note.date,
-                      location_id: note.location_id,
-                      note_type_id: note.note_type_id,
-                      custom_fields: note.custom_fields,
-                    });
-                    setNote(data);
-                    setContent(newContent);
-                  } catch {
-                    toast.error("Güncellenemedi");
-                  }
-                }}
-              />
-            ) : contentMode === "mindmap" || /```mindmap\s*[\s\S]*?```/.test(note.content) ? (
-              <MindmapViewer
-                content={note.content}
-                onEdit={() => {
-                  setContentMode("mindmap");
-                  setEditing(true);
-                }}
-              />
-            ) : (
-              <MarkdownView
-                content={note.content}
-                onTaskToggle={async (idx, checked) => {
-                  const newContent = toggleTaskInMarkdown(note.content, idx, checked);
-                  try {
-                    const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
-                      title: note.title,
-                      content: newContent,
-                      date: note.date,
-                      location_id: note.location_id,
-                      note_type_id: note.note_type_id,
-                      custom_fields: note.custom_fields,
-                    });
-                    setNote(data);
-                    setContent(newContent);
-                  } catch {
-                    toast.error("Güncellenemedi");
-                  }
-                }}
-              />
-            )}
+                }
+              }}
+              className="cursor-default select-text"
+              data-testid="note-content-view-container"
+              title="Düzenlemek için çift tıklayın"
+            >
+              {contentMode === "drawing" || /```drawing\s*[\s\S]*?```/.test(note.content) ? (
+                <DrawingViewer
+                  content={note.content}
+                  onEdit={() => {
+                    setContentMode("drawing");
+                    setEditing(true);
+                  }}
+                />
+              ) : contentMode === "outline" ? (
+                <OutlineViewer
+                  content={note.content}
+                  onEdit={() => {
+                    setContentMode("outline");
+                    setEditing(true);
+                  }}
+                  onUpdateContent={async (newContent) => {
+                    try {
+                      const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
+                        title: note.title,
+                        content: newContent,
+                        date: note.date,
+                        location_id: note.location_id,
+                        note_type_id: note.note_type_id,
+                        custom_fields: note.custom_fields,
+                      });
+                      setNote(data);
+                      setContent(newContent);
+                    } catch {
+                      toast.error("Güncellenemedi");
+                    }
+                  }}
+                />
+              ) : contentMode === "mindmap" || /```mindmap\s*[\s\S]*?```/.test(note.content) ? (
+                <MindmapViewer
+                  content={note.content}
+                  onEdit={() => {
+                    setContentMode("mindmap");
+                    setEditing(true);
+                  }}
+                />
+              ) : (
+                <MarkdownView
+                  content={note.content}
+                  onTaskToggle={async (idx, checked) => {
+                    const newContent = toggleTaskInMarkdown(note.content, idx, checked);
+                    try {
+                      const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
+                        title: note.title,
+                        content: newContent,
+                        date: note.date,
+                        location_id: note.location_id,
+                        note_type_id: note.note_type_id,
+                        custom_fields: note.custom_fields,
+                      });
+                      setNote(data);
+                      setContent(newContent);
+                    } catch {
+                      toast.error("Güncellenemedi");
+                    }
+                  }}
+                />
+              )}
+            </div>
 
             {/* Tags and People */}
             {(note.tags?.length > 0 || note.people?.length > 0) && (

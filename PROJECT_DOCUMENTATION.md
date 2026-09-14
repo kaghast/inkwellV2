@@ -507,9 +507,9 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
   - **Evrensel Editör Entegrasyonu (`MarkdownEditor.tsx`):**
     - Not Oluşturucu (`NoteComposer`), Hızlı Düzenleme (`NoteCard`), Tam Sayfa Yeni Not (`NewNotePage`) ve Not Detay (`NoteDetail`) ekranlarının tamamında tek tip akıllı yapıştırma deneyimi ve sonner bildirimleri (`toast`) sağlandı.
 
-- **Liste Görünümlerinde Çift Tıklama ile Doğrudan Düzenleme:**
-  - `NoteCard.tsx` ve `KanbanPage.tsx` bileşenlerine akıllı `onDoubleClick` dinleyicisi eklendi.
-  - Not kartlarına veya Kanban kartlarına çift tıklandığında (buton, link ve form kontrolleri hariç tutularak) doğrudan inline düzenleme veya detay/edit modu anında açılır.
+- **Liste ve Detay Görünümlerinde Çift Tıklama ile Doğrudan Düzenleme:**
+  - `NoteCard.tsx`, `KanbanPage.tsx` ve `NoteDetail.tsx` bileşenlerine akıllı `onDoubleClick` dinleyicisi eklendi.
+  - Not kartlarına, Kanban kartlarına veya Not Detay sayfasında başlığa ve not içeriğine çift tıklandığında (buton, link ve form kontrolleri hariç tutularak) doğrudan düzenleme modu anında açılır.
 
 - **Not Detayında Doğrudan İlişkili Not / Kart Referansı Oluşturma (`NoteDetail.tsx`):**
   - "İlişkili Notlar & Kart Referansları" başlık alanına **"+ Yeni Referans Ekle"** butonu ve özel diyalog modalı eklendi.
