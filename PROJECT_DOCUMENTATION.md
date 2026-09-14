@@ -246,7 +246,7 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 - **Sol Bar (Sadece İkon Menü - `w-16 fixed left-0 top-0 bottom-0`):**
   - Masaüstü görünümünde `w-16` kompakt dikey menubar.
   - Üstte hızlı **"+ Yeni Not Ekle"** ikon butonu (`Plus`).
-  - Ortada dikey gezinme ikonları: *Günlük Akış* (`/`), *Bütün Notlar* (`/all-notes`), *Ağ Görünümü* (`/graph`), *Harita* (`/map`), *Kanban* (`/kanban`).
+  - Ortada dikey gezinme ikonları: *Günlük Akış* (`/`), *Bütün Notlar* (`/notes`), *Zaman Çizelgesi* (`/timeline`), *Ağ Görünümü* (`/graph`), *Harita* (`/map`), *Kanban* (`/kanban`).
   - Altta *Ayarlar* (`/settings`) ikon butonu.
   - Her ikon için zengin CSS floating hover tooltip ve sol kenar aktiflik indikatörü.
   - Sayfa içerikleri `pt-14 lg:pl-16` düzeni ile header ve sol bar ile kusursuz hizalanmıştır.
@@ -281,6 +281,21 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 - **Tüm İçerik Modlarında Kesintisiz Kayıt:** Kullanıcı *Metin (Markdown)*, *Çizim & Şema (Canvas)*, *Hiyerarşik Outline* veya *Zihin Haritası (Mindmap)* modlarından hangisinde çalışırsa çalışsın, `CTRL+S` (Mac için `Cmd+S`) yapıldığında düzenleme oturumundan (`editing: true`) çıkılmaksızın ve odak kaybolmaksızın not arka planda veritabanına (`PUT /notes/:id`) ve versiyon geçmişine kaydedilir.
 - **Yeni Not Ekleme Akışında Kesintisiz Oturum (`NewNotePage.tsx`):** Yeni not oluştururken basılan ilk `CTRL+S`, notu veritabanında oluşturur (`POST /notes`) ve rota durumunu sessizce günceller; kullanıcının yazma/çizme akışını kesmeden sonraki tüm `CTRL+S` eylemleri mevcut notu güncellemeye (`PUT /notes/:id`) devam eder.
 - **Evrensel Kısayol Yakalama:** Editör içindeki metin kutuları, tuval veya başlık alanlarında tarayıcının varsayılan sayfa kaydetme diyaloğu engellenerek anında sistem kayıt mekanizması tetiklenir.
+
+### 4.9. Akıllı HTML'den Markdown'a Dönüştürücü Motoru (`htmlToMarkdown.ts`)
+- **DOM Tabanlı Ayrıştırma:** Panodan yapıştırılan zengin HTML içerikleri DOM Parser ile taranarak başlıklar (`#`), kalın/italik/çizili stiller, sıralı/sırasız/görev listeleri (`- [ ]`), alıntılar (`>`), kod blokları (`` ` ``, ` ``` `), tablolar (`| col |`) ve görseller (`![]()`) biçimlendirilir.
+- **Akıllı Bağlantı Sarmalama (Link Wrapping):** Kullanıcı editörde bir metin seçtikten sonra panodan URL yapıştırdığında, seçili metin kaybolmadan doğrudan `[seçili metin](yapıştırılan_url)` bağlantı sözdizimine dönüştürülür.
+- **Görsel Panosu Entegrasyonu:** Panodan ekran alıntısı veya resim yapıştırıldığında arka uç API yükleme akışı otomatik tetiklenir.
+
+### 4.10. Zaman Çizelgesi (Timeline) & Dinamik Dönem Yükleme Motoru (`TimelinePage.tsx`)
+- **ISO Hafta Hesaplaması & Dinamik Periyot Motoru (`datetime.ts`):** `getISOWeekNumber` ve `formatDateKey` fonksiyonları ile haftalık ızgara haritalanır.
+- **Dinamik Geriye/İleriye Genişletme:** Sayfanın üstündeki "Önceki 3 Ayı Yükle (-3 Ay)" ve altındaki "Gelecek 3 Ayı Yükle (+3 Ay)" butonları ile tarih aralığı akıcı olarak genişletilir.
+- **Sabit Başlıklar & Gün Renklendirmesi:** Gün isimleri (Pazartesi-Pazar) üstte sabitlenir; not içeren gün hücreleri tema renginde vurgulanır ve not sayısı rozetleriyle desteklenir.
+- **Pinli Notlar Sürükle-Bırak Sıralaması:** Sabitlenmiş notlar sağ panelde listelenir ve HTML5 Drag & Drop API ile serbestçe sıralanarak `localStorage` üzerinde saklanır.
+
+### 4.11. İlişkili Notlar, Kart Referansları & Çift Tıklamayla Hızlı Düzenleme
+- **Doğrudan Referans Oluşturma Modalı (`NoteDetail.tsx`):** Not detayında ilişkili notlar bölümünden "+ Yeni Referans Ekle" ile başlık, tip ve içerik girildiğinde mevcut nota `[[Başlık]]` wikilink referansı otomatik enjekte edilerek yeni not/kart üretilir.
+- **Akıllı Çift Tıklama (Double-Click):** Not kartlarında, Kanban görevlerinde ve Not Detay sayfasında başlık ya da içeriğe çift tıklandığında buton ve form kontrolleri filtrelenerek doğrudan düzenleme moduna geçilir.
 
 ---
 
