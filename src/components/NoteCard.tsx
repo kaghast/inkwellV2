@@ -344,7 +344,24 @@ export default function NoteCard({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative group rounded-xl border transition-all duration-200 p-5 ${
+      onDoubleClick={(e) => {
+        const target = e.target as HTMLElement;
+        if (
+          target.closest("button") ||
+          target.closest("a") ||
+          target.closest("input") ||
+          target.closest("select") ||
+          target.closest("textarea") ||
+          target.closest("[role='menuitem']") ||
+          target.closest("[data-radix-popper-content-wrapper]")
+        ) {
+          return;
+        }
+        if (!editing && !isArchived) {
+          setEditing(true);
+        }
+      }}
+      className={`relative group rounded-xl border transition-all duration-200 p-5 cursor-default ${
         isDragOver
           ? "border-primary ring-2 ring-primary/40 bg-primary/5 scale-[1.01] shadow-md"
           : isArchived

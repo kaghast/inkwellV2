@@ -505,6 +505,22 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
   - **Evrensel Editör Entegrasyonu (`MarkdownEditor.tsx`):**
     - Not Oluşturucu (`NoteComposer`), Hızlı Düzenleme (`NoteCard`), Tam Sayfa Yeni Not (`NewNotePage`) ve Not Detay (`NoteDetail`) ekranlarının tamamında tek tip akıllı yapıştırma deneyimi ve sonner bildirimleri (`toast`) sağlandı.
 
+- **Liste Görünümlerinde Çift Tıklama ile Doğrudan Düzenleme:**
+  - `NoteCard.tsx` ve `KanbanPage.tsx` bileşenlerine akıllı `onDoubleClick` dinleyicisi eklendi.
+  - Not kartlarına veya Kanban kartlarına çift tıklandığında (buton, link ve form kontrolleri hariç tutularak) doğrudan inline düzenleme veya detay/edit modu anında açılır.
+
+- **Not Detayında Doğrudan İlişkili Not / Kart Referansı Oluşturma (`NoteDetail.tsx`):**
+  - "İlişkili Notlar & Kart Referansları" başlık alanına **"+ Yeni Referans Ekle"** butonu ve özel diyalog modalı eklendi.
+  - Kullanıcı yeni not başlığını, tipini (Standart Not veya Kanban Kartı) ve içeriğini belirleyebilir. İçeriğe otomatik olarak `[[Mevcut Not Başlığı]]` wikilink referansı eklenerek çift yönlü bağlantı anında oluşturulur ve ilişkili notlar listesi canlı olarak güncellenir.
+
+- **Zaman Çizelgesi (Timeline) Sayfası (`TimelinePage.tsx`):**
+  - **Navigasyon:** Sol menü çubuğuna (`AppMenubar.tsx`) "Zaman Çizelgesi" (`/timeline`, `CalendarRange` ikonu) eklendi.
+  - **±3 Ay Haftalık Izgara:** Bugünün tarihinden geriye 3 ay ve ileriye 3 ay kapsayan tüm haftalar satır satır hesaplanır.
+  - **Hafta Numarası & Sabit Gün Başlıkları:** Her satırın sol başında ISO hafta numarası (`Hafta 37`, ay geçişlerinde ay başlığı rozeti) yer alır; sütun başlıklarında (Pazartesi - Pazar) gün isimleri üstte sabitlenir (`sticky`).
+  - **Not Renklendirmesi & Adet Rozetleri:** Not içeren günler özel renk tonuyla vurgulanır ve üzerinde not adedi rozeti (`X Not`) ile not başlık önizlemeleri gösterilir.
+  - **Bugüne Odaklanma:** "Bugün" butonu ile mevcut haftaya akıcı animasyonla (`scrollIntoView`) kaydırma sağlanır.
+  - **Sağ Kenar Çubuğunda Pinli Notlar:** Sabitlenmiş notlar sağ panelde listelenir ve **sürükle-bırak (Drag & Drop)** ile serbestçe sıralanabilir. Sıralama kullanıcının tarayıcısında (`localStorage`) kalıcı olarak saklanır.
+
 ---
 
 ## 6. Dağıtım ve DevOps Yapılandırması

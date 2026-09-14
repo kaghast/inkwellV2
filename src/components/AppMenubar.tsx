@@ -4,6 +4,7 @@ import {
   Feather,
   Plus,
   Calendar,
+  CalendarRange,
   FileText,
   Network,
   MapPin,
@@ -66,6 +67,12 @@ export default function AppMenubar({
       path: "/",
       icon: Calendar,
       testId: "nav-daily",
+    },
+    {
+      label: "Zaman Çizelgesi",
+      path: "/timeline",
+      icon: CalendarRange,
+      testId: "nav-timeline",
     },
     {
       label: "Bütün Notlar",

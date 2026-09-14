@@ -737,7 +737,12 @@ export default function KanbanPage() {
                               setDragOverCardId((cur) => (cur === note.note_id ? null : cur));
                             }}
                             onDrop={(e) => handleDropOnCard(e, note)}
-                            className={`p-3 rounded-lg border bg-card text-foreground shadow-2xs transition-all cursor-grab active:cursor-grabbing group relative ${
+                            onDoubleClick={(e) => {
+                              const target = e.target as HTMLElement;
+                              if (target.closest("button") || target.closest("a") || target.closest("input")) return;
+                              navigate(`/note/${note.slug || note.note_id}?edit=true`);
+                            }}
+                            className={`p-3 rounded-lg border bg-card text-foreground shadow-2xs transition-all cursor-grab active:cursor-grabbing group relative select-none ${
                               isCardOver
                                 ? "border-emerald-500 ring-2 ring-emerald-500/30 bg-emerald-500/5 scale-[1.01]"
                                 : "border-border/80 hover:border-primary/50 hover:shadow-xs"

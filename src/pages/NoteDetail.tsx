@@ -10,6 +10,15 @@ import { CustomFieldsForm, CustomFieldsView } from "@/components/CustomFieldsRen
 import { formatDisplayDatetime, toDateTimeLocal } from "@/lib/datetime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   ArrowLeft,
   MapPin,
@@ -40,6 +49,7 @@ import {
   Lock,
   Unlock,
   Key,
+  Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Note, LocationItem, NoteType, Category } from "@/types";
@@ -116,6 +126,35 @@ export default function NoteDetail() {
   const [unlockPass, setUnlockPass] = useState("");
   const [unlocking, setUnlocking] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [createRelatedOpen, setCreateRelatedOpen] = useState(false);
+  const [newRelatedTitle, setNewRelatedTitle] = useState("");
+  const [newRelatedType, setNewRelatedType] = useState("type_plain");
+  const [newRelatedContent, setNewRelatedContent] = useState("");
+  const [creatingRelated, setCreatingRelated] = useState(false);
+
+  async function handleCreateRelatedNote(e: React.FormEvent) {
+    e.preventDefault();
+    if (!note) return;
+    setCreatingRelated(true);
+    try {
+      const { data: newNote } = await api.post<Note>("/notes", {
+        title: newRelatedTitle.trim() || "İlişkili Not",
+        content: newRelatedContent.trim(),
+        date: new Date().toISOString(),
+        note_type_id: newRelatedType !== "type_plain" ? newRelatedType : null,
+      });
+
+      setAllNotes((prev) => [newNote, ...prev]);
+      toast.success(`"${newNote.title || 'İlişkili Not'}" başarıyla oluşturuldu ve bağlandı`);
+      setCreateRelatedOpen(false);
+      setNewRelatedTitle("");
+      setNewRelatedContent("");
+    } catch (err: any) {
+      toast.error(formatApiError(err) || "İlişkili not oluşturulamadı");
+    } finally {
+      setCreatingRelated(false);
+    }
+  }
 
   const isEncrypted = Boolean(note?.is_encrypted);
 
@@ -1269,7 +1308,7 @@ export default function NoteDetail() {
 
             {/* Related Notes & Backlinks Section */}
             <div className="mt-10 pt-6 border-t border-border/60 space-y-3.5" data-testid="related-notes-section">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <Network className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                   <h3 className="font-serif text-base font-bold text-foreground">
@@ -1281,6 +1320,24 @@ export default function NoteDetail() {
                     {relatedNotes.length} Referans
                   </span>
                 </div>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                  onClick={() => {
+                    const refTag = `[[${note.title || note.slug || "Bu Not"}]]`;
+                    setNewRelatedTitle("");
+                    setNewRelatedType(note.note_type_id === "type_card" ? "type_card" : "type_plain");
+                    setNewRelatedContent(`\n\n${refTag}\n`);
+                    setCreateRelatedOpen(true);
+                  }}
+                  className="h-7 px-2.5 text-xs text-purple-600 dark:text-purple-400 border-purple-500/30 hover:bg-purple-500/10 hover:text-purple-600 cursor-pointer flex items-center gap-1.5 font-medium"
+                  data-testid="add-related-note-btn"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Yeni Referans Ekle</span>
+                </Button>
               </div>
 
               {relatedNotes.length === 0 ? (
@@ -1503,6 +1560,98 @@ export default function NoteDetail() {
           setIsUnlocked(false);
         }}
       />
+
+      {/* Create Related Note / Reference Modal */}
+      <Dialog open={createRelatedOpen} onOpenChange={setCreateRelatedOpen}>
+        <DialogContent className="max-w-md bg-card border-border shadow-2xl p-5 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-lg font-bold text-foreground flex items-center gap-2">
+              <Network className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              <span>Yeni İlişkili Not / Referans Ekle</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              <strong className="text-foreground">"{note.title || "Bu Not"}"</strong> notuna referans veren yeni bir not veya kart oluşturun.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateRelatedNote} className="space-y-3.5 mt-2">
+            <div>
+              <label className="text-xs font-medium text-foreground block mb-1">
+                Not Başlığı <span className="text-destructive">*</span>
+              </label>
+              <Input
+                value={newRelatedTitle}
+                onChange={(e) => setNewRelatedTitle(e.target.value)}
+                placeholder="Örn: Toplantı Notu, Proje Adımı, Detay..."
+                className="text-xs font-serif"
+                required
+                autoFocus
+                data-testid="related-note-title-input"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-foreground block mb-1">
+                Not Tipi
+              </label>
+              <select
+                value={newRelatedType}
+                onChange={(e) => setNewRelatedType(e.target.value)}
+                className="w-full text-xs rounded-md border border-input bg-background px-3 py-2 text-foreground shadow-xs focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer font-sans"
+              >
+                <option value="type_plain">📄 Standart Metin Notu</option>
+                <option value="type_card">📋 Kanban Kartı</option>
+                {noteTypes
+                  .filter((nt) => nt.type_id !== "type_plain" && nt.type_id !== "type_card" && nt.type_id !== "default")
+                  .map((nt) => (
+                    <option key={nt.type_id} value={nt.type_id}>
+                      📦 {nt.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-foreground block mb-1">
+                İçerik & Referans Bağlantısı
+              </label>
+              <Textarea
+                value={newRelatedContent}
+                onChange={(e) => setNewRelatedContent(e.target.value)}
+                placeholder="İçerik..."
+                rows={4}
+                className="text-xs font-mono resize-none leading-relaxed"
+                data-testid="related-note-content-input"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                İçerikteki <code className="bg-muted px-1 rounded">[[...]]</code> ifadesi mevcut nota otomatik çift yönlü referans bağı kurar.
+              </p>
+            </div>
+
+            <DialogFooter className="pt-2 flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setCreateRelatedOpen(false)}
+                disabled={creatingRelated}
+                className="text-xs h-8"
+              >
+                İptal
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={creatingRelated || !newRelatedTitle.trim()}
+                className="text-xs h-8 bg-purple-600 hover:bg-purple-700 text-white shadow-xs"
+                data-testid="submit-related-note-btn"
+              >
+                {creatingRelated ? "Oluşturuluyor..." : "Oluştur ve Bağla"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       </div>
     </div>
   );

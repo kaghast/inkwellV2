@@ -12,6 +12,7 @@ import AllNotes from "@/pages/AllNotes";
 import MapView from "@/pages/MapView";
 import KanbanPage from "@/pages/KanbanPage";
 import GraphView from "@/pages/GraphView";
+import TimelinePage from "@/pages/TimelinePage";
 import NoteDetail from "@/pages/NoteDetail";
 import NewNotePage from "@/pages/NewNotePage";
 import SettingsPage from "@/pages/SettingsPage";
@@ -28,6 +29,7 @@ function AppRoutes() {
       <Route path="/" element={<ProtectedRoute><Dashboard mode="day" /></ProtectedRoute>} />
       <Route path="/new" element={<ProtectedRoute><NewNotePage /></ProtectedRoute>} />
       <Route path="/notes/new" element={<ProtectedRoute><NewNotePage /></ProtectedRoute>} />
+      <Route path="/timeline" element={<ProtectedRoute><TimelinePage /></ProtectedRoute>} />
       <Route path="/all-notes" element={<ProtectedRoute><AllNotes /></ProtectedRoute>} />
       <Route path="/notes" element={<ProtectedRoute><AllNotes /></ProtectedRoute>} />
       <Route path="/graph" element={<ProtectedRoute><GraphView /></ProtectedRoute>} />
