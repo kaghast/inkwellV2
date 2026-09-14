@@ -20,10 +20,12 @@ Bu belge, **Inkwell V2** projesinin başlangıcından bugüne kadar gerçekleşt
 
 ### Temel Yetenekler:
 - **4'ü 1 Arada Not Motoru:** Zengin Markdown metin, Excalidraw benzeri serbest vektörel çizim tuvali, sürükle-bırak hiyerarşik taslak (Outline) üreticisi ve etkileşimli **Zihin Haritası (Mindmap)** motoru.
-- **İki Yönlü Bağlantılar & Bilgi Ağı:** `[[Not Adı]]` sözdizimi ile notlar arası çift yönlü wikilink bağlantıları, referans listeleri ve 2D/3D Etkileşimli Ağ Grafiği (Graph View).
-- **Kanban & Görev Yönetimi:** Not tipleriyle entegre, dinamik kolonlu görsel iş akış panosu.
-- **Akıllı Harita & Canlı Konum:** Çift motorlu harita (Google Maps + Leaflet / OpenStreetMap), GPS otomatik konum tespiti ve Nominatim destekli küresel canlı arama.
-- **Gelişmiş Organizasyon:** Sola sabit modern menubar, "+ Yeni Not Ekle" hızlı erişimi ve çoklu sekmede (Etiketler, Kişiler, Konumlar) sürükle-bırak destekli hiyerarşik klasör/grup yönetimi.
+- **İki Yönlü Bağlantılar & Bilgi Ağı:** `[[Not Adı]]` sözdizimi ile notlar arası çift yönlü wikilink bağlantıları, referans listeleri, otomatik ilişkili not/kart oluşturucu ve 2D/3D Etkileşimli Ağ Grafiği (Graph View).
+- **Zaman Çizelgesi & Haftalık Izgara (Timeline):** ±3 aylık periyotta haftalık satırlar, ISO hafta numaraları, gün bazlı not renklendirmesi/sayaçları ve sürükle-bırakla yeniden sıralanabilir pinli notlar sağ paneli.
+- **Akıllı HTML-Markdown Yapıştırma Motoru:** Webden veya panodan kopyalanan HTML içeriklerini, bağlantılarını ve biçimlendirmelerini anında temiz Markdown'a çeviren akıllı yapıştırıcı.
+- **Kanban & Görev Yönetimi:** Not tipleriyle entegre, dinamik kolonlu görsel iş akış panosu ve çift tıklamayla doğrudan düzenleme desteği.
+- **Akıllı Harita & Canlı Konum:** Çift motorlu harita (Google Maps + Leaflet / OpenStreetMap), GPS otomatik konum tespiti ve Nominatim destekli küresel canlı arama & otomatik mekan adı tamamlama.
+- **Gelişmiş Organizasyon:** Sola sabit modern menubar, "+ Yeni Not Ekle" hızlı erişimi ve çoklu sekmede (Etiketler, Kişiler, Konumlar, Sticker/Emoji, Cümle/Kalıplar) sürükle-bırak destekli hiyerarşik klasör/grup yönetimi.
 - **Blok Tabanlı Not İşleme:** Notu Kes (Split Note) ve Notu Birleştir (Merge Note) dinamik blokları ile kesintisiz not parçalama ve zengin metadata aktarımıyla not birleştirme.
 - **Yapay Zeka ve Vektör Arama:** Google Gemini ve pgvector 768 boyutlu metin embedding'leri ile anlamsal arama ve otomatik özetleme.
 
