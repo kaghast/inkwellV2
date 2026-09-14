@@ -24,6 +24,7 @@ import {
   Clock,
   Sparkles,
   ChevronDown,
+  ChevronUp,
   X,
   Layers,
 } from "lucide-react";
@@ -80,6 +81,8 @@ export default function TimelinePage() {
   const [selectedDay, setSelectedDay] = useState<TimelineDay | null>(null);
   const [dayModalOpen, setDayModalOpen] = useState(false);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
+  const [pastMonthsCount, setPastMonthsCount] = useState(3);
+  const [futureMonthsCount, setFutureMonthsCount] = useState(3);
 
   const todayRef = useRef<HTMLDivElement | null>(null);
 
@@ -160,16 +163,16 @@ export default function TimelinePage() {
     return map;
   }, [notes, searchQuery]);
 
-  // Generate 7-month window: Past 3 months + Current Month + Future 3 months
+  // Generate dynamic window: Past X months + Current Month + Future X months
   const timelineWeeks = useMemo(() => {
     const now = new Date();
     const todayKey = formatDateKey(now);
     const currentMonthIdx = now.getMonth();
 
-    // Start 3 months back from the 1st of that month
-    const startRange = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-    // End 3 months forward at the end of that month
-    const endRange = new Date(now.getFullYear(), now.getMonth() + 4, 0);
+    // Start pastMonthsCount months back from the 1st of that month
+    const startRange = new Date(now.getFullYear(), now.getMonth() - pastMonthsCount, 1);
+    // End futureMonthsCount months forward at the end of that month
+    const endRange = new Date(now.getFullYear(), now.getMonth() + futureMonthsCount + 1, 0);
 
     // Rewind startRange to the preceding Monday
     const startDate = new Date(startRange);
@@ -230,7 +233,7 @@ export default function TimelinePage() {
     }
 
     return weeks;
-  }, [notesByDate]);
+  }, [notesByDate, pastMonthsCount, futureMonthsCount]);
 
   // Pinned notes list sorted with custom drag & drop order
   const pinnedNotes = useMemo(() => {
@@ -403,6 +406,23 @@ export default function TimelinePage() {
               ))}
             </div>
 
+            {/* Load Earlier 3 Months Button */}
+            <div className="p-3 bg-muted/20 border-b border-border/80 flex items-center justify-center select-none shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setPastMonthsCount((prev) => prev + 3);
+                  toast.success("Önceki 3 ayın haftaları ve notları yüklendi");
+                }}
+                className="h-8 text-xs font-serif font-semibold text-primary border-primary/30 hover:bg-primary/10 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                data-testid="load-past-months-btn"
+              >
+                <ChevronUp className="w-4 h-4" />
+                <span>Önceki 3 Ayı Yükle (-3 Ay)</span>
+              </Button>
+            </div>
+
             {/* Weekly Rows */}
             <div className="divide-y divide-border/60">
               {timelineWeeks.map((week) => {
@@ -560,6 +580,23 @@ export default function TimelinePage() {
                   </div>
                 );
               })}
+            </div>
+
+            {/* Load Next 3 Months Button */}
+            <div className="p-4 bg-muted/20 border-t border-border/80 flex items-center justify-center select-none shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setFutureMonthsCount((prev) => prev + 3);
+                  toast.success("Gelecek 3 ayın haftaları ve notları yüklendi");
+                }}
+                className="h-8 text-xs font-serif font-semibold text-primary border-primary/30 hover:bg-primary/10 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                data-testid="load-future-months-btn"
+              >
+                <ChevronDown className="w-4 h-4" />
+                <span>Gelecek 3 Ayı Yükle (+3 Ay)</span>
+              </Button>
             </div>
           </main>
 

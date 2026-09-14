@@ -517,7 +517,10 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 
 - **Zaman Çizelgesi (Timeline) Sayfası (`TimelinePage.tsx`):**
   - **Navigasyon:** Sol menü çubuğuna (`AppMenubar.tsx`) "Zaman Çizelgesi" (`/timeline`, `CalendarRange` ikonu) eklendi.
-  - **±3 Ay Haftalık Izgara:** Bugünün tarihinden geriye 3 ay ve ileriye 3 ay kapsayan tüm haftalar satır satır hesaplanır.
+  - **Dinamik Haftalık Izgara & Genişletme Butonları:**
+    - Varsayılan olarak bugünden geriye 3 ay ve ileriye 3 ay kapsayan haftalık satırlar oluşturulur.
+    - **Üst Buton ("Önceki 3 Ayı Yükle"):** Tıklandıkça çizelgenin başına geçmiş 3 aylık ek haftaları ve notları dinamik olarak ekler (`-3 Ay`).
+    - **Alt Buton ("Gelecek 3 Ayı Yükle"):** Tıklandıkça çizelgenin sonuna gelecek 3 aylık ek haftaları ve notları dinamik olarak ekler (`+3 Ay`).
   - **Hafta Numarası & Sabit Gün Başlıkları:** Her satırın sol başında ISO hafta numarası (`Hafta 37`, ay geçişlerinde ay başlığı rozeti) yer alır; sütun başlıklarında (Pazartesi - Pazar) gün isimleri üstte sabitlenir (`sticky`).
   - **Not Renklendirmesi & Adet Rozetleri:** Not içeren günler özel renk tonuyla vurgulanır ve üzerinde not adedi rozeti (`X Not`) ile not başlık önizlemeleri gösterilir.
   - **Bugüne Odaklanma:** "Bugün" butonu ile mevcut haftaya akıcı animasyonla (`scrollIntoView`) kaydırma sağlanır.
