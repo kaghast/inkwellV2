@@ -13,6 +13,7 @@ import TimeSlotDialog from "@/components/TimeSlotDialog";
 import MergeNoteDialog from "@/components/MergeNoteDialog";
 import { SPLIT_MARKER } from "@/lib/noteSplitMerge";
 import { uploadImage } from "@/lib/uploads";
+import { handleClipboardPaste } from "@/lib/htmlToMarkdown";
 import { toast } from "sonner";
 import {
   Image as ImageIcon,
@@ -317,40 +318,46 @@ export default function MarkdownEditor({
     setPopup(null);
   }
 
-  // Handle Clipboard Paste (detect and auto-upload image)
+  // Handle Clipboard Paste (detect images, smart link wrapping, and HTML to Markdown conversion)
   async function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
-    const items = e.clipboardData.items;
-    let imageItem: DataTransferItem | null = null;
+    const el = ref.current;
+    const selStart = el ? el.selectionStart : value.length;
+    const selEnd = el ? el.selectionEnd : value.length;
+    const selectedText = el && selStart !== selEnd ? el.value.substring(selStart, selEnd) : "";
 
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.startsWith("image/")) {
-        imageItem = items[i];
-        break;
+    const pasteResult = handleClipboardPaste(e.clipboardData, selectedText);
+
+    if (pasteResult.type === "image" && pasteResult.file) {
+      e.preventDefault();
+      try {
+        toast.loading("Görsel panodan yapıştırılıyor ve yükleniyor…", { id: "paste-upl" });
+        const res = await uploadImage(pasteResult.file);
+        toast.success("Görsel yapıştırıldı ve eklendi", { id: "paste-upl" });
+
+        const before = value.slice(0, selStart);
+        const needsNl = before.length > 0 && !before.endsWith("\n");
+        const prefix = needsNl ? "\n" : "";
+        const md = `${prefix}![Görsel | 400w](${res.url})\n`;
+
+        replaceRange(selStart, selEnd, md);
+      } catch (err) {
+        toast.error("Görsel yüklenirken bir hata oluştu", { id: "paste-upl" });
       }
+      return;
     }
 
-    if (!imageItem) return; // normal text paste
+    if (pasteResult.type === "url_selection" && pasteResult.content) {
+      e.preventDefault();
+      replaceRange(selStart, selEnd, pasteResult.content);
+      toast.success("Seçili metin bağlantıya dönüştürüldü", { duration: 1500 });
+      return;
+    }
 
-    e.preventDefault();
-    const file = imageItem.getAsFile();
-    if (!file) return;
-
-    const el = ref.current;
-    const caret = el ? el.selectionStart : value.length;
-
-    try {
-      toast.loading("Görsel panodan yapıştırılıyor ve yükleniyor…", { id: "paste-upl" });
-      const res = await uploadImage(file);
-      toast.success("Görsel yapıştırıldı ve eklendi", { id: "paste-upl" });
-
-      const before = value.slice(0, caret);
-      const needsNl = before.length > 0 && !before.endsWith("\n");
-      const prefix = needsNl ? "\n" : "";
-      const md = `${prefix}![Görsel | 400w](${res.url})\n`;
-
-      replaceRange(caret, caret, md);
-    } catch (err) {
-      toast.error("Görsel yüklenirken bir hata oluştu", { id: "paste-upl" });
+    if (pasteResult.type === "markdown" && pasteResult.content) {
+      e.preventDefault();
+      replaceRange(selStart, selEnd, pasteResult.content);
+      toast.success("HTML içerik Markdown formatına dönüştürüldü", { duration: 1500 });
+      return;
     }
   }
 

@@ -485,6 +485,28 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 
 ---
 
+### 📅 14 Eylül 2026 (Akıllı HTML'den Markdown'a Dönüştürücü & Bağlantı Yapıştırma Motoru)
+
+- **Gelişmiş HTML-to-Markdown Dönüştürme Motoru (`src/lib/htmlToMarkdown.ts`):**
+  - Web sayfalarından, harici zengin dökümanlardan veya panodan kopyalanan HTML içerikler not ekleme/düzenleme editörüne yapıştırıldığında anında temiz Github Flavored Markdown (GFM) sözdizimine dönüştürülür.
+  - **Kapsamlı HTML Desteği:**
+    - **Bağlantılar:** `<a>` etiketleri otomatik olarak `[bağlantı metni](url)` Markdown formatına çevrilir. Metinsiz veya URL ile aynı olan linkler sadeleştirilir.
+    - **Metin Biçimlendirme:** `<b>`, `<strong>` -> `**kalın**`; `<i>`, `<em>` -> `*italik*`; `<s>`, `<del>`, `<strike>` -> `~~üstü çizili~~`.
+    - **Başlıklar:** `<h1>`-`<h6>` etiketleri `#` - `######` Markdown başlık seviyelerine dönüştürülür.
+    - **Listeler:** Sırasız listeler (`<ul>` -> `- `), sıralı listeler (`<ol>` -> `1. `, `2. `) ve etkileşimli kontrol kutuları (`<input type="checkbox">` -> `- [ ]`, `- [x]`) hiyerarşik olarak işlenir.
+    - **Alıntılar:** `<blockquote>` etiketleri `> ` blok alıntılarına dönüştürülür.
+    - **Kod Blokları:** `<code>` -> `` `kod` ``, `<pre><code>` -> ` ```lang ... ``` ` sözdizimi olarak korunur.
+    - **Tablolar:** `<table>`, `<tr>`, `<th>`, `<td>` yapıları tam hizalanmış Markdown ızgara tablolarına (`| Başlık 1 | Başlık 2 |\n| --- | --- |`) dönüştürülür.
+    - **Görseller:** `<img>` etiketleri `![alt](src)` Markdown etiketine dönüştürülür.
+  - **Akıllı Bağlantı Giydirme (Smart Link Wrapping):**
+    - Editörde herhangi bir metin seçiliyken panodan bir URL yapıştırıldığında, seçili metin korunarak doğrudan `[seçili metin](yapıştırılan_url)` Markdown bağlantı formatına büründürülür.
+  - **Panodan Görsel Yükleme Uyumu:**
+    - Panodan doğrudan kopyalanan görsel dosyaları veya ekran alıntıları algılandığında arka uç resim yükleme akışı (`uploadImage`) ve `![Görsel | 400w](url)` ekleme mekanizması sorunsuz korunur.
+  - **Evrensel Editör Entegrasyonu (`MarkdownEditor.tsx`):**
+    - Not Oluşturucu (`NoteComposer`), Hızlı Düzenleme (`NoteCard`), Tam Sayfa Yeni Not (`NewNotePage`) ve Not Detay (`NoteDetail`) ekranlarının tamamında tek tip akıllı yapıştırma deneyimi ve sonner bildirimleri (`toast`) sağlandı.
+
+---
+
 ## 6. Dağıtım ve DevOps Yapılandırması
 
 Inkwell V2, Docker konteyner mimarisi ile Coolify veya herhangi bir Docker Host üzerinde sıfır kesintiyle çalışacak şekilde yapılandırılmıştır.
@@ -522,4 +544,4 @@ CMD ["npm", "start"]
 
 ---
 
-*Belge son güncelleme tarihi: 12 Eylül 2026*
+*Belge son güncelleme tarihi: 14 Eylül 2026*
