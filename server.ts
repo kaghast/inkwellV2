@@ -897,6 +897,32 @@ api.get("/ai/dataset", authMiddleware, async (req: AuthRequest, res: Response) =
   }
 });
 
+function parseEmbedding(raw: unknown): number[] | null {
+  let arr: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      arr = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const nums = arr.map(Number);
+  return nums.every((v) => Number.isFinite(v)) ? nums : null;
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  const len = Math.min(a.length, b.length);
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < len; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
 // Semantic Vector Search endpoint
 api.get("/ai/semantic-search", authMiddleware, async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
@@ -920,27 +946,32 @@ api.get("/ai/semantic-search", authMiddleware, async (req: AuthRequest, res: Res
       return res.json(textMatches);
     }
 
-    // Cosine similarity search using pgvector
-    const vectorStr = `[${queryEmbedding.join(",")}]`;
-    const results = await db.select({
-      note_id: notes.noteId,
-      user_id: notes.userId,
-      title: notes.title,
-      content: notes.content,
-      date: notes.date,
-      tags: notes.tags,
-      people: notes.people,
-      category_id: notes.categoryId,
-      location_id: notes.locationId,
-      pinned: notes.pinned,
-      created_at: notes.createdAt,
-      updated_at: notes.updatedAt,
-      similarity: sql<number>`1 - (${notes.embedding} <=> ${vectorStr}::vector)`,
-    })
-      .from(notes)
-      .where(eq(notes.userId, userId))
-      .orderBy(sql`${notes.embedding} <=> ${vectorStr}::vector`)
-      .limit(10);
+    // Cosine similarity computed in Node: the embedding column is stored as TEXT
+    // (see initDatabaseSchema), so the pgvector `<=>` operator is not available.
+    const userNotes = await db.select().from(notes).where(eq(notes.userId, userId));
+    const results = userNotes
+      .map((n: typeof notes.$inferSelect) => {
+        const vec = parseEmbedding(n.embedding);
+        if (!vec) return null;
+        return {
+          note_id: n.noteId,
+          user_id: n.userId,
+          title: n.title,
+          content: n.content,
+          date: n.date,
+          tags: n.tags,
+          people: n.people,
+          category_id: n.categoryId,
+          location_id: n.locationId,
+          pinned: n.pinned,
+          created_at: n.createdAt,
+          updated_at: n.updatedAt,
+          similarity: cosineSimilarity(queryEmbedding, vec),
+        };
+      })
+      .filter((r: any): r is NonNullable<typeof r> => r !== null)
+      .sort((a: any, b: any) => b.similarity - a.similarity)
+      .slice(0, 10);
 
     return res.json(results);
   } catch (err: any) {
