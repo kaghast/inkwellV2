@@ -1,18 +1,18 @@
 # ==========================================
 # Inkwell Production Dockerfile for Coolify
 # ==========================================
-FROM node:20-alpine AS builder
+# Debian slim (glibc) instead of Alpine (musl): Rollup's native musl parser
+# runs with a small thread stack on Alpine and fails on react-dom with
+# "Code is nested too deeply". The glibc build does not have that limit.
+FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 
-# Install system dependencies if needed
-RUN apk add --no-cache python3 make g++
-
-# Copy package manifests
-COPY package.json ./
-
-# Install dependencies
-RUN npm install
+# Install exactly the versions in package-lock.json (reproducible builds).
+# A plain `npm install` without the lockfile pulls whatever is newest and can
+# break the build without any change in this repository.
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
 
 # Copy source code
 COPY . .
@@ -23,12 +23,9 @@ RUN npm run build
 # ==========================================
 # Production Runtime Stage
 # ==========================================
-FROM node:20-alpine AS runner
+FROM node:20-bookworm-slim AS runner
 
 WORKDIR /app
-
-# Install curl for Coolify healthchecks
-RUN apk add --no-cache curl
 
 # Copy dependencies and build artifacts
 COPY --from=builder /app/package.json ./package.json
@@ -55,9 +52,10 @@ EXPOSE 3000
 # Volume for data persistence across Coolify container updates
 VOLUME ["/app/.data"]
 
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:3000/api/health || exit 1
+# Healthcheck with Node's built-in fetch (no curl needed in the image).
+# The longer start period leaves time for tsx startup and database init.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+  CMD node -e "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # Start the full-stack server
 CMD ["npm", "start"]
