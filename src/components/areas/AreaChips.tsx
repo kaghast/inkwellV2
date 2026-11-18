@@ -28,7 +28,11 @@ export function AreaChips({ areas, value, onRemove }: AreaChipsProps) {
               title={areaPath(a, byId)}
             >
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
-              <Link to={`/graph?area=${a.area_id}`} className="truncate hover:underline">
+              <Link
+                to={`/all-notes?area=${encodeURIComponent(a.area_id)}`}
+                className="truncate hover:underline"
+                title="Bu alandaki notları listele"
+              >
                 {areaPath(a, byId)}
               </Link>
               {a.archived && <span className="text-[9px] uppercase text-muted-foreground">arşiv</span>}

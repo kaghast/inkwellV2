@@ -2841,7 +2841,23 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
 
     const areaFilter = req.query.area_id;
     if (areaFilter && typeof areaFilter === "string") {
-      filtered = filtered.filter((n) => Array.isArray(n.area_ids) && n.area_ids.includes(areaFilter));
+      // A main area also matches notes linked to any of its sub-areas,
+      // unless the caller asks for direct links only (include_sub=false).
+      const wanted = new Set<string>([areaFilter]);
+      if (req.query.include_sub !== "false") {
+        const userAreas = await db.select().from(areas).where(eq(areas.userId, userId));
+        let grew = true;
+        while (grew) {
+          grew = false;
+          for (const a of userAreas) {
+            if (a.parentId && wanted.has(a.parentId) && !wanted.has(a.areaId)) {
+              wanted.add(a.areaId);
+              grew = true;
+            }
+          }
+        }
+      }
+      filtered = filtered.filter((n) => Array.isArray(n.area_ids) && n.area_ids.some((id: string) => wanted.has(id)));
     }
 
     if (note_type_id && typeof note_type_id === "string") {
