@@ -4347,11 +4347,25 @@ async function startServer() {
 
   if (isProduction) {
     const distPath = path.resolve(__dirname, "dist");
-    app.use(express.static(distPath));
+    app.use(
+      express.static(distPath, {
+        setHeaders: (res, filePath) => {
+          const name = path.basename(filePath);
+          if (name === "sw.js" || name === "index.html" || name === "manifest.webmanifest" || name === "offline.html") {
+            // Always revalidate: a stale worker or shell would pin users to an old release
+            res.setHeader("Cache-Control", "no-cache");
+          } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          }
+          if (name === "manifest.webmanifest") res.setHeader("Content-Type", "application/manifest+json");
+        },
+      })
+    );
     app.get("*", (req, res, next) => {
       if (req.path.startsWith("/api/")) {
         return next();
       }
+      res.setHeader("Cache-Control", "no-cache");
       res.sendFile(path.resolve(distPath, "index.html"));
     });
   } else {

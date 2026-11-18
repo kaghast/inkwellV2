@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import GoogleCalendarSettings from "@/components/settings/GoogleCalendarSettings";
+import InstallAppCard from "@/components/settings/InstallAppCard";
 import { useGcalStatus } from "@/lib/googleCalendar";
 import {
   Feather,
@@ -485,6 +486,8 @@ export default function SettingsPage() {
                   Temayı, arama kapsamını ve not listenizin varsayılan başlangıç görünümünü özelleştirin.
                 </p>
               </div>
+
+              <InstallAppCard />
 
               {/* Theme Selector */}
               <div className="border-t border-border/60 pt-6">

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#FAF9F6" />
+    <title>Inkwell · Çevrimdışı</title>
+    <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml" />
+    <style>
+      :root { --bg: #FAF9F6; --fg: #1A1A1A; --muted: #6b6b6b; --border: #e6e1d8; --btn-bg: #1A1A1A; --btn-fg: #FAF9F6; }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #141514; --fg: #EAE5D9; --muted: #a3a093; --border: #2a2c2a; --btn-bg: #EAE5D9; --btn-fg: #141514; }
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--bg); color: var(--fg);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        display: flex; align-items: center; justify-content: center; padding: 24px;
+      }
+      main { max-width: 380px; text-align: center; }
+      img { width: 64px; height: 64px; border-radius: 16px; }
+      h1 { font-size: 22px; margin: 18px 0 8px; letter-spacing: -0.01em; }
+      p { color: var(--muted); font-size: 14px; line-height: 1.55; margin: 0 0 20px; }
+      button {
+        appearance: none; border: 0; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 600;
+        background: var(--btn-bg); color: var(--btn-fg); cursor: pointer;
+      }
+      small { display: block; margin-top: 14px; color: var(--muted); font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icons/icon-192.png" alt="" />
+      <h1>İnternet bağlantısı yok</h1>
+      <p>Inkwell notlarını sunucudan getiriyor; bağlantı gelince kaldığın yerden devam edebilirsin.</p>
+      <button type="button" onclick="location.reload()">Tekrar dene</button>
+      <small>Bağlantı geri geldiğinde sayfa kendiliğinden yenilenir.</small>
+    </main>
+    <script>
+      window.addEventListener("online", function () { location.reload(); });
+    </script>
+  </body>
+</html>

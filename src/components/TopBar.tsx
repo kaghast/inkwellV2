@@ -32,6 +32,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import SettingsDialog from "@/components/SettingsDialog";
+import { usePwaInstall } from "@/lib/pwa";
+import { Download } from "lucide-react";
 import type { User } from "@/types";
 
 interface Props {
@@ -41,6 +43,7 @@ interface Props {
 
 export default function TopBar({ onLeftMenu, onRightMenu }: Props) {
   const { user, logout } = useAuth();
+  const pwa = usePwaInstall();
   const { theme, toggle } = useTheme();
   const { reminders, unreadCount, markAsRead, markAllAsRead } = useReminders();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -291,6 +294,16 @@ export default function TopBar({ onLeftMenu, onRightMenu }: Props) {
                 >
                   <Settings className="w-3.5 h-3.5 mr-2 text-muted-foreground" strokeWidth={1.5} /> Ayarlar
                 </DropdownMenuItem>
+
+                {pwa.canInstall && (
+                  <DropdownMenuItem
+                    onClick={() => pwa.install()}
+                    data-testid="install-app-menu-btn"
+                    className="cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-2 text-muted-foreground" strokeWidth={1.5} /> Uygulamayı yükle
+                  </DropdownMenuItem>
+                )}
 
                 <DropdownMenuSeparator />
 

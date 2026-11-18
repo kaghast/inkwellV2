@@ -317,6 +317,12 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 - **Bağlantıyı kaldırma:** Yalnızca Ayarlar'dan yapılır (`DELETE /api/integrations/google-calendar`): belirteç Google'da iptal edilir ve kayıt silinir. Kullanıcı erişimi Google hesabından geri alırsa (`invalid_grant`) kayıt otomatik silinir ve yeniden bağlanması istenir.
 - Google Drive yedeklemesi Firebase akışıyla ayrı çalışmaya devam eder; Firebase sağlayıcısından takvim kapsamı kaldırıldı.
 
+### 4.15. Progressive Web App (`public/`, `src/lib/pwa.ts`)
+- **Manifest (`public/manifest.webmanifest`):** Ad, `standalone` görünüm, tema/arka plan rengi, 192/512 px normal ve maskelenebilir simgeler (`public/icons/`, uygulamadaki tüy logosu) ve "Yeni Not", "Bütün Notlar", "Alan Haritası" kısayolları. `index.html` manifest, favicon, Apple touch icon, iOS meta etiketleri ve açık/koyu tema renklerini içerir.
+- **Service worker (`public/sw.js`):** Sayfa gezintileri ağ öncelikli; ağ yoksa `offline.html` gösterilir ve bağlantı gelince sayfa kendini yeniler. `/assets/*` (hash'li derleme çıktıları) önce önbellekten, simgeler/manifest/Google Fonts/Leaflet CSS stale-while-revalidate ile gelir. `/api`, `/auth`, yüklenen dosyalar ve harita karoları önbelleğe alınmaz; özel not verisi cihazda saklanmaz. Önbellekler sürüm adıyla tutulur, yeni sürümde eskileri silinir.
+- **Kayıt ve yükleme:** `setupPwa()` worker'ı yalnızca üretim derlemesinde kaydeder (geliştirmede Vite HMR etkilenmez) ve `beforeinstallprompt` olayını yakalar. Yükleme düğmesi kullanıcı menüsünde ve Ayarlar > Görünüm'deki "Uygulama olarak kullan" kartında; iOS'ta "Ana Ekrana Ekle" talimatı gösterilir.
+- **Sunucu:** `sw.js`, `index.html`, manifest ve çevrimdışı sayfa `Cache-Control: no-cache` ile, `/assets/*` bir yıllık `immutable` önbellek başlığıyla sunulur; manifest `application/manifest+json` tipindedir.
+
 ---
 
 ## 5. Gün Gün Kronolojik Geliştirme Günlüğü

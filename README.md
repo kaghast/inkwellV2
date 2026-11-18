@@ -62,6 +62,16 @@ Coolify size bir alan adı (örneğin `https://inkwell.sizin-sunucunuz.com`) tan
 
 ---
 
+## 📱 Uygulama Olarak Yükleme (PWA)
+
+Inkwell bir Progressive Web App'tir. HTTPS üzerinden açıldığında (ya da `localhost`'ta) tarayıcı onu uygulama olarak yüklemeyi önerir:
+- **Chrome / Edge (masaüstü ve Android):** Adres çubuğundaki yükle simgesi, kullanıcı menüsündeki "Uygulamayı yükle" veya Ayarlar > Görünüm > "Uygulama olarak kullan".
+- **iPhone / iPad (Safari):** Paylaş > Ana Ekrana Ekle.
+
+Service worker (`public/sw.js`) yalnızca üretim derlemesinde kaydedilir. Sayfalar her zaman ağdan yüklenir (yeni sürüm hemen gelir), bağlantı yoksa çevrimdışı sayfası gösterilir. Derlenmiş JS/CSS dosyaları, simgeler ve fontlar önbelleğe alınır; **`/api` yanıtları ve yüklenen dosyalar hiçbir zaman önbelleğe alınmaz**, yani not içerikleri cihaz önbelleğinde kalmaz.
+
+---
+
 ## 💻 Yerel Geliştirme (Local Development)
 
 ```bash
