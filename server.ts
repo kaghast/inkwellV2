@@ -2209,6 +2209,139 @@ api.patch("/notes/:note_id/areas", authMiddleware, async (req: AuthRequest, res:
 });
 
 // ---------------------------------------------------------------------------
+// Link titles: turn bare URLs in a note into [Page title](url) markdown links.
+// ---------------------------------------------------------------------------
+const BARE_URL_RE = /https?:\/\/[^\s<>()\[\]]+[^\s<>()\[\].,:;"'!?*_~]/g;
+
+function isEmbedLink(url: string): boolean {
+  return /(?:youtube\.com\/watch|youtu\.be\/|youtube\.com\/shorts|maps\.google\.|google\.[a-z.]+\/maps|goo\.gl\/maps|maps\.app\.goo\.gl)/i.test(url);
+}
+
+interface BareLink {
+  line: number;
+  start: number;
+  end: number;
+  url: string;
+}
+
+/** Finds URLs that have no title yet: raw URLs, <url> autolinks and [url](url) links. Code is skipped. */
+function findBareLinks(markdown: string): BareLink[] {
+  const out: BareLink[] = [];
+  const lines = markdown.split("\n");
+  let fence: string | null = null;
+  const blank = (s: string) => " ".repeat(s.length);
+  const plain = (s: string) => s.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+
+  lines.forEach((line, lineNo) => {
+    const t = line.trim();
+    const f = t.match(/^(```|~~~)/);
+    if (f) {
+      if (!fence) fence = f[1];
+      else if (t.startsWith(fence)) fence = null;
+      return;
+    }
+    if (fence) return;
+
+    // Hide inline code so URLs inside it are never touched
+    let masked = line.replace(/`[^`]*`/g, blank);
+
+    // [label](url) where the label is just the URL (or empty); images are left alone
+    masked = masked.replace(/(!?)\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (m: string, bang: string, label: string, href: string, offset: number) => {
+      const lbl = String(label).trim();
+      if (!bang && /^https?:\/\//i.test(href) && (!lbl || plain(lbl) === plain(href))) {
+        out.push({ line: lineNo, start: offset, end: offset + m.length, url: href });
+      }
+      return blank(m);
+    });
+    // <https://...> autolinks
+    masked = masked.replace(/<(https?:\/\/[^>\s]+)>/g, (m: string, href: string, offset: number) => {
+      out.push({ line: lineNo, start: offset, end: offset + m.length, url: href });
+      return blank(m);
+    });
+    // HTML tags (and URLs in their attributes) are left alone
+    masked = masked.replace(/<[^>]*>/g, blank);
+
+    const re = new RegExp(BARE_URL_RE.source, "g");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(masked)) !== null) {
+      const prev = masked[m.index - 1];
+      if (prev && /["'=(]/.test(prev)) continue;
+      out.push({ line: lineNo, start: m.index, end: m.index + m[0].length, url: m[0] });
+    }
+  });
+  return out.filter((l) => !isEmbedLink(l.url));
+}
+
+function escapeLinkTitle(title: string): string {
+  return title
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 150)
+    .replace(/([\\`*_\[\]<>#@|~])/g, "\\$1");
+}
+
+/** Returns the content with page titles filled in, or null when nothing could be titled. */
+async function addLinkTitles(content: string): Promise<string | null> {
+  const marker = content.search(/<!--\s*inkwell:comments:start\s*-->/i);
+  const main = marker >= 0 ? content.slice(0, marker) : content;
+  const rest = marker >= 0 ? content.slice(marker) : "";
+
+  const links = findBareLinks(main);
+  if (links.length === 0) return null;
+  const urls = [...new Set(links.map((l) => l.url))].slice(0, 8);
+  const previews = await Promise.all(urls.map((u) => getLinkPreview(u).catch(() => null)));
+  const titles = new Map<string, string>();
+  previews.forEach((p, i) => {
+    if (p && p.has_title && p.title.trim()) titles.set(urls[i], escapeLinkTitle(p.title));
+  });
+  if (titles.size === 0) return null;
+
+  const lines = main.split("\n");
+  // Replace from the end of each line so earlier offsets stay valid
+  [...links]
+    .sort((a, b) => b.line - a.line || b.start - a.start)
+    .forEach((l) => {
+      const title = titles.get(l.url);
+      if (!title) return;
+      const s = lines[l.line];
+      lines[l.line] = s.slice(0, l.start) + `[${title}](${l.url})` + s.slice(l.end);
+    });
+  return lines.join("\n") + rest;
+}
+
+// Fills in page titles for the note's untitled links. This is formatting only, so
+// no new version is created, and the write is skipped if the note changed meanwhile.
+api.post("/notes/:note_id/link-titles", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const identifier = req.params.note_id;
+  try {
+    const found = await db.select().from(notes).where(
+      and(or(eq(notes.noteId, identifier), eq(notes.slug, identifier)), eq(notes.userId, userId))
+    ).limit(1);
+    if (found.length === 0) return res.status(404).json({ detail: "Not bulunamadı" });
+    const current = found[0];
+    const before = current.content || "";
+    if (current.archived || current.isEncrypted) {
+      return res.json({ note_id: current.noteId, changed: false, content: before });
+    }
+
+    const next = await addLinkTitles(before);
+    if (next === null || next === before) {
+      return res.json({ note_id: current.noteId, changed: false, content: before });
+    }
+    const updated = await db
+      .update(notes)
+      .set({ content: next })
+      .where(and(eq(notes.noteId, current.noteId), eq(notes.userId, userId), eq(notes.content, before)))
+      .returning({ noteId: notes.noteId });
+    const changed = updated.length > 0;
+    res.json({ note_id: current.noteId, changed, content: changed ? next : before });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Link başlıkları alınamadı", error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Notes Endpoints (Backed by Cloud SQL + Vector Embeddings)
 // ---------------------------------------------------------------------------
 api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
@@ -3738,75 +3871,94 @@ async function fetchPublicHtml(startUrl: string): Promise<string> {
   throw new Error("Too many redirects");
 }
 
+function pickFavicon($: cheerio.CheerioAPI, pageUrl: string): string {
+  const candidates = $("link[rel]")
+    .toArray()
+    .map((el) => ({ rel: String($(el).attr("rel") || "").toLowerCase(), href: String($(el).attr("href") || "").trim() }))
+    .filter((l) => l.href && /(^|\s)(icon|apple-touch-icon)(\s|$)/.test(l.rel) && !l.rel.includes("mask-icon"));
+  // Prefer a plain "icon" over the (usually larger) apple-touch icon
+  const best = candidates.find((l) => /(^|\s)icon(\s|$)/.test(l.rel)) || candidates[0];
+  try {
+    if (best) {
+      if (/^data:image\//i.test(best.href)) return best.href.length < 20000 ? best.href : "";
+      const abs = new URL(best.href, pageUrl);
+      if (abs.protocol === "http:" || abs.protocol === "https:") return abs.toString();
+    }
+    return new URL("/favicon.ico", pageUrl).toString();
+  } catch {
+    return "";
+  }
+}
+
+interface LinkPreviewData {
+  url: string;
+  title: string;
+  description: string;
+  image: string;
+  site_name: string;
+  favicon: string;
+  /** true when the page itself provided a title (not just the host name fallback). */
+  has_title: boolean;
+}
+
+async function getLinkPreview(url: string): Promise<LinkPreviewData> {
+  const cached = linkCache.get(url);
+  if (cached && Date.now() - cached.timestamp < LINK_TTL) return cached.data;
+
+  let hostname = "";
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    throw new Error("Invalid URL");
+  }
+
+  try {
+    const html = await fetchPublicHtml(url);
+    const $ = cheerio.load(typeof html === "string" ? html : "");
+    const getMeta = (prop: string, name?: string) =>
+      $(`meta[property="${prop}"]`).attr("content") ||
+      $(`meta[name="${name || prop}"]`).attr("content") ||
+      "";
+    const clean = (s: string) => (s || "").replace(/\s+/g, " ").trim();
+
+    const pageTitle = clean(getMeta("og:title", "twitter:title") || $("title").first().text());
+    const description = clean(getMeta("og:description", "description") || getMeta("twitter:description"));
+    const image = getMeta("og:image", "twitter:image") || getMeta("og:image:url");
+    let absoluteImage = "";
+    if (image) {
+      try {
+        const u = new URL(image, url);
+        if (u.protocol === "http:" || u.protocol === "https:") absoluteImage = u.toString();
+      } catch {}
+    }
+
+    const data: LinkPreviewData = {
+      url,
+      title: (pageTitle || hostname).slice(0, 200),
+      description: description.slice(0, 300),
+      image: absoluteImage,
+      site_name: clean(getMeta("og:site_name")) || hostname,
+      favicon: pickFavicon($, url),
+      has_title: Boolean(pageTitle),
+    };
+    cacheSet(linkCache, url, { timestamp: Date.now(), data });
+    return data;
+  } catch {
+    // Unreachable or blocked host (e.g. a private address): show the host name only.
+    // No favicon guess, so the browser is never pointed at an internal address.
+    return { url, title: hostname, description: "", image: "", site_name: hostname, favicon: "", has_title: false };
+  }
+}
+
 api.get("/link-preview", authMiddleware, async (req: AuthRequest, res: Response) => {
   const url = String(req.query.url || "").trim();
   if (!url || !/^https?:\/\//i.test(url)) {
     return res.status(400).json({ detail: "Valid HTTP(S) URL is required" });
   }
-
-  const cached = linkCache.get(url);
-  if (cached && Date.now() - cached.timestamp < LINK_TTL) {
-    return res.json(cached.data);
-  }
-
   try {
-    const response = { data: await fetchPublicHtml(url) };
-
-    const html = response.data;
-    const $ = cheerio.load(typeof html === "string" ? html : "");
-
-    const getMeta = (prop: string, name?: string) =>
-      $(`meta[property="${prop}"]`).attr("content") ||
-      $(`meta[name="${name || prop}"]`).attr("content") ||
-      "";
-
-    const title =
-      getMeta("og:title", "twitter:title") ||
-      $("title").text() ||
-      new URL(url).hostname;
-
-    const description =
-      getMeta("og:description", "description") ||
-      getMeta("twitter:description");
-
-    const image =
-      getMeta("og:image", "twitter:image") ||
-      getMeta("og:image:url");
-
-    const siteName =
-      getMeta("og:site_name") ||
-      new URL(url).hostname;
-
-    let absoluteImage = image;
-    if (image && !image.startsWith("http")) {
-      try {
-        absoluteImage = new URL(image, url).toString();
-      } catch {}
-    }
-
-    const data = {
-      url,
-      title: title.trim(),
-      description: description.trim().slice(0, 300),
-      image: absoluteImage,
-      site_name: siteName.trim(),
-    };
-
-    cacheSet(linkCache, url, { timestamp: Date.now(), data });
-    return res.json(data);
-  } catch (err: any) {
-    try {
-      const hostname = new URL(url).hostname;
-      return res.json({
-        url,
-        title: hostname,
-        description: "",
-        image: "",
-        site_name: hostname,
-      });
-    } catch {
-      return res.status(502).json({ detail: "Link önizleme alınamadı" });
-    }
+    return res.json(await getLinkPreview(url));
+  } catch {
+    return res.status(502).json({ detail: "Link önizleme alınamadı" });
   }
 });
 

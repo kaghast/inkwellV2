@@ -9,6 +9,7 @@ import { highlightText } from "@/lib/highlight";
 import DrawingViewer from "@/components/drawing/DrawingViewer";
 import MindmapViewer from "@/components/mindmap/MindmapViewer";
 import TimeSlotCard from "@/components/TimeSlotCard";
+import { InlineLink, LinkPreviewCard } from "@/components/LinkPreview";
 import {
   Dialog,
   DialogContent,
@@ -140,18 +141,7 @@ function transformChildren(children: ReactNode, highlight?: string): ReactNode[]
       while ((m = re.exec(p)) !== null) {
         if (m.index > last) parts.push(p.slice(last, m.index));
         const rawUrl = m[1];
-        parts.push(
-          <a
-            key={`u-${idx}-${i}-${m.index}`}
-            href={rawUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-primary hover:underline font-medium break-all [overflow-wrap:anywhere]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {rawUrl}
-          </a>
-        );
+        parts.push(<InlineLink key={`u-${idx}-${i}-${m.index}`} href={rawUrl} />);
         last = m.index + m[0].length;
       }
       if (last < p.length) parts.push(p.slice(last));
@@ -420,33 +410,24 @@ function AuthImage({ src, alt }: { src?: string; alt?: string }) {
 
 // Custom paragraph: detect a raw YouTube/GMap/HTTP URL alone inside → replace with embed or clean link
 function ParagraphRenderer({ children }: { children: ReactNode }) {
-  const arr = Array.isArray(children) ? children : [children];
+  // Ignore whitespace-only text around a lone link
+  const arr = (Array.isArray(children) ? children : [children]).filter(
+    (c) => !(typeof c === "string" && c.trim() === "")
+  );
   if (arr.length === 1) {
     const only = arr[0];
     if (typeof only === "string") {
       const s = only.trim();
       if (isYoutube(s)) return <YouTubeEmbed url={s} />;
       if (isGmap(s)) return <GmapEmbed url={s} />;
-      if (/^https?:\/\//i.test(s)) {
-        return (
-          <p className="my-1.5 break-words [overflow-wrap:anywhere] [word-break:break-word]">
-            <a
-              href={s}
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary hover:underline font-medium break-all [overflow-wrap:anywhere]"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {s}
-            </a>
-          </p>
-        );
-      }
+      if (/^https?:\/\/\S+$/i.test(s)) return <LinkPreviewCard href={s} />;
     }
-    if (React.isValidElement(only) && only.type === "a") {
+    // A link alone on its line (raw URL autolinked by GFM, or [Title](url)) becomes a preview card
+    if (React.isValidElement(only) && typeof (only.props as any).href === "string") {
       const href = (only.props as any).href as string;
-      if (href && isYoutube(href)) return <YouTubeEmbed url={href} />;
-      if (href && isGmap(href)) return <GmapEmbed url={href} />;
+      if (isYoutube(href)) return <YouTubeEmbed url={href} />;
+      if (isGmap(href)) return <GmapEmbed url={href} />;
+      if (/^https?:\/\//i.test(href)) return <LinkPreviewCard href={href} label={(only.props as any).children} />;
     }
   }
   return <p className="break-words [overflow-wrap:anywhere] [word-break:break-word]">{transformChildren(children)}</p>;
@@ -527,6 +508,38 @@ interface Props {
   highlight?: string;
 }
 
+const LONE_LINK_LINE = /^\s*(?:https?:\/\/\S+|\[[^\]]*\]\(https?:\/\/[^)\s]+\)|<https?:\/\/[^>\s]+>)\s*$/i;
+
+/**
+ * A link written alone on its line should become a preview card, but markdown
+ * joins consecutive lines into one paragraph. Give such lines their own paragraph
+ * (outside code fences) so the renderer can turn them into cards.
+ */
+function isolateLinkLines(md: string): string {
+  const lines = md.split("\n");
+  const out: string[] = [];
+  let fence: string | null = null;
+  lines.forEach((line, i) => {
+    const t = line.trim();
+    const f = t.match(/^(```|~~~)/);
+    if (f) {
+      if (!fence) fence = f[1];
+      else if (t.startsWith(fence)) fence = null;
+      out.push(line);
+      return;
+    }
+    if (!fence && LONE_LINK_LINE.test(line)) {
+      if (out.length && out[out.length - 1].trim() !== "") out.push("");
+      out.push(t);
+      const next = lines[i + 1];
+      if (next !== undefined && next.trim() !== "") out.push("");
+      return;
+    }
+    out.push(line);
+  });
+  return out.join("\n");
+}
+
 export default function MarkdownView({ content, onTaskToggle, highlight }: Props) {
   const displayContent = useMemo(() => {
     if (!content) return "";
@@ -536,7 +549,7 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
     clean = clean.replace(/<!--\s*comment:id=[\s\S]*?-->/gi, "");
     clean = clean.replace(/<!--\s*inkwell:comments:(?:start|end)\s*-->/gi, "");
     clean = clean.replace(/<!--\s*inkwell:split\s*-->/gi, "");
-    return clean.trimEnd();
+    return isolateLinkLines(clean.trimEnd());
   }, [content]);
 
   const taskLineToIdx = useMemo(() => {
@@ -654,6 +667,7 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
             if (!label || label === "undefined" || (Array.isArray(label) && (label.length === 0 || label[0] === "undefined" || !label[0]))) {
               label = href;
             }
+            if (href && /^https?:\/\//i.test(href)) return <InlineLink href={href}>{label}</InlineLink>;
             return (
               <a
                 href={href}

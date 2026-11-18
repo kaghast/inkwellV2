@@ -38,6 +38,7 @@ import NoteSplitView, { canSplitNote } from "@/components/NoteSplitView";
 import NoteAreasBar from "@/components/areas/NoteAreasBar";
 import { CustomFieldsForm, CustomFieldsView } from "@/components/CustomFieldsRenderer";
 import { formatDisplayDatetime, toDateTimeLocal } from "@/lib/datetime";
+import { useLinkTitleSync } from "@/lib/linkTitles";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -61,7 +62,7 @@ interface Props {
 }
 
 export default function NoteCard({
-  note,
+  note: noteProp,
   noteTypeMap = {},
   noteTypes = [],
   locationMap,
@@ -70,6 +71,16 @@ export default function NoteCard({
   onChanged,
   onLocationsChanged,
 }: Props) {
+  // Link titles fetched in the background are written into the note's markdown;
+  // the card shows that content right away instead of reloading the whole list.
+  const [linkedContent, setLinkedContent] = useState<{ base: string; content: string } | null>(null);
+  const note = React.useMemo(
+    () =>
+      linkedContent && linkedContent.base === noteProp.content
+        ? { ...noteProp, content: linkedContent.content }
+        : noteProp,
+    [noteProp, linkedContent]
+  );
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
@@ -91,6 +102,10 @@ export default function NoteCard({
 
   const isArchived = Boolean(note.archived);
   const isEncrypted = Boolean(note.is_encrypted);
+
+  useLinkTitleSync(note.note_id, note.content, !isArchived && !isEncrypted && !editing, (next) => {
+    setLinkedContent({ base: noteProp.content, content: next });
+  });
   const loc = note.location_id ? locationMap[note.location_id] : null;
   const currentType = (editing ? noteTypeMap[noteTypeId] : noteTypeMap[note.note_type_id || "type_plain"]) ||
     noteTypes.find((nt) => nt.type_id === (editing ? noteTypeId : (note.note_type_id || "type_plain")));

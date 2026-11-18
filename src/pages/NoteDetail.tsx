@@ -74,6 +74,7 @@ import NoteVersionsDialog from "@/components/NoteVersionsDialog";
 import EncryptNoteDialog from "@/components/EncryptNoteDialog";
 import { verifyPassword } from "@/lib/crypto";
 import { extractCommentsFromContent, embedCommentsIntoContent } from "@/lib/comments";
+import { useLinkTitleSync } from "@/lib/linkTitles";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -238,6 +239,17 @@ export default function NoteDetail() {
       }
     })();
   }, [id, navigate]);
+
+  // Write page titles of untitled links into the note's markdown ([Title](url))
+  useLinkTitleSync(
+    note?.note_id,
+    note?.content,
+    Boolean(note) && !note?.archived && !note?.is_encrypted && !editing,
+    (next) => {
+      setNote((prev) => (prev ? { ...prev, content: next } : prev));
+      setContent(next);
+    }
+  );
 
   // Compute backlinks and referenced notes
   const relatedNotes = useMemo(() => {

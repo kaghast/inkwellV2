@@ -129,6 +129,12 @@ body {
 .prose-paper pre code { background: transparent; padding: 0; }
 .prose-paper blockquote { border-left: 2px solid hsl(var(--accent-tag)); padding-left: 1rem; color: hsl(var(--muted-foreground)); margin: 0.75rem 0; }
 .prose-paper a { color: hsl(var(--accent-tag)); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; word-break: break-all; }
+/* Link preview cards / inline links: no underline on icons or card text */
+.prose-paper a.link-card { color: inherit; text-decoration: none; word-break: normal; }
+.prose-paper a.link-inline { text-decoration: none; word-break: normal; }
+.prose-paper a.link-inline .link-label { text-decoration: underline; text-underline-offset: 2px; }
+.link-favicon { background: transparent; }
+.dark .link-favicon { background: rgba(255, 255, 255, 0.9); padding: 1px; }
 .prose-paper hr { border: none; border-top: 1px solid hsl(var(--border)); margin: 1.5rem 0; }
 
 /* Modern note card */
