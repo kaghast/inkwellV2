@@ -2,6 +2,9 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import fs from "fs";
+import crypto from "crypto";
+import dns from "dns/promises";
+import net from "net";
 import express, { Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -25,38 +28,110 @@ const PORT = parseInt(process.env.PORT || "3000", 10);
 const HOST = process.env.HOST || "0.0.0.0";
 const isProduction = process.env.NODE_ENV === "production" || fs.existsSync(path.resolve(__dirname, "dist", "index.html"));
 
-const JWT_SECRET = process.env.JWT_SECRET || "inkwell_jwt_secret_key_2026";
+// Persistent storage directories for uploads and local data
+const DATA_DIR = process.env.DATA_DIR || path.resolve(process.cwd(), ".data");
+const UPLOADS_DIR = path.resolve(DATA_DIR, "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// JWT secret: never fall back to a hard-coded, publicly known value. If no
+// JWT_SECRET is configured, generate a random one once and persist it in the
+// data directory so sessions survive restarts.
+function resolveJwtSecret(): string {
+  const fromEnv = (process.env.JWT_SECRET || "").trim();
+  if (fromEnv) return fromEnv;
+  const secretFile = path.resolve(DATA_DIR, ".jwt_secret");
+  try {
+    if (fs.existsSync(secretFile)) {
+      const stored = fs.readFileSync(secretFile, "utf8").trim();
+      if (stored.length >= 32) return stored;
+    }
+    const generated = crypto.randomBytes(48).toString("hex");
+    fs.writeFileSync(secretFile, generated, { mode: 0o600 });
+    console.warn("[Auth] JWT_SECRET is not set; generated a random secret in the data directory.");
+    return generated;
+  } catch (e) {
+    console.warn("[Auth] Could not persist generated JWT secret; sessions will reset on restart.", e);
+    return crypto.randomBytes(48).toString("hex");
+  }
+}
+
+const JWT_SECRET = resolveJwtSecret();
 const ACCESS_TOKEN_MIN = 60 * 24; // 1 day
 const REFRESH_TOKEN_DAYS = 7;
 
-app.use(cors({
-  origin: true,
-  credentials: true,
-}));
+// Cookie SameSite policy. "lax" protects against CSRF; set COOKIE_SAMESITE=none
+// only when the frontend is served from a different site than the API.
+const COOKIE_SAMESITE: "lax" | "strict" | "none" = (() => {
+  const v = (process.env.COOKIE_SAMESITE || "lax").toLowerCase();
+  return v === "none" || v === "strict" ? v : "lax";
+})();
 
-// Fallback manual CORS header handler for all requests including preflights
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-Session-ID");
+app.disable("x-powered-by");
+
+// CORS: only same-origin requests and explicitly allow-listed origins
+// (comma separated CORS_ORIGINS) may make credentialed cross-origin calls.
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
+function isAllowedOrigin(origin: string | undefined, req: Request): boolean {
+  if (!origin) return true;
+  if (CORS_ORIGINS.includes("*")) return false; // wildcard + credentials is never allowed
+  if (CORS_ORIGINS.includes(origin)) return true;
+  try {
+    const host = (req.headers["x-forwarded-host"] as string) || req.headers.host || "";
+    return new URL(origin).host === host.split(",")[0].trim();
+  } catch {
+    return false;
   }
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
+}
+
+app.use(
+  cors((req, cb) => {
+    const origin = req.headers.origin;
+    const allowed = isAllowedOrigin(origin, req as Request);
+    cb(null, {
+      origin: allowed ? origin || false : false,
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-Session-ID"],
+    });
+  })
+);
+
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   next();
 });
 
 app.use(express.json({ limit: "25mb" }));
 app.use(cookieParser());
 
-// Persistent storage directories for uploads and local data
-const DATA_DIR = process.env.DATA_DIR || path.resolve(process.cwd(), ".data");
-const UPLOADS_DIR = path.resolve(DATA_DIR, "uploads");
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// JSON.stringify output that is safe to embed inside an inline <script>.
+function jsonForScript(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .split(String.fromCharCode(0x2028)).join("\\u2028")
+    .split(String.fromCharCode(0x2029)).join("\\u2029");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // Multer in-memory storage for file uploads
@@ -66,7 +141,8 @@ const upload = multer({
 });
 
 function genId(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).substring(2, 10)}${Date.now().toString(36).substring(4)}`;
+  // Cryptographically random IDs: some IDs (e.g. file IDs) act as unguessable URLs.
+  return `${prefix}_${crypto.randomBytes(8).toString("hex")}${Date.now().toString(36).substring(4)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -331,7 +407,7 @@ function setAuthCookies(res: Response, accessToken: string, refreshToken: string
   const cookieOpts = {
     httpOnly: true,
     secure: true,
-    sameSite: "none" as const,
+    sameSite: COOKIE_SAMESITE,
     path: "/",
   };
   res.cookie("access_token", accessToken, { ...cookieOpts, maxAge: ACCESS_TOKEN_MIN * 60 * 1000 });
@@ -342,7 +418,7 @@ function clearAuthCookies(res: Response) {
   const cookieOpts = {
     httpOnly: true,
     secure: true,
-    sameSite: "none" as const,
+    sameSite: COOKIE_SAMESITE,
     path: "/",
     maxAge: 0,
   };
@@ -357,11 +433,20 @@ function clearAuthCookies(res: Response) {
 async function seedInitialData() {
   try {
     const adminEmail = (process.env.ADMIN_EMAIL || "admin@inkwell.app").toLowerCase();
-    const adminPass = process.env.ADMIN_PASSWORD || "admin12345";
     const adminId = "user_admin_inkwell";
 
     const existing = await db.select().from(users).where(eq(users.userId, adminId)).limit(1);
     if (existing.length === 0) {
+      // Never seed a publicly known default password in production.
+      let adminPass = process.env.ADMIN_PASSWORD || "";
+      if (!adminPass) {
+        if (process.env.NODE_ENV === "production") {
+          adminPass = crypto.randomBytes(12).toString("base64url");
+          console.warn(`[Seed] ADMIN_PASSWORD not set. Generated one-time admin password for ${adminEmail}: ${adminPass}`);
+        } else {
+          adminPass = "admin12345";
+        }
+      }
       await db.insert(users).values({
         userId: adminId,
         email: adminEmail,
@@ -457,7 +542,7 @@ async function authMiddleware(req: AuthRequest, res: Response, next: NextFunctio
           res.cookie("access_token", newAccessToken, {
             httpOnly: true,
             secure: true,
-            sameSite: "none",
+            sameSite: COOKIE_SAMESITE,
             maxAge: ACCESS_TOKEN_MIN * 60 * 1000,
             path: "/",
           });
@@ -827,7 +912,9 @@ api.get("/ai/semantic-search", authMiddleware, async (req: AuthRequest, res: Res
       const textMatches = await db.select().from(notes).where(
         and(
           eq(notes.userId, userId),
-          sql`${notes.content} ILIKE ${`%${q}%`} OR ${notes.title} ILIKE ${`%${q}%`}`
+          // Parenthesised so the OR cannot escape the user_id filter
+          // (otherwise title matches from other users' notes would leak).
+          sql`(${notes.content} ILIKE ${`%${q}%`} OR ${notes.title} ILIKE ${`%${q}%`})`
         )
       );
       return res.json(textMatches);
@@ -923,13 +1010,13 @@ api.post("/auth/login", async (req, res) => {
       return res.status(401).json({ detail: "Geçersiz e-posta veya şifre" });
     }
 
-    // If account was created with Google and hasn't set a local password yet,
-    // automatically save this password as their password so they can log in normally!
+    // Accounts without a local password (e.g. created via Google) must sign in
+    // with their provider. Setting a password here would let anyone who knows
+    // the e-mail address take over the account.
     if (!user.passwordHash) {
-      const newHash = bcrypt.hashSync(String(password), 10);
-      await db.update(users).set({ passwordHash: newHash }).where(eq(users.userId, user.userId));
-      user.passwordHash = newHash;
-    } else if (!bcrypt.compareSync(String(password), user.passwordHash)) {
+      return res.status(401).json({ detail: "Bu hesap Google ile oluşturulmuş. Lütfen Google ile giriş yapın." });
+    }
+    if (!bcrypt.compareSync(String(password), user.passwordHash)) {
       return res.status(401).json({ detail: "Geçersiz e-posta veya şifre" });
     }
 
@@ -996,9 +1083,10 @@ api.post("/auth/google/session", async (req, res) => {
     console.warn("Emergent auth proxy fetch failed:", (err as Error).message);
   }
 
+  // Do not mint a session for an unverified session id: without a verified
+  // e-mail from the auth provider there is no identity to sign in as.
   if (!email) {
-    email = `google_user_${sessionId.slice(0, 8)}@emergent.sh`;
-    name = "Google User";
+    return res.status(401).json({ detail: "Google oturumu doğrulanamadı" });
   }
 
   try {
@@ -1073,13 +1161,13 @@ async function handleGoogleOAuthCallback(req: Request, res: Response) {
         <body>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(String(error))} }, '*');
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${jsonForScript(String(error))} }, window.location.origin);
               window.close();
             } else {
-              window.location.href = '/login?error=' + encodeURIComponent(${JSON.stringify(String(error))});
+              window.location.href = '/login?error=' + encodeURIComponent(${jsonForScript(String(error))});
             }
           </script>
-          <p>Giriş iptal edildi veya bir hata oluştu: ${String(error)}</p>
+          <p>Giriş iptal edildi veya bir hata oluştu: ${escapeHtml(error)}</p>
         </body>
       </html>
     `);
@@ -1177,9 +1265,10 @@ async function handleGoogleOAuthCallback(req: Request, res: Response) {
             <p style="font-size: 18px; color: #333;">Google ile giriş başarılı. Yönlendiriliyorsunuz...</p>
           </div>
           <script>
-            const user = ${JSON.stringify(userOutWithToken)};
+            const user = ${jsonForScript(userOutWithToken)};
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user }, '*');
+              // Only deliver the token to a window on our own origin.
+              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user }, window.location.origin);
               window.close();
             } else {
               window.location.href = '/';
@@ -1197,13 +1286,13 @@ async function handleGoogleOAuthCallback(req: Request, res: Response) {
         <body>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(errMsg)} }, '*');
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${jsonForScript(String(errMsg))} }, window.location.origin);
               window.close();
             } else {
-              window.location.href = '/login?error=' + encodeURIComponent(${JSON.stringify(errMsg)});
+              window.location.href = '/login?error=' + encodeURIComponent(${jsonForScript(String(errMsg))});
             }
           </script>
-          <p>Google ile giriş yapılırken bir hata oluştu: ${errMsg}</p>
+          <p>Google ile giriş yapılırken bir hata oluştu: ${escapeHtml(errMsg)}</p>
         </body>
       </html>
     `);
@@ -2570,10 +2659,10 @@ api.put("/tags/:tag_id", authMiddleware, async (req: AuthRequest, res: Response)
 
         const oldName = currentTag.name;
         const userNotes = await db.select().from(notes).where(eq(notes.userId, userId));
-        const regex = new RegExp(`(?<!\\S)#${oldName}(?!\\w)`, "gui");
+        const regex = new RegExp(`(?<!\\S)#${escapeRegExp(oldName)}(?!\\w)`, "gui");
         for (const n of userNotes) {
           if (n.tags && n.tags.includes(oldName)) {
-            const newContent = n.content.replace(regex, `#${newName}`);
+            const newContent = n.content.replace(regex, () => `#${newName}`);
             const newTags = n.tags.map((t) => (t === oldName ? newName : t));
             await db.update(notes).set({ content: newContent, tags: newTags, updatedAt: new Date() }).where(eq(notes.noteId, n.noteId));
           }
@@ -2659,10 +2748,10 @@ api.put("/people/:person_id", authMiddleware, async (req: AuthRequest, res: Resp
 
         const oldName = currentPerson.name;
         const userNotes = await db.select().from(notes).where(eq(notes.userId, userId));
-        const regex = new RegExp(`(?<!\\S)@${oldName}(?!\\w)`, "gui");
+        const regex = new RegExp(`(?<!\\S)@${escapeRegExp(oldName)}(?!\\w)`, "gui");
         for (const n of userNotes) {
           if (n.people && n.people.includes(oldName)) {
-            const newContent = n.content.replace(regex, `@${newName}`);
+            const newContent = n.content.replace(regex, () => `@${newName}`);
             const newPeople = n.people.map((p) => (p === oldName ? newName : p));
             await db.update(notes).set({ content: newContent, people: newPeople, updatedAt: new Date() }).where(eq(notes.noteId, n.noteId));
           }
@@ -3024,6 +3113,15 @@ api.delete("/phrases/:phrase_id", authMiddleware, async (req: AuthRequest, res: 
 // ---------------------------------------------------------------------------
 // Geocode (Photon/OSM proxy)
 // ---------------------------------------------------------------------------
+const CACHE_MAX_ENTRIES = 500;
+function cacheSet<V>(cache: Map<string, V>, key: string, value: V) {
+  if (cache.size >= CACHE_MAX_ENTRIES && !cache.has(key)) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, value);
+}
+
 const geocodeCache = new Map<string, { timestamp: number; data: any }>();
 const GEOCODE_TTL = 10 * 60 * 1000; // 10 min
 
@@ -3076,7 +3174,7 @@ api.get("/geocode", authMiddleware, async (req: AuthRequest, res: Response) => {
       })
       .filter(Boolean);
 
-    geocodeCache.set(cacheKey, { timestamp: Date.now(), data: out });
+    cacheSet(geocodeCache, cacheKey, { timestamp: Date.now(), data: out });
     res.json(out);
   } catch (err) {
     console.warn("Geocode proxy failed:", (err as Error).message);
@@ -3099,9 +3197,9 @@ const handleImageUpload = async (req: AuthRequest, res: Response) => {
   }
 
   // Support base64 upload in body if sent as JSON
-  if (!file && req.body && req.body.dataBase64) {
+  if (!file && req.body && typeof req.body.dataBase64 === "string" && req.body.dataBase64) {
     const fileId = genId("file");
-    const mime = req.body.contentType || "image/png";
+    const mime = typeof req.body.contentType === "string" ? req.body.contentType : "image/png";
     const buffer = Buffer.from(req.body.dataBase64.replace(/^data:image\/\w+;base64,/, ""), "base64");
     try {
       // 1. Save to database for relational backup
@@ -3193,41 +3291,55 @@ api.post(
   handleImageUpload
 );
 
+// Only these types are rendered inline; everything else (HTML, SVG, JS, ...)
+// is forced to download so uploaded files cannot run script on our origin.
+const INLINE_SAFE_TYPES = /^(image\/(png|jpe?g|gif|webp|avif|bmp|x-icon)|application\/pdf|audio\/[\w.+-]+|video\/[\w.+-]+|text\/plain)$/i;
+const FILE_ID_RE = /^file_[a-z0-9]+$/i;
+
+function setFileResponseHeaders(res: Response, contentType: string, filename: string) {
+  const ct = (contentType || "application/octet-stream").split(";")[0].trim().toLowerCase();
+  const inline = INLINE_SAFE_TYPES.test(ct);
+  res.setHeader("Content-Type", inline ? ct : "application/octet-stream");
+  res.setHeader(
+    "Content-Disposition",
+    `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(filename)}`
+  );
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox");
+  res.setHeader("Cache-Control", "private, max-age=86400, immutable");
+}
+
 api.get("/files/:file_id", async (req: Request, res: Response) => {
   const fileId = req.params.file_id;
+  // Reject anything that is not a generated file id (prevents ../ path traversal).
+  if (!FILE_ID_RE.test(fileId)) {
+    return res.status(404).json({ detail: "File not found" });
+  }
   try {
     const diskPath = path.resolve(UPLOADS_DIR, fileId);
-    
-    // Check if file is directly available on persistent volume
-    if (fs.existsSync(diskPath)) {
-      const found = await db.select().from(files).where(and(eq(files.fileId, fileId), eq(files.isDeleted, false))).limit(1);
-      const contentType = found[0]?.contentType || "application/octet-stream";
-      const filename = found[0]?.originalFilename || fileId;
-      res.setHeader("Content-Type", contentType);
-      res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(filename)}"`);
-      res.setHeader("Cache-Control", "public, max-age=86400, immutable");
-      return res.sendFile(diskPath);
+    if (path.dirname(diskPath) !== UPLOADS_DIR) {
+      return res.status(404).json({ detail: "File not found" });
     }
 
-    // Fallback: Read from database and populate persistent disk cache
     const found = await db.select().from(files).where(and(eq(files.fileId, fileId), eq(files.isDeleted, false))).limit(1);
     if (found.length === 0) {
       return res.status(404).json({ detail: "File not found" });
     }
     const file = found[0];
-    const buffer = Buffer.from(file.dataBase64, "base64");
+    setFileResponseHeaders(res, file.contentType, file.originalFilename || fileId);
 
+    // Serve from persistent volume when available
+    if (fs.existsSync(diskPath)) {
+      return res.sendFile(diskPath);
+    }
+
+    // Fallback: Read from database and populate persistent disk cache
+    const buffer = Buffer.from(file.dataBase64, "base64");
     try {
       fs.writeFileSync(diskPath, buffer);
     } catch {
       /* ignore */
     }
-
-    const contentType = file.contentType || "application/octet-stream";
-    const filename = file.originalFilename || fileId;
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(filename)}"`);
-    res.setHeader("Cache-Control", "public, max-age=86400, immutable");
     res.send(buffer);
   } catch (err: any) {
     res.status(500).json({ detail: "Dosya okunamadı", error: err.message });
@@ -3240,9 +3352,71 @@ api.get("/files/:file_id", async (req: Request, res: Response) => {
 const linkCache = new Map<string, { timestamp: number; data: any }>();
 const LINK_TTL = 30 * 60 * 1000;
 
+// SSRF guard: link previews may only reach public internet hosts.
+function isPrivateAddress(ip: string): boolean {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split(".").map(Number);
+    return (
+      a === 0 || a === 10 || a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      a >= 224
+    );
+  }
+  const v6 = ip.toLowerCase();
+  if (v6.startsWith("::ffff:")) return isPrivateAddress(v6.slice(7));
+  return (
+    v6 === "::" || v6 === "::1" ||
+    v6.startsWith("fc") || v6.startsWith("fd") ||
+    v6.startsWith("fe8") || v6.startsWith("fe9") || v6.startsWith("fea") || v6.startsWith("feb") ||
+    v6.startsWith("ff")
+  );
+}
+
+async function assertPublicHttpUrl(raw: string): Promise<URL> {
+  const u = new URL(raw);
+  if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("Unsupported protocol");
+  if (u.username || u.password) throw new Error("Credentials in URL not allowed");
+  const hostname = u.hostname.replace(/^\[|\]$/g, "");
+  const addrs = net.isIP(hostname)
+    ? [{ address: hostname }]
+    : await dns.lookup(hostname, { all: true, verbatim: true });
+  if (addrs.length === 0 || addrs.some((a) => isPrivateAddress(a.address))) {
+    throw new Error("Host not allowed");
+  }
+  return u;
+}
+
+async function fetchPublicHtml(startUrl: string): Promise<string> {
+  let current = startUrl;
+  for (let hop = 0; hop <= 5; hop++) {
+    await assertPublicHttpUrl(current);
+    const response = await axios.get(current, {
+      timeout: 6000,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      maxRedirects: 0, // redirects are followed manually so each hop is re-validated
+      maxContentLength: 2 * 1024 * 1024,
+      responseType: "text",
+      validateStatus: (s) => s >= 200 && s < 400,
+    });
+    if (response.status >= 300 && response.headers.location) {
+      current = new URL(String(response.headers.location), current).toString();
+      continue;
+    }
+    return typeof response.data === "string" ? response.data : "";
+  }
+  throw new Error("Too many redirects");
+}
+
 api.get("/link-preview", authMiddleware, async (req: AuthRequest, res: Response) => {
   const url = String(req.query.url || "").trim();
-  if (!url || !url.startsWith("http")) {
+  if (!url || !/^https?:\/\//i.test(url)) {
     return res.status(400).json({ detail: "Valid HTTP(S) URL is required" });
   }
 
@@ -3252,14 +3426,7 @@ api.get("/link-preview", authMiddleware, async (req: AuthRequest, res: Response)
   }
 
   try {
-    const response = await axios.get(url, {
-      timeout: 6000,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-      maxRedirects: 5,
-    });
+    const response = { data: await fetchPublicHtml(url) };
 
     const html = response.data;
     const $ = cheerio.load(typeof html === "string" ? html : "");
@@ -3301,7 +3468,7 @@ api.get("/link-preview", authMiddleware, async (req: AuthRequest, res: Response)
       site_name: siteName.trim(),
     };
 
-    linkCache.set(url, { timestamp: Date.now(), data });
+    cacheSet(linkCache, url, { timestamp: Date.now(), data });
     return res.json(data);
   } catch (err: any) {
     try {

@@ -12,9 +12,13 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - HOST=0.0.0.0
-      - JWT_SECRET=${JWT_SECRET:-inkwell_jwt_secret_key_2026}
+      # Leave unset to auto-generate a random secret persisted in the data volume
+      - JWT_SECRET=${JWT_SECRET:-}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@inkwell.app}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin12345}
+      # Leave unset to generate a one-time random admin password (printed in logs)
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # Comma separated extra origins allowed for credentialed CORS requests
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
     volumes:
       - inkwell_data:/app/.data
 
