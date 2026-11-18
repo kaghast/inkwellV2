@@ -216,6 +216,19 @@ export async function initDatabaseSchema() {
       fired_at TIMESTAMP,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS areas (
+      area_id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+      parent_id TEXT,
+      name TEXT NOT NULL,
+      description TEXT,
+      color TEXT,
+      order_index DOUBLE PRECISION NOT NULL DEFAULT 0,
+      archived BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS area_user_idx ON areas(user_id);
     CREATE TABLE IF NOT EXISTS files (
       file_id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
@@ -253,6 +266,11 @@ export async function initDatabaseSchema() {
         await global._pgliteClient.exec(`ALTER TABLE notes ALTER COLUMN embedding TYPE TEXT;`);
       } catch {}
       try {
+        await global._pgliteClient.exec(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS area_ids JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+      } catch (e) {
+        console.warn('Add notes.area_ids note:', e);
+      }
+      try {
         await global._pgliteClient.exec(seedSystemTypes);
       } catch (e) {
         console.warn('Seed note types note:', e);
@@ -267,6 +285,11 @@ export async function initDatabaseSchema() {
         await db.execute(sql.raw(`ALTER TABLE note_versions ADD COLUMN IF NOT EXISTS password_hash TEXT;`));
         await db.execute(sql.raw(`ALTER TABLE notes ALTER COLUMN embedding TYPE TEXT;`));
       } catch {}
+      try {
+        await db.execute(sql.raw(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS area_ids JSONB NOT NULL DEFAULT '[]'::jsonb;`));
+      } catch (e) {
+        console.warn('Add notes.area_ids note:', e);
+      }
       try {
         await db.execute(sql.raw(seedSystemTypes));
       } catch (e) {

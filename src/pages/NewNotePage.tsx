@@ -7,6 +7,9 @@ import DrawingEditor from "@/components/drawing/DrawingEditor";
 import OutlineEditor from "@/components/outline/OutlineEditor";
 import MindmapEditor from "@/components/mindmap/MindmapEditor";
 import LocationPicker from "@/components/LocationPicker";
+import AreaPicker from "@/components/areas/AreaPicker";
+import { AreaChips } from "@/components/areas/NoteAreasBar";
+import { fetchAreas } from "@/lib/areas";
 import { CustomFieldsForm } from "@/components/CustomFieldsRenderer";
 import EncryptNoteDialog from "@/components/EncryptNoteDialog";
 import { toDateTimeLocal } from "@/lib/datetime";
@@ -28,9 +31,10 @@ import {
   Maximize2,
   Minimize2,
   Sparkles,
+  FolderTree,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Note, LocationItem, NoteType, Category } from "@/types";
+import type { Note, LocationItem, NoteType, Category, Area } from "@/types";
 
 export type ContentMode = "markdown" | "drawing" | "outline" | "mindmap";
 
@@ -50,6 +54,8 @@ export default function NewNotePage() {
   const [noteTypeId, setNoteTypeId] = useState<string>("type_plain");
   const [customFields, setCustomFields] = useState<Record<string, any>>({});
   const [picker, setPicker] = useState(false);
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [areaIds, setAreaIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [fullFocus, setFullFocus] = useState(false);
   const [encryptOpen, setEncryptOpen] = useState(false);
@@ -75,6 +81,7 @@ export default function NewNotePage() {
       }
     }
     loadAux();
+    fetchAreas().then(setAreas).catch(() => setAreas([]));
   }, []);
 
   // Keyboard shortcut: Esc to exit full focus, Ctrl+S to save and continue editing, Ctrl+Enter to save & exit
@@ -93,7 +100,7 @@ export default function NewNotePage() {
     };
     window.addEventListener("keydown", handleKey, true);
     return () => window.removeEventListener("keydown", handleKey, true);
-  }, [fullFocus, title, content, dateTime, locationId, categoryId, noteTypeId, customFields, contentMode, isEncrypted, passwordHash, savedNoteId]);
+  }, [fullFocus, title, content, dateTime, locationId, categoryId, noteTypeId, customFields, contentMode, isEncrypted, passwordHash, savedNoteId, areaIds]);
 
   const currentType = noteTypes.find((t) => t.type_id === noteTypeId);
 
@@ -118,6 +125,7 @@ export default function NewNotePage() {
         },
         is_encrypted: isEncrypted,
         password_hash: passwordHash,
+        area_ids: areaIds,
       };
 
       if (savedNoteId) {
@@ -376,6 +384,27 @@ export default function NewNotePage() {
                 <MapPin className="w-3.5 h-3.5 mr-1 text-muted-foreground" />
                 <span>{loc ? loc.name : "Konum Ekle"}</span>
               </Button>
+
+              {/* Knowledge areas (Alanlar) */}
+              <AreaChips areas={areas} value={areaIds} onRemove={(id) => setAreaIds((prev) => prev.filter((x) => x !== id))} />
+              <AreaPicker
+                areas={areas}
+                value={areaIds}
+                onChange={setAreaIds}
+                onAreaCreated={(a) => setAreas((prev) => [...prev, a])}
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs bg-background rounded-lg border-border cursor-pointer text-muted-foreground hover:text-foreground"
+                    data-testid="new-note-areas-btn"
+                  >
+                    <FolderTree className="w-3.5 h-3.5 mr-1 text-muted-foreground" />
+                    <span>{areaIds.length === 0 ? "Alana Bağla" : "Alan Ekle"}</span>
+                  </Button>
+                }
+              />
             </div>
 
             {/* Custom Fields if Note Type has fields */}

@@ -147,6 +147,7 @@ export interface Note {
   location_id?: string | null;
   note_type_id?: string | null;
   custom_fields?: Record<string, any>;
+  area_ids?: string[];
   pinned: boolean;
   archived?: boolean;
   is_encrypted?: boolean;
@@ -174,4 +175,20 @@ export interface NoteVersion {
 
 export interface CalendarCounts {
   [date: string]: number;
+}
+
+/** Knowledge area (Alan). parent_id === null means a main area. */
+export interface Area {
+  area_id: string;
+  user_id: string;
+  parent_id: string | null;
+  name: string;
+  description: string;
+  color: string | null;
+  order_index: number;
+  archived: boolean;
+  /** Notes linked directly to this area (not including sub-areas). */
+  note_count: number;
+  created_at: string;
+  updated_at: string;
 }

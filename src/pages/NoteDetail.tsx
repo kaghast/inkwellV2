@@ -5,6 +5,7 @@ import AppMenubar from "@/components/AppMenubar";
 import MarkdownEditor from "@/components/MarkdownEditor";
 import MarkdownView, { toggleTaskInMarkdown } from "@/components/MarkdownView";
 import MiniMap from "@/components/MiniMap";
+import NoteAreasBar from "@/components/areas/NoteAreasBar";
 import LocationPicker from "@/components/LocationPicker";
 import { CustomFieldsForm, CustomFieldsView } from "@/components/CustomFieldsRenderer";
 import { formatDisplayDatetime, toDateTimeLocal } from "@/lib/datetime";
@@ -1182,6 +1183,13 @@ export default function NoteDetail() {
               </div>
             ) : (
               <>
+                {/* Knowledge areas (Alanlar) — editable without entering edit mode */}
+                <NoteAreasBar
+                  noteId={note.note_id}
+                  value={note.area_ids || []}
+                  onChange={(ids) => setNote((prev) => (prev ? { ...prev, area_ids: ids } : prev))}
+                />
+
                 {/* Custom fields view in read mode */}
                 {currentType && currentType.fields && currentType.fields.length > 0 && (
                   <CustomFieldsView fields={currentType.fields} values={note.custom_fields} />

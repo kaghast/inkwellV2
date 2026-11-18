@@ -81,7 +81,7 @@ export default function AppMenubar({
       testId: "nav-all-notes",
     },
     {
-      label: "Ağ Görünümü",
+      label: "Alan Haritası",
       path: "/graph",
       icon: Network,
       testId: "nav-graph",

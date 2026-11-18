@@ -207,3 +207,20 @@ html { transition: background-color 0.2s ease; }
 @layer base {
   [data-debug-wrapper="true"] { display: contents !important; }
 }
+
+/* Area mindmap (Alan Haritası) */
+.area-node {
+  transition: transform 380ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 200ms ease;
+  animation: area-node-in 260ms ease-out;
+}
+.area-edge {
+  transition: d 380ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 200ms ease;
+}
+.area-node:hover .area-circle { filter: brightness(1.08); }
+.area-node:focus-visible .area-circle { stroke: hsl(var(--ring)); stroke-width: 3.5; }
+@keyframes area-node-in {
+  from { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .area-node, .area-edge { transition: none; animation: none; }
+}

@@ -17,7 +17,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { eq, and, or, desc, sql } from "drizzle-orm";
-import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions, stickers, phrases } from "./src/db/index";
+import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions, stickers, phrases, areas } from "./src/db/index";
 import { generateTextEmbedding } from "./src/lib/embeddings";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -571,7 +571,7 @@ api.get("/", (req, res) => {
 api.get("/backup/export", authMiddleware, async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
   try {
-    const [userNotes, userTags, userPeople, userLocations, userGroups, userCategories, userReminders, userNoteTypes] = await Promise.all([
+    const [userNotes, userTags, userPeople, userLocations, userGroups, userCategories, userReminders, userNoteTypes, userAreas] = await Promise.all([
       db.select().from(notes).where(eq(notes.userId, userId)).orderBy(desc(notes.createdAt)),
       db.select().from(tags).where(eq(tags.userId, userId)),
       db.select().from(people).where(eq(people.userId, userId)),
@@ -580,6 +580,7 @@ api.get("/backup/export", authMiddleware, async (req: AuthRequest, res: Response
       db.select().from(categories).where(eq(categories.userId, userId)),
       db.select().from(reminders).where(eq(reminders.userId, userId)),
       db.select().from(noteTypes).where(eq(noteTypes.userId, userId)),
+      db.select().from(areas).where(eq(areas.userId, userId)),
     ]);
 
     const backupPayload = {
@@ -600,8 +601,19 @@ api.get("/backup/export", authMiddleware, async (req: AuthRequest, res: Response
         categoriesCount: userCategories.length,
         remindersCount: userReminders.length,
         noteTypesCount: userNoteTypes.length,
+        areasCount: userAreas.length,
       },
       data: {
+        areas: (userAreas as AreaRow[]).map((a) => ({
+          area_id: a.areaId,
+          parent_id: a.parentId || null,
+          name: a.name,
+          description: a.description || null,
+          color: a.color || null,
+          order_index: a.orderIndex,
+          archived: Boolean(a.archived),
+          created_at: a.createdAt.toISOString(),
+        })),
         note_types: userNoteTypes.map((nt) => ({
           type_id: nt.typeId,
           name: nt.name,
@@ -624,6 +636,7 @@ api.get("/backup/export", authMiddleware, async (req: AuthRequest, res: Response
           location_id: n.locationId,
           note_type_id: n.noteTypeId || "type_plain",
           custom_fields: n.customFields || {},
+          area_ids: n.areaIds || [],
           pinned: n.pinned,
           created_at: n.createdAt.toISOString(),
           updated_at: n.updatedAt.toISOString(),
@@ -689,7 +702,7 @@ api.post("/backup/import", authMiddleware, async (req: AuthRequest, res: Respons
     return res.status(400).json({ detail: "Geçersiz yedekleme dosyası formatı" });
   }
 
-  const { notes: inNotes = [], tags: inTags = [], people: inPeople = [], locations: inLocations = [], groups: inGroups = [], categories: inCategories = [], reminders: inReminders = [], note_types: inNoteTypes = [] } = backup.data;
+  const { notes: inNotes = [], tags: inTags = [], people: inPeople = [], locations: inLocations = [], groups: inGroups = [], categories: inCategories = [], reminders: inReminders = [], note_types: inNoteTypes = [], areas: inAreas = [] } = backup.data;
 
   try {
     if (mode === "replace") {
@@ -702,6 +715,26 @@ api.post("/backup/import", authMiddleware, async (req: AuthRequest, res: Respons
       await db.delete(categories).where(eq(categories.userId, userId));
       await db.delete(itemGroups).where(eq(itemGroups.userId, userId));
       await db.delete(noteTypes).where(eq(noteTypes.userId, userId));
+      await db.delete(areas).where(eq(areas.userId, userId));
+    }
+
+    // 0a. Restore Areas (ids are kept so notes' area_ids stay valid)
+    for (const a of Array.isArray(inAreas) ? inAreas : []) {
+      if (!a || typeof a.name !== "string" || !a.name.trim()) continue;
+      const aId = typeof a.area_id === "string" && a.area_id ? a.area_id : genId("area");
+      const taken = await db.select().from(areas).where(eq(areas.areaId, aId)).limit(1);
+      if (taken.length === 0) {
+        await db.insert(areas).values({
+          areaId: aId,
+          userId,
+          parentId: typeof a.parent_id === "string" ? a.parent_id : null,
+          name: a.name.trim().slice(0, 80),
+          description: a.description || null,
+          color: a.color || null,
+          orderIndex: Number(a.order_index) || 0,
+          archived: Boolean(a.archived),
+        });
+      }
     }
 
     // 0. Restore Note Types
@@ -826,6 +859,7 @@ api.post("/backup/import", authMiddleware, async (req: AuthRequest, res: Respons
           locationId: n.location_id || null,
           noteTypeId: effectiveNoteTypeId,
           customFields: n.custom_fields || {},
+          areaIds: await sanitizeAreaIds(userId, n.area_ids),
           pinned: Boolean(n.pinned),
           embedding: embedding || undefined,
           createdAt: n.created_at ? new Date(n.created_at) : new Date(),
@@ -842,6 +876,7 @@ api.post("/backup/import", authMiddleware, async (req: AuthRequest, res: Respons
           people: notePeople,
           noteTypeId: effectiveNoteTypeId,
           customFields: n.custom_fields || existing[0].customFields || {},
+          ...(Array.isArray(n.area_ids) ? { areaIds: await sanitizeAreaIds(userId, n.area_ids) } : {}),
           updatedAt: new Date(),
         }).where(eq(notes.noteId, nId));
         importedNotesCount++;
@@ -1932,6 +1967,248 @@ api.delete("/categories/:category_id", authMiddleware, async (req: AuthRequest, 
 });
 
 // ---------------------------------------------------------------------------
+// Areas (Alanlar) Endpoints — hierarchical, archivable knowledge areas
+// ---------------------------------------------------------------------------
+type AreaRow = typeof areas.$inferSelect;
+
+function serializeArea(a: AreaRow, noteCount = 0) {
+  return {
+    area_id: a.areaId,
+    user_id: a.userId,
+    parent_id: a.parentId || null,
+    name: a.name,
+    description: a.description || "",
+    color: a.color || null,
+    order_index: a.orderIndex,
+    archived: Boolean(a.archived),
+    note_count: noteCount,
+    created_at: a.createdAt.toISOString(),
+    updated_at: a.updatedAt.toISOString(),
+  };
+}
+
+/** Keeps only ids of areas that exist and belong to this user (deduplicated). */
+async function sanitizeAreaIds(userId: string, raw: unknown): Promise<string[]> {
+  if (!Array.isArray(raw)) return [];
+  const wanted = Array.from(new Set(raw.filter((x): x is string => typeof x === "string" && x.length > 0)));
+  if (wanted.length === 0) return [];
+  const owned: AreaRow[] = await db.select().from(areas).where(eq(areas.userId, userId));
+  const ownedIds = new Set(owned.map((a) => a.areaId));
+  return wanted.filter((id) => ownedIds.has(id));
+}
+
+function collectDescendantIds(all: AreaRow[], rootId: string): string[] {
+  const out: string[] = [];
+  const stack = [rootId];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    for (const a of all) {
+      if (a.parentId === cur && !out.includes(a.areaId)) {
+        out.push(a.areaId);
+        stack.push(a.areaId);
+      }
+    }
+  }
+  return out;
+}
+
+function collectAncestorIds(all: AreaRow[], startId: string): string[] {
+  const byId = new Map(all.map((a) => [a.areaId, a]));
+  const out: string[] = [];
+  let cur = byId.get(startId)?.parentId || null;
+  while (cur && !out.includes(cur)) {
+    out.push(cur);
+    cur = byId.get(cur)?.parentId || null;
+  }
+  return out;
+}
+
+async function areaNoteCounts(userId: string): Promise<Record<string, number>> {
+  const rows: { areaIds: string[] | null }[] = await db
+    .select({ areaIds: notes.areaIds })
+    .from(notes)
+    .where(eq(notes.userId, userId));
+  const counts: Record<string, number> = {};
+  for (const r of rows) {
+    for (const id of r.areaIds || []) counts[id] = (counts[id] || 0) + 1;
+  }
+  return counts;
+}
+
+api.get("/areas", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  try {
+    const [rows, counts] = await Promise.all([
+      db.select().from(areas).where(eq(areas.userId, userId)),
+      areaNoteCounts(userId),
+    ]);
+    const list = (rows as AreaRow[])
+      .sort((a, b) => a.orderIndex - b.orderIndex || a.name.localeCompare(b.name, "tr"))
+      .map((a) => serializeArea(a, counts[a.areaId] || 0));
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ detail: "Alanlar alınamadı", error: err.message });
+  }
+});
+
+api.post("/areas", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const { name, parent_id, color, description } = req.body || {};
+  const cleanName = typeof name === "string" ? name.trim() : "";
+  if (!cleanName) {
+    return res.status(400).json({ detail: "Alan adı zorunludur" });
+  }
+  if (cleanName.length > 80) {
+    return res.status(400).json({ detail: "Alan adı en fazla 80 karakter olabilir" });
+  }
+  try {
+    const all: AreaRow[] = await db.select().from(areas).where(eq(areas.userId, userId));
+    let parentId: string | null = null;
+    if (parent_id) {
+      const parent = all.find((a) => a.areaId === parent_id);
+      if (!parent) return res.status(404).json({ detail: "Üst alan bulunamadı" });
+      parentId = parent.areaId;
+    }
+    const siblings = all.filter((a) => (a.parentId || null) === parentId);
+    const areaId = genId("area");
+    await db.insert(areas).values({
+      areaId,
+      userId,
+      parentId,
+      name: cleanName,
+      description: typeof description === "string" ? description.trim() || null : null,
+      color: typeof color === "string" && color ? color : null,
+      orderIndex: siblings.length,
+      archived: false,
+    });
+    const created = (await db.select().from(areas).where(eq(areas.areaId, areaId)).limit(1))[0];
+    res.json(serializeArea(created, 0));
+  } catch (err: any) {
+    res.status(500).json({ detail: "Alan oluşturulamadı", error: err.message });
+  }
+});
+
+api.put("/areas/:area_id", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const areaId = req.params.area_id;
+  const { name, color, description, parent_id, order_index } = req.body || {};
+  try {
+    const all: AreaRow[] = await db.select().from(areas).where(eq(areas.userId, userId));
+    const current = all.find((a) => a.areaId === areaId);
+    if (!current) return res.status(404).json({ detail: "Alan bulunamadı" });
+
+    const updateObj: any = { updatedAt: new Date() };
+    if (name !== undefined) {
+      const cleanName = String(name).trim();
+      if (!cleanName) return res.status(400).json({ detail: "Alan adı boş olamaz" });
+      if (cleanName.length > 80) return res.status(400).json({ detail: "Alan adı en fazla 80 karakter olabilir" });
+      updateObj.name = cleanName;
+    }
+    if (color !== undefined) updateObj.color = color || null;
+    if (description !== undefined) updateObj.description = description ? String(description).trim() : null;
+    if (order_index !== undefined && Number.isFinite(Number(order_index))) updateObj.orderIndex = Number(order_index);
+    if (parent_id !== undefined) {
+      const newParent = parent_id || null;
+      if (newParent) {
+        if (newParent === areaId || collectDescendantIds(all, areaId).includes(newParent)) {
+          return res.status(400).json({ detail: "Bir alan kendi alt alanının altına taşınamaz" });
+        }
+        if (!all.some((a) => a.areaId === newParent)) {
+          return res.status(404).json({ detail: "Üst alan bulunamadı" });
+        }
+      }
+      updateObj.parentId = newParent;
+    }
+
+    await db.update(areas).set(updateObj).where(and(eq(areas.areaId, areaId), eq(areas.userId, userId)));
+    const updated = (await db.select().from(areas).where(eq(areas.areaId, areaId)).limit(1))[0];
+    const counts = await areaNoteCounts(userId);
+    res.json(serializeArea(updated, counts[areaId] || 0));
+  } catch (err: any) {
+    res.status(500).json({ detail: "Alan güncellenemedi", error: err.message });
+  }
+});
+
+// Archive / unarchive. Archiving cascades to every sub-area; unarchiving also
+// restores the sub-areas and any archived parents so the area becomes visible.
+api.patch("/areas/:area_id/archive", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const areaId = req.params.area_id;
+  try {
+    const all: AreaRow[] = await db.select().from(areas).where(eq(areas.userId, userId));
+    const current = all.find((a) => a.areaId === areaId);
+    if (!current) return res.status(404).json({ detail: "Alan bulunamadı" });
+    const archived = req.body?.archived !== undefined ? Boolean(req.body.archived) : !current.archived;
+
+    const affected = [areaId, ...collectDescendantIds(all, areaId)];
+    if (!archived) affected.push(...collectAncestorIds(all, areaId));
+
+    for (const id of affected) {
+      await db.update(areas).set({ archived, updatedAt: new Date() }).where(and(eq(areas.areaId, id), eq(areas.userId, userId)));
+    }
+    res.json({ ok: true, archived, affected_ids: affected });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Alan arşiv durumu değiştirilemedi", error: err.message });
+  }
+});
+
+// Permanent delete is only allowed for archived areas. Sub-areas move up to the
+// deleted area's parent and notes simply lose the link (notes are never deleted).
+api.delete("/areas/:area_id", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const areaId = req.params.area_id;
+  try {
+    const found = await db.select().from(areas).where(and(eq(areas.areaId, areaId), eq(areas.userId, userId))).limit(1);
+    if (found.length === 0) return res.status(404).json({ detail: "Alan bulunamadı" });
+    const current: AreaRow = found[0];
+    if (!current.archived) {
+      return res.status(400).json({ detail: "Silmeden önce alanı arşivleyin" });
+    }
+
+    await db.update(areas).set({ parentId: current.parentId || null, updatedAt: new Date() })
+      .where(and(eq(areas.parentId, areaId), eq(areas.userId, userId)));
+
+    const linked = await db.select({ noteId: notes.noteId, areaIds: notes.areaIds }).from(notes).where(eq(notes.userId, userId));
+    for (const n of linked as { noteId: string; areaIds: string[] | null }[]) {
+      if (n.areaIds && n.areaIds.includes(areaId)) {
+        await db.update(notes).set({ areaIds: n.areaIds.filter((id) => id !== areaId) }).where(eq(notes.noteId, n.noteId));
+      }
+    }
+
+    await db.delete(areas).where(and(eq(areas.areaId, areaId), eq(areas.userId, userId)));
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Alan silinemedi", error: err.message });
+  }
+});
+
+// Link / unlink areas on a note without creating a new note version.
+// Allowed for archived notes too: it only changes organisation metadata.
+api.patch("/notes/:note_id/areas", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const identifier = req.params.note_id;
+  try {
+    const found = await db.select().from(notes).where(
+      and(or(eq(notes.noteId, identifier), eq(notes.slug, identifier)), eq(notes.userId, userId))
+    ).limit(1);
+    if (found.length === 0) return res.status(404).json({ detail: "Not bulunamadı" });
+    const current = found[0];
+
+    let next: string[] = Array.isArray(current.areaIds) ? [...current.areaIds] : [];
+    const { area_ids, add, remove } = req.body || {};
+    if (Array.isArray(area_ids)) next = area_ids;
+    if (typeof add === "string") next.push(add);
+    if (typeof remove === "string") next = next.filter((id) => id !== remove);
+    const clean = await sanitizeAreaIds(userId, next);
+
+    await db.update(notes).set({ areaIds: clean }).where(eq(notes.noteId, current.noteId));
+    res.json({ note_id: current.noteId, area_ids: clean });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Not alanları güncellenemedi", error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Notes Endpoints (Backed by Cloud SQL + Vector Embeddings)
 // ---------------------------------------------------------------------------
 api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
@@ -1970,6 +2247,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       locationId: location_id || null,
       noteTypeId: effectiveNoteTypeId,
       customFields: finalCustomFields,
+      areaIds: await sanitizeAreaIds(userId, req.body?.area_ids),
       pinned: false,
       archived: false,
       isEncrypted: Boolean(is_encrypted),
@@ -2002,6 +2280,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       location_id: inserted.locationId,
       note_type_id: inserted.noteTypeId || "type_plain",
       custom_fields: inserted.customFields || {},
+      area_ids: inserted.areaIds || [],
       pinned: inserted.pinned,
       archived: inserted.archived || false,
       is_encrypted: Boolean(inserted.isEncrypted),
@@ -2078,6 +2357,7 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       location_id: n.locationId,
       note_type_id: n.noteTypeId || "type_plain",
       custom_fields: n.customFields || {},
+      area_ids: n.areaIds || [],
       pinned: n.pinned,
       archived: n.archived || false,
       is_encrypted: Boolean(n.isEncrypted),
@@ -2096,6 +2376,11 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
 
     if (category_id && typeof category_id === "string") {
       filtered = filtered.filter((n) => n.category_id === category_id);
+    }
+
+    const areaFilter = req.query.area_id;
+    if (areaFilter && typeof areaFilter === "string") {
+      filtered = filtered.filter((n) => Array.isArray(n.area_ids) && n.area_ids.includes(areaFilter));
     }
 
     if (note_type_id && typeof note_type_id === "string") {
@@ -2251,6 +2536,7 @@ api.get("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       location_id: n.locationId,
       note_type_id: n.noteTypeId || "type_plain",
       custom_fields: n.customFields || {},
+      area_ids: n.areaIds || [],
       pinned: n.pinned,
       archived: n.archived || false,
       is_encrypted: Boolean(n.isEncrypted),
@@ -2332,6 +2618,9 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     if (archived !== undefined) {
       updateData.archived = Boolean(archived);
     }
+    if (req.body?.area_ids !== undefined) {
+      updateData.areaIds = await sanitizeAreaIds(userId, req.body.area_ids);
+    }
     if (is_encrypted !== undefined) {
       updateData.isEncrypted = Boolean(is_encrypted);
     }
@@ -2366,6 +2655,7 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       location_id: updated.locationId,
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
+      area_ids: updated.areaIds || [],
       pinned: updated.pinned,
       archived: updated.archived || false,
       is_encrypted: Boolean(updated.isEncrypted),
@@ -2501,6 +2791,7 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
       location_id: updated.locationId,
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
+      area_ids: updated.areaIds || [],
       pinned: updated.pinned,
       archived: updated.archived || false,
       is_encrypted: Boolean(updated.isEncrypted),
@@ -2548,6 +2839,7 @@ api.patch("/notes/:note_id/pin", authMiddleware, async (req: AuthRequest, res: R
       location_id: updated.locationId,
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
+      area_ids: updated.areaIds || [],
       pinned: updated.pinned,
       archived: updated.archived || false,
       created_at: updated.createdAt.toISOString(),
@@ -2598,6 +2890,7 @@ const handleArchiveToggle = async (req: AuthRequest, res: Response) => {
       location_id: updated.locationId,
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
+      area_ids: updated.areaIds || [],
       pinned: updated.pinned,
       archived: updated.archived || false,
       created_at: updated.createdAt.toISOString(),
