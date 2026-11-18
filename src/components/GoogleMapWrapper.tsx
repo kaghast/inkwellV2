@@ -63,26 +63,28 @@ function LeafletMapFallback({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
-  const [isDark, setIsDark] = useState(false);
 
-  useEffect(() => {
-    const checkDark = () => {
-      setIsDark(document.documentElement.classList.contains("dark"));
-    };
-    checkDark();
-    const observer = new MutationObserver(checkDark);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
-  }, []);
-
-  let tileUrl = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+  // Keyless tile sources only. CARTO basemaps now require an API key and serve
+  // "API KEY REQUIRED" placeholder tiles, so all street themes use OpenStreetMap
+  // and the look (dark / paper / muted) is applied with CSS filters in index.css.
+  const OSM_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+  const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>';
+  let tileUrl = OSM_URL;
+  let tileAttribution = OSM_ATTRIBUTION;
+  let tileClass = "";
   if (maskTheme === "satellite") {
     tileUrl = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-  } else if (maskTheme === "dark" || (maskTheme === "auto" && isDark)) {
-    tileUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+    tileAttribution = "Tiles &copy; Esri";
+    tileClass = "tile-satellite";
   } else if (maskTheme === "standard") {
-    tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+    tileClass = "tile-standard";
+  } else if (maskTheme === "paper" || maskTheme === "light") {
+    // "light" is shown in the UI as "Sıcak Parşömen" (warm parchment)
+    tileClass = "tile-paper";
+  } else if (maskTheme === "dark") {
+    tileClass = "tile-force-dark";
   }
+  // "auto" follows the app theme through the `.dark .leaflet-tile` rule.
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -96,12 +98,14 @@ function LeafletMapFallback({
       zoomControl: interactive,
       dragging: interactive,
       scrollWheelZoom: interactive,
-      attributionControl: false,
+      attributionControl: true,
     });
+    map.attributionControl.setPrefix(false);
 
     L.tileLayer(tileUrl, {
       maxZoom: 19,
-      subdomains: "abcd",
+      className: tileClass,
+      attribution: tileAttribution,
     }).addTo(map);
 
     if (onMapClick) {
@@ -139,7 +143,7 @@ function LeafletMapFallback({
       mapRef.current = null;
       markersLayerRef.current = null;
     };
-  }, [tileUrl, interactive]);
+  }, [tileUrl, tileClass, interactive]);
 
   useEffect(() => {
     if (mapRef.current && center && typeof center.lat === "number" && typeof center.lng === "number") {
@@ -260,8 +264,10 @@ function LeafletMapFallback({
   }, [locations, selectedLocationId, draggableMarker, currentLocation, onSelectLocation]);
 
   return (
-    <div className={`relative w-full h-full min-h-[350px] overflow-hidden ${className}`}>
-      <div ref={containerRef} style={{ width: "100%", height: "100%", minHeight: "350px", ...style }} className="w-full h-full" />
+    // Absolutely fill the (relative) parent: a percentage height does not resolve
+    // inside a flex-1 parent, which left the map stuck at its min-height.
+    <div className={`absolute inset-0 overflow-hidden ${className}`}>
+      <div ref={containerRef} style={{ position: "absolute", inset: 0, ...style }} />
     </div>
   );
 }
@@ -302,7 +308,7 @@ export default function GoogleMapWrapper(props: GoogleMapWrapperProps) {
   }
 
   return (
-    <div className={`relative w-full h-full min-h-[220px] rounded-xl overflow-hidden ${className}`}>
+    <div className={`absolute inset-0 rounded-xl overflow-hidden ${className}`}>
       <APIProvider
         apiKey={GOOGLE_MAPS_API_KEY}
         version="weekly"

@@ -37,11 +37,17 @@ PORT=3000
 HOST=0.0.0.0
 JWT_SECRET=your_secure_jwt_secret_here
 ADMIN_EMAIL=admin@inkwell.app
-ADMIN_PASSWORD=admin12345
+ADMIN_PASSWORD=change_me_to_a_strong_password
 GOOGLE_CLIENT_ID=your_google_client_id_here.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your_google_client_secret_here
 VITE_GOOGLE_CLIENT_ID=your_google_client_id_here.apps.googleusercontent.com
+# Opsiyonel: API'ye çerezli istek atabilecek ek origin'ler (virgülle ayrılmış)
+CORS_ORIGINS=
+# Opsiyonel: frontend farklı bir sitede barınıyorsa "none" yapın (varsayılan: lax)
+COOKIE_SAMESITE=lax
 ```
+
+> **Güvenlik notları:** `JWT_SECRET` boş bırakılırsa rastgele bir anahtar üretilip veri dizinine (`.data/.jwt_secret`) kaydedilir. Production'da `ADMIN_PASSWORD` verilmezse tek seferlik rastgele bir yönetici şifresi üretilir ve sunucu loglarına yazılır. `admin12345` varsayılanı yalnızca geliştirme ortamında kullanılır.
 
 ### 4. Adım: Google Cloud Console Yönlendirme Ayarları
 Coolify size bir alan adı (örneğin `https://inkwell.sizin-sunucunuz.com`) tanımladığında, Google Cloud Console > Credentials sayfasında ilgili OAuth Client ID'nize şu callback URL'ini ekleyin:

@@ -10,6 +10,7 @@ import AuthCallback from "@/pages/AuthCallback";
 import Dashboard from "@/pages/Dashboard";
 import AllNotes from "@/pages/AllNotes";
 import MapView from "@/pages/MapView";
+import AreaMapView from "@/pages/AreaMapView";
 import KanbanPage from "@/pages/KanbanPage";
 import GraphView from "@/pages/GraphView";
 import TimelinePage from "@/pages/TimelinePage";
@@ -32,7 +33,8 @@ function AppRoutes() {
       <Route path="/timeline" element={<ProtectedRoute><TimelinePage /></ProtectedRoute>} />
       <Route path="/all-notes" element={<ProtectedRoute><AllNotes /></ProtectedRoute>} />
       <Route path="/notes" element={<ProtectedRoute><AllNotes /></ProtectedRoute>} />
-      <Route path="/graph" element={<ProtectedRoute><GraphView /></ProtectedRoute>} />
+      <Route path="/graph" element={<ProtectedRoute><AreaMapView /></ProtectedRoute>} />
+      <Route path="/areas" element={<ProtectedRoute><AreaMapView /></ProtectedRoute>} />
       <Route path="/network" element={<ProtectedRoute><GraphView /></ProtectedRoute>} />
       <Route path="/map" element={<ProtectedRoute><MapView /></ProtectedRoute>} />
       <Route path="/kanban" element={<ProtectedRoute><KanbanPage /></ProtectedRoute>} />

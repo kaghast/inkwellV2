@@ -173,8 +173,19 @@ body {
 .leaflet-tile {
   filter: grayscale(0.6) contrast(0.95) brightness(0.98);
 }
-.dark .leaflet-tile {
+.dark .leaflet-tile,
+.leaflet-tile.tile-force-dark {
   filter: grayscale(0.85) invert(0.92) contrast(0.85) brightness(0.95);
+}
+.leaflet-tile.tile-paper,
+.dark .leaflet-tile.tile-paper {
+  filter: sepia(0.45) grayscale(0.25) contrast(0.95) brightness(1.02);
+}
+.leaflet-tile.tile-standard,
+.dark .leaflet-tile.tile-standard,
+.leaflet-tile.tile-satellite,
+.dark .leaflet-tile.tile-satellite {
+  filter: none;
 }
 
 /* Calendar custom */
@@ -195,4 +206,21 @@ html { transition: background-color 0.2s ease; }
 
 @layer base {
   [data-debug-wrapper="true"] { display: contents !important; }
+}
+
+/* Area mindmap (Alan Haritası) */
+.area-node {
+  transition: transform 380ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 200ms ease;
+  animation: area-node-in 260ms ease-out;
+}
+.area-edge {
+  transition: d 380ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 200ms ease;
+}
+.area-node:hover .area-circle { filter: brightness(1.08); }
+.area-node:focus-visible .area-circle { stroke: hsl(var(--ring)); stroke-width: 3.5; }
+@keyframes area-node-in {
+  from { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .area-node, .area-edge { transition: none; animation: none; }
 }

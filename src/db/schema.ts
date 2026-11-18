@@ -135,6 +135,8 @@ export const notes = pgTable(
     locationId: text('location_id').references(() => locations.locationId, { onDelete: 'set null' }),
     noteTypeId: text('note_type_id').references(() => noteTypes.typeId, { onDelete: 'set null' }),
     customFields: jsonb('custom_fields').$type<Record<string, any>>().default({}).notNull(),
+    // Knowledge areas (Alanlar) this note belongs to; a note can sit in many areas
+    areaIds: jsonb('area_ids').$type<string[]>().default([]).notNull(),
     pinned: boolean('pinned').default(false).notNull(),
     archived: boolean('archived').default(false).notNull(),
     isEncrypted: boolean('is_encrypted').default(false).notNull(),
@@ -279,3 +281,22 @@ export const notesRelations = relations(notes, ({ one, many }) => ({
   reminders: many(reminders),
   versions: many(noteVersions),
 }));
+
+// Knowledge areas (Alanlar): hierarchical, archivable buckets for notes.
+// parent_id = null means a main area; otherwise it is a sub-area.
+export const areas = pgTable(
+  'areas',
+  {
+    areaId: text('area_id').primaryKey(),
+    userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }).notNull(),
+    parentId: text('parent_id'),
+    name: text('name').notNull(),
+    description: text('description'),
+    color: text('color'),
+    orderIndex: doublePrecision('order_index').default(0).notNull(),
+    archived: boolean('archived').default(false).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [index('area_user_idx').on(table.userId)]
+);

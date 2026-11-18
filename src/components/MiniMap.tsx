@@ -21,11 +21,13 @@ export default function MiniMap({ lat, lng, height = 160 }: Props) {
       center: [lat, lng],
       zoom: 13,
       zoomControl: false,
-      attributionControl: false,
+      attributionControl: true,
     });
+    map.attributionControl.setPrefix(false);
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>',
     }).addTo(map);
 
     L.marker([lat, lng]).addTo(map);

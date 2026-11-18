@@ -2,6 +2,9 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import fs from "fs";
+import crypto from "crypto";
+import dns from "dns/promises";
+import net from "net";
 import express, { Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -14,7 +17,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { eq, and, or, desc, sql } from "drizzle-orm";
-import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions, stickers, phrases } from "./src/db/index";
+import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions, stickers, phrases, areas } from "./src/db/index";
 import { generateTextEmbedding } from "./src/lib/embeddings";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -25,38 +28,110 @@ const PORT = parseInt(process.env.PORT || "3000", 10);
 const HOST = process.env.HOST || "0.0.0.0";
 const isProduction = process.env.NODE_ENV === "production" || fs.existsSync(path.resolve(__dirname, "dist", "index.html"));
 
-const JWT_SECRET = process.env.JWT_SECRET || "inkwell_jwt_secret_key_2026";
+// Persistent storage directories for uploads and local data
+const DATA_DIR = process.env.DATA_DIR || path.resolve(process.cwd(), ".data");
+const UPLOADS_DIR = path.resolve(DATA_DIR, "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// JWT secret: never fall back to a hard-coded, publicly known value. If no
+// JWT_SECRET is configured, generate a random one once and persist it in the
+// data directory so sessions survive restarts.
+function resolveJwtSecret(): string {
+  const fromEnv = (process.env.JWT_SECRET || "").trim();
+  if (fromEnv) return fromEnv;
+  const secretFile = path.resolve(DATA_DIR, ".jwt_secret");
+  try {
+    if (fs.existsSync(secretFile)) {
+      const stored = fs.readFileSync(secretFile, "utf8").trim();
+      if (stored.length >= 32) return stored;
+    }
+    const generated = crypto.randomBytes(48).toString("hex");
+    fs.writeFileSync(secretFile, generated, { mode: 0o600 });
+    console.warn("[Auth] JWT_SECRET is not set; generated a random secret in the data directory.");
+    return generated;
+  } catch (e) {
+    console.warn("[Auth] Could not persist generated JWT secret; sessions will reset on restart.", e);
+    return crypto.randomBytes(48).toString("hex");
+  }
+}
+
+const JWT_SECRET = resolveJwtSecret();
 const ACCESS_TOKEN_MIN = 60 * 24; // 1 day
 const REFRESH_TOKEN_DAYS = 7;
 
-app.use(cors({
-  origin: true,
-  credentials: true,
-}));
+// Cookie SameSite policy. "lax" protects against CSRF; set COOKIE_SAMESITE=none
+// only when the frontend is served from a different site than the API.
+const COOKIE_SAMESITE: "lax" | "strict" | "none" = (() => {
+  const v = (process.env.COOKIE_SAMESITE || "lax").toLowerCase();
+  return v === "none" || v === "strict" ? v : "lax";
+})();
 
-// Fallback manual CORS header handler for all requests including preflights
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-Session-ID");
+app.disable("x-powered-by");
+
+// CORS: only same-origin requests and explicitly allow-listed origins
+// (comma separated CORS_ORIGINS) may make credentialed cross-origin calls.
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
+function isAllowedOrigin(origin: string | undefined, req: Request): boolean {
+  if (!origin) return true;
+  if (CORS_ORIGINS.includes("*")) return false; // wildcard + credentials is never allowed
+  if (CORS_ORIGINS.includes(origin)) return true;
+  try {
+    const host = (req.headers["x-forwarded-host"] as string) || req.headers.host || "";
+    return new URL(origin).host === host.split(",")[0].trim();
+  } catch {
+    return false;
   }
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
+}
+
+app.use(
+  cors((req, cb) => {
+    const origin = req.headers.origin;
+    const allowed = isAllowedOrigin(origin, req as Request);
+    cb(null, {
+      origin: allowed ? origin || false : false,
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-Session-ID"],
+    });
+  })
+);
+
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   next();
 });
 
 app.use(express.json({ limit: "25mb" }));
 app.use(cookieParser());
 
-// Persistent storage directories for uploads and local data
-const DATA_DIR = process.env.DATA_DIR || path.resolve(process.cwd(), ".data");
-const UPLOADS_DIR = path.resolve(DATA_DIR, "uploads");
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// JSON.stringify output that is safe to embed inside an inline <script>.
+function jsonForScript(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .split(String.fromCharCode(0x2028)).join("\\u2028")
+    .split(String.fromCharCode(0x2029)).join("\\u2029");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // Multer in-memory storage for file uploads
@@ -66,7 +141,8 @@ const upload = multer({
 });
 
 function genId(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).substring(2, 10)}${Date.now().toString(36).substring(4)}`;
+  // Cryptographically random IDs: some IDs (e.g. file IDs) act as unguessable URLs.
+  return `${prefix}_${crypto.randomBytes(8).toString("hex")}${Date.now().toString(36).substring(4)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -331,7 +407,7 @@ function setAuthCookies(res: Response, accessToken: string, refreshToken: string
   const cookieOpts = {
     httpOnly: true,
     secure: true,
-    sameSite: "none" as const,
+    sameSite: COOKIE_SAMESITE,
     path: "/",
   };
   res.cookie("access_token", accessToken, { ...cookieOpts, maxAge: ACCESS_TOKEN_MIN * 60 * 1000 });
@@ -342,7 +418,7 @@ function clearAuthCookies(res: Response) {
   const cookieOpts = {
     httpOnly: true,
     secure: true,
-    sameSite: "none" as const,
+    sameSite: COOKIE_SAMESITE,
     path: "/",
     maxAge: 0,
   };
@@ -357,11 +433,20 @@ function clearAuthCookies(res: Response) {
 async function seedInitialData() {
   try {
     const adminEmail = (process.env.ADMIN_EMAIL || "admin@inkwell.app").toLowerCase();
-    const adminPass = process.env.ADMIN_PASSWORD || "admin12345";
     const adminId = "user_admin_inkwell";
 
     const existing = await db.select().from(users).where(eq(users.userId, adminId)).limit(1);
     if (existing.length === 0) {
+      // Never seed a publicly known default password in production.
+      let adminPass = process.env.ADMIN_PASSWORD || "";
+      if (!adminPass) {
+        if (process.env.NODE_ENV === "production") {
+          adminPass = crypto.randomBytes(12).toString("base64url");
+          console.warn(`[Seed] ADMIN_PASSWORD not set. Generated one-time admin password for ${adminEmail}: ${adminPass}`);
+        } else {
+          adminPass = "admin12345";
+        }
+      }
       await db.insert(users).values({
         userId: adminId,
         email: adminEmail,
@@ -457,7 +542,7 @@ async function authMiddleware(req: AuthRequest, res: Response, next: NextFunctio
           res.cookie("access_token", newAccessToken, {
             httpOnly: true,
             secure: true,
-            sameSite: "none",
+            sameSite: COOKIE_SAMESITE,
             maxAge: ACCESS_TOKEN_MIN * 60 * 1000,
             path: "/",
           });
@@ -486,7 +571,7 @@ api.get("/", (req, res) => {
 api.get("/backup/export", authMiddleware, async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
   try {
-    const [userNotes, userTags, userPeople, userLocations, userGroups, userCategories, userReminders, userNoteTypes] = await Promise.all([
+    const [userNotes, userTags, userPeople, userLocations, userGroups, userCategories, userReminders, userNoteTypes, userAreas] = await Promise.all([
       db.select().from(notes).where(eq(notes.userId, userId)).orderBy(desc(notes.createdAt)),
       db.select().from(tags).where(eq(tags.userId, userId)),
       db.select().from(people).where(eq(people.userId, userId)),
@@ -495,6 +580,7 @@ api.get("/backup/export", authMiddleware, async (req: AuthRequest, res: Response
       db.select().from(categories).where(eq(categories.userId, userId)),
       db.select().from(reminders).where(eq(reminders.userId, userId)),
       db.select().from(noteTypes).where(eq(noteTypes.userId, userId)),
+      db.select().from(areas).where(eq(areas.userId, userId)),
     ]);
 
     const backupPayload = {
@@ -515,8 +601,19 @@ api.get("/backup/export", authMiddleware, async (req: AuthRequest, res: Response
         categoriesCount: userCategories.length,
         remindersCount: userReminders.length,
         noteTypesCount: userNoteTypes.length,
+        areasCount: userAreas.length,
       },
       data: {
+        areas: (userAreas as AreaRow[]).map((a) => ({
+          area_id: a.areaId,
+          parent_id: a.parentId || null,
+          name: a.name,
+          description: a.description || null,
+          color: a.color || null,
+          order_index: a.orderIndex,
+          archived: Boolean(a.archived),
+          created_at: a.createdAt.toISOString(),
+        })),
         note_types: userNoteTypes.map((nt) => ({
           type_id: nt.typeId,
           name: nt.name,
@@ -539,6 +636,7 @@ api.get("/backup/export", authMiddleware, async (req: AuthRequest, res: Response
           location_id: n.locationId,
           note_type_id: n.noteTypeId || "type_plain",
           custom_fields: n.customFields || {},
+          area_ids: n.areaIds || [],
           pinned: n.pinned,
           created_at: n.createdAt.toISOString(),
           updated_at: n.updatedAt.toISOString(),
@@ -604,7 +702,7 @@ api.post("/backup/import", authMiddleware, async (req: AuthRequest, res: Respons
     return res.status(400).json({ detail: "Geçersiz yedekleme dosyası formatı" });
   }
 
-  const { notes: inNotes = [], tags: inTags = [], people: inPeople = [], locations: inLocations = [], groups: inGroups = [], categories: inCategories = [], reminders: inReminders = [], note_types: inNoteTypes = [] } = backup.data;
+  const { notes: inNotes = [], tags: inTags = [], people: inPeople = [], locations: inLocations = [], groups: inGroups = [], categories: inCategories = [], reminders: inReminders = [], note_types: inNoteTypes = [], areas: inAreas = [] } = backup.data;
 
   try {
     if (mode === "replace") {
@@ -617,6 +715,26 @@ api.post("/backup/import", authMiddleware, async (req: AuthRequest, res: Respons
       await db.delete(categories).where(eq(categories.userId, userId));
       await db.delete(itemGroups).where(eq(itemGroups.userId, userId));
       await db.delete(noteTypes).where(eq(noteTypes.userId, userId));
+      await db.delete(areas).where(eq(areas.userId, userId));
+    }
+
+    // 0a. Restore Areas (ids are kept so notes' area_ids stay valid)
+    for (const a of Array.isArray(inAreas) ? inAreas : []) {
+      if (!a || typeof a.name !== "string" || !a.name.trim()) continue;
+      const aId = typeof a.area_id === "string" && a.area_id ? a.area_id : genId("area");
+      const taken = await db.select().from(areas).where(eq(areas.areaId, aId)).limit(1);
+      if (taken.length === 0) {
+        await db.insert(areas).values({
+          areaId: aId,
+          userId,
+          parentId: typeof a.parent_id === "string" ? a.parent_id : null,
+          name: a.name.trim().slice(0, 80),
+          description: a.description || null,
+          color: a.color || null,
+          orderIndex: Number(a.order_index) || 0,
+          archived: Boolean(a.archived),
+        });
+      }
     }
 
     // 0. Restore Note Types
@@ -741,6 +859,7 @@ api.post("/backup/import", authMiddleware, async (req: AuthRequest, res: Respons
           locationId: n.location_id || null,
           noteTypeId: effectiveNoteTypeId,
           customFields: n.custom_fields || {},
+          areaIds: await sanitizeAreaIds(userId, n.area_ids),
           pinned: Boolean(n.pinned),
           embedding: embedding || undefined,
           createdAt: n.created_at ? new Date(n.created_at) : new Date(),
@@ -757,6 +876,7 @@ api.post("/backup/import", authMiddleware, async (req: AuthRequest, res: Respons
           people: notePeople,
           noteTypeId: effectiveNoteTypeId,
           customFields: n.custom_fields || existing[0].customFields || {},
+          ...(Array.isArray(n.area_ids) ? { areaIds: await sanitizeAreaIds(userId, n.area_ids) } : {}),
           updatedAt: new Date(),
         }).where(eq(notes.noteId, nId));
         importedNotesCount++;
@@ -812,6 +932,32 @@ api.get("/ai/dataset", authMiddleware, async (req: AuthRequest, res: Response) =
   }
 });
 
+function parseEmbedding(raw: unknown): number[] | null {
+  let arr: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      arr = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const nums = arr.map(Number);
+  return nums.every((v) => Number.isFinite(v)) ? nums : null;
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  const len = Math.min(a.length, b.length);
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < len; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
 // Semantic Vector Search endpoint
 api.get("/ai/semantic-search", authMiddleware, async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
@@ -827,33 +973,40 @@ api.get("/ai/semantic-search", authMiddleware, async (req: AuthRequest, res: Res
       const textMatches = await db.select().from(notes).where(
         and(
           eq(notes.userId, userId),
-          sql`${notes.content} ILIKE ${`%${q}%`} OR ${notes.title} ILIKE ${`%${q}%`}`
+          // Parenthesised so the OR cannot escape the user_id filter
+          // (otherwise title matches from other users' notes would leak).
+          sql`(${notes.content} ILIKE ${`%${q}%`} OR ${notes.title} ILIKE ${`%${q}%`})`
         )
       );
       return res.json(textMatches);
     }
 
-    // Cosine similarity search using pgvector
-    const vectorStr = `[${queryEmbedding.join(",")}]`;
-    const results = await db.select({
-      note_id: notes.noteId,
-      user_id: notes.userId,
-      title: notes.title,
-      content: notes.content,
-      date: notes.date,
-      tags: notes.tags,
-      people: notes.people,
-      category_id: notes.categoryId,
-      location_id: notes.locationId,
-      pinned: notes.pinned,
-      created_at: notes.createdAt,
-      updated_at: notes.updatedAt,
-      similarity: sql<number>`1 - (${notes.embedding} <=> ${vectorStr}::vector)`,
-    })
-      .from(notes)
-      .where(eq(notes.userId, userId))
-      .orderBy(sql`${notes.embedding} <=> ${vectorStr}::vector`)
-      .limit(10);
+    // Cosine similarity computed in Node: the embedding column is stored as TEXT
+    // (see initDatabaseSchema), so the pgvector `<=>` operator is not available.
+    const userNotes = await db.select().from(notes).where(eq(notes.userId, userId));
+    const results = userNotes
+      .map((n: typeof notes.$inferSelect) => {
+        const vec = parseEmbedding(n.embedding);
+        if (!vec) return null;
+        return {
+          note_id: n.noteId,
+          user_id: n.userId,
+          title: n.title,
+          content: n.content,
+          date: n.date,
+          tags: n.tags,
+          people: n.people,
+          category_id: n.categoryId,
+          location_id: n.locationId,
+          pinned: n.pinned,
+          created_at: n.createdAt,
+          updated_at: n.updatedAt,
+          similarity: cosineSimilarity(queryEmbedding, vec),
+        };
+      })
+      .filter((r: any): r is NonNullable<typeof r> => r !== null)
+      .sort((a: any, b: any) => b.similarity - a.similarity)
+      .slice(0, 10);
 
     return res.json(results);
   } catch (err: any) {
@@ -923,13 +1076,13 @@ api.post("/auth/login", async (req, res) => {
       return res.status(401).json({ detail: "Geçersiz e-posta veya şifre" });
     }
 
-    // If account was created with Google and hasn't set a local password yet,
-    // automatically save this password as their password so they can log in normally!
+    // Accounts without a local password (e.g. created via Google) must sign in
+    // with their provider. Setting a password here would let anyone who knows
+    // the e-mail address take over the account.
     if (!user.passwordHash) {
-      const newHash = bcrypt.hashSync(String(password), 10);
-      await db.update(users).set({ passwordHash: newHash }).where(eq(users.userId, user.userId));
-      user.passwordHash = newHash;
-    } else if (!bcrypt.compareSync(String(password), user.passwordHash)) {
+      return res.status(401).json({ detail: "Bu hesap Google ile oluşturulmuş. Lütfen Google ile giriş yapın." });
+    }
+    if (!bcrypt.compareSync(String(password), user.passwordHash)) {
       return res.status(401).json({ detail: "Geçersiz e-posta veya şifre" });
     }
 
@@ -996,9 +1149,10 @@ api.post("/auth/google/session", async (req, res) => {
     console.warn("Emergent auth proxy fetch failed:", (err as Error).message);
   }
 
+  // Do not mint a session for an unverified session id: without a verified
+  // e-mail from the auth provider there is no identity to sign in as.
   if (!email) {
-    email = `google_user_${sessionId.slice(0, 8)}@emergent.sh`;
-    name = "Google User";
+    return res.status(401).json({ detail: "Google oturumu doğrulanamadı" });
   }
 
   try {
@@ -1073,13 +1227,13 @@ async function handleGoogleOAuthCallback(req: Request, res: Response) {
         <body>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(String(error))} }, '*');
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${jsonForScript(String(error))} }, window.location.origin);
               window.close();
             } else {
-              window.location.href = '/login?error=' + encodeURIComponent(${JSON.stringify(String(error))});
+              window.location.href = '/login?error=' + encodeURIComponent(${jsonForScript(String(error))});
             }
           </script>
-          <p>Giriş iptal edildi veya bir hata oluştu: ${String(error)}</p>
+          <p>Giriş iptal edildi veya bir hata oluştu: ${escapeHtml(error)}</p>
         </body>
       </html>
     `);
@@ -1177,9 +1331,10 @@ async function handleGoogleOAuthCallback(req: Request, res: Response) {
             <p style="font-size: 18px; color: #333;">Google ile giriş başarılı. Yönlendiriliyorsunuz...</p>
           </div>
           <script>
-            const user = ${JSON.stringify(userOutWithToken)};
+            const user = ${jsonForScript(userOutWithToken)};
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user }, '*');
+              // Only deliver the token to a window on our own origin.
+              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user }, window.location.origin);
               window.close();
             } else {
               window.location.href = '/';
@@ -1197,13 +1352,13 @@ async function handleGoogleOAuthCallback(req: Request, res: Response) {
         <body>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(errMsg)} }, '*');
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${jsonForScript(String(errMsg))} }, window.location.origin);
               window.close();
             } else {
-              window.location.href = '/login?error=' + encodeURIComponent(${JSON.stringify(errMsg)});
+              window.location.href = '/login?error=' + encodeURIComponent(${jsonForScript(String(errMsg))});
             }
           </script>
-          <p>Google ile giriş yapılırken bir hata oluştu: ${errMsg}</p>
+          <p>Google ile giriş yapılırken bir hata oluştu: ${escapeHtml(errMsg)}</p>
         </body>
       </html>
     `);
@@ -1812,6 +1967,248 @@ api.delete("/categories/:category_id", authMiddleware, async (req: AuthRequest, 
 });
 
 // ---------------------------------------------------------------------------
+// Areas (Alanlar) Endpoints — hierarchical, archivable knowledge areas
+// ---------------------------------------------------------------------------
+type AreaRow = typeof areas.$inferSelect;
+
+function serializeArea(a: AreaRow, noteCount = 0) {
+  return {
+    area_id: a.areaId,
+    user_id: a.userId,
+    parent_id: a.parentId || null,
+    name: a.name,
+    description: a.description || "",
+    color: a.color || null,
+    order_index: a.orderIndex,
+    archived: Boolean(a.archived),
+    note_count: noteCount,
+    created_at: a.createdAt.toISOString(),
+    updated_at: a.updatedAt.toISOString(),
+  };
+}
+
+/** Keeps only ids of areas that exist and belong to this user (deduplicated). */
+async function sanitizeAreaIds(userId: string, raw: unknown): Promise<string[]> {
+  if (!Array.isArray(raw)) return [];
+  const wanted = Array.from(new Set(raw.filter((x): x is string => typeof x === "string" && x.length > 0)));
+  if (wanted.length === 0) return [];
+  const owned: AreaRow[] = await db.select().from(areas).where(eq(areas.userId, userId));
+  const ownedIds = new Set(owned.map((a) => a.areaId));
+  return wanted.filter((id) => ownedIds.has(id));
+}
+
+function collectDescendantIds(all: AreaRow[], rootId: string): string[] {
+  const out: string[] = [];
+  const stack = [rootId];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    for (const a of all) {
+      if (a.parentId === cur && !out.includes(a.areaId)) {
+        out.push(a.areaId);
+        stack.push(a.areaId);
+      }
+    }
+  }
+  return out;
+}
+
+function collectAncestorIds(all: AreaRow[], startId: string): string[] {
+  const byId = new Map(all.map((a) => [a.areaId, a]));
+  const out: string[] = [];
+  let cur = byId.get(startId)?.parentId || null;
+  while (cur && !out.includes(cur)) {
+    out.push(cur);
+    cur = byId.get(cur)?.parentId || null;
+  }
+  return out;
+}
+
+async function areaNoteCounts(userId: string): Promise<Record<string, number>> {
+  const rows: { areaIds: string[] | null }[] = await db
+    .select({ areaIds: notes.areaIds })
+    .from(notes)
+    .where(eq(notes.userId, userId));
+  const counts: Record<string, number> = {};
+  for (const r of rows) {
+    for (const id of r.areaIds || []) counts[id] = (counts[id] || 0) + 1;
+  }
+  return counts;
+}
+
+api.get("/areas", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  try {
+    const [rows, counts] = await Promise.all([
+      db.select().from(areas).where(eq(areas.userId, userId)),
+      areaNoteCounts(userId),
+    ]);
+    const list = (rows as AreaRow[])
+      .sort((a, b) => a.orderIndex - b.orderIndex || a.name.localeCompare(b.name, "tr"))
+      .map((a) => serializeArea(a, counts[a.areaId] || 0));
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ detail: "Alanlar alınamadı", error: err.message });
+  }
+});
+
+api.post("/areas", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const { name, parent_id, color, description } = req.body || {};
+  const cleanName = typeof name === "string" ? name.trim() : "";
+  if (!cleanName) {
+    return res.status(400).json({ detail: "Alan adı zorunludur" });
+  }
+  if (cleanName.length > 80) {
+    return res.status(400).json({ detail: "Alan adı en fazla 80 karakter olabilir" });
+  }
+  try {
+    const all: AreaRow[] = await db.select().from(areas).where(eq(areas.userId, userId));
+    let parentId: string | null = null;
+    if (parent_id) {
+      const parent = all.find((a) => a.areaId === parent_id);
+      if (!parent) return res.status(404).json({ detail: "Üst alan bulunamadı" });
+      parentId = parent.areaId;
+    }
+    const siblings = all.filter((a) => (a.parentId || null) === parentId);
+    const areaId = genId("area");
+    await db.insert(areas).values({
+      areaId,
+      userId,
+      parentId,
+      name: cleanName,
+      description: typeof description === "string" ? description.trim() || null : null,
+      color: typeof color === "string" && color ? color : null,
+      orderIndex: siblings.length,
+      archived: false,
+    });
+    const created = (await db.select().from(areas).where(eq(areas.areaId, areaId)).limit(1))[0];
+    res.json(serializeArea(created, 0));
+  } catch (err: any) {
+    res.status(500).json({ detail: "Alan oluşturulamadı", error: err.message });
+  }
+});
+
+api.put("/areas/:area_id", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const areaId = req.params.area_id;
+  const { name, color, description, parent_id, order_index } = req.body || {};
+  try {
+    const all: AreaRow[] = await db.select().from(areas).where(eq(areas.userId, userId));
+    const current = all.find((a) => a.areaId === areaId);
+    if (!current) return res.status(404).json({ detail: "Alan bulunamadı" });
+
+    const updateObj: any = { updatedAt: new Date() };
+    if (name !== undefined) {
+      const cleanName = String(name).trim();
+      if (!cleanName) return res.status(400).json({ detail: "Alan adı boş olamaz" });
+      if (cleanName.length > 80) return res.status(400).json({ detail: "Alan adı en fazla 80 karakter olabilir" });
+      updateObj.name = cleanName;
+    }
+    if (color !== undefined) updateObj.color = color || null;
+    if (description !== undefined) updateObj.description = description ? String(description).trim() : null;
+    if (order_index !== undefined && Number.isFinite(Number(order_index))) updateObj.orderIndex = Number(order_index);
+    if (parent_id !== undefined) {
+      const newParent = parent_id || null;
+      if (newParent) {
+        if (newParent === areaId || collectDescendantIds(all, areaId).includes(newParent)) {
+          return res.status(400).json({ detail: "Bir alan kendi alt alanının altına taşınamaz" });
+        }
+        if (!all.some((a) => a.areaId === newParent)) {
+          return res.status(404).json({ detail: "Üst alan bulunamadı" });
+        }
+      }
+      updateObj.parentId = newParent;
+    }
+
+    await db.update(areas).set(updateObj).where(and(eq(areas.areaId, areaId), eq(areas.userId, userId)));
+    const updated = (await db.select().from(areas).where(eq(areas.areaId, areaId)).limit(1))[0];
+    const counts = await areaNoteCounts(userId);
+    res.json(serializeArea(updated, counts[areaId] || 0));
+  } catch (err: any) {
+    res.status(500).json({ detail: "Alan güncellenemedi", error: err.message });
+  }
+});
+
+// Archive / unarchive. Archiving cascades to every sub-area; unarchiving also
+// restores the sub-areas and any archived parents so the area becomes visible.
+api.patch("/areas/:area_id/archive", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const areaId = req.params.area_id;
+  try {
+    const all: AreaRow[] = await db.select().from(areas).where(eq(areas.userId, userId));
+    const current = all.find((a) => a.areaId === areaId);
+    if (!current) return res.status(404).json({ detail: "Alan bulunamadı" });
+    const archived = req.body?.archived !== undefined ? Boolean(req.body.archived) : !current.archived;
+
+    const affected = [areaId, ...collectDescendantIds(all, areaId)];
+    if (!archived) affected.push(...collectAncestorIds(all, areaId));
+
+    for (const id of affected) {
+      await db.update(areas).set({ archived, updatedAt: new Date() }).where(and(eq(areas.areaId, id), eq(areas.userId, userId)));
+    }
+    res.json({ ok: true, archived, affected_ids: affected });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Alan arşiv durumu değiştirilemedi", error: err.message });
+  }
+});
+
+// Permanent delete is only allowed for archived areas. Sub-areas move up to the
+// deleted area's parent and notes simply lose the link (notes are never deleted).
+api.delete("/areas/:area_id", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const areaId = req.params.area_id;
+  try {
+    const found = await db.select().from(areas).where(and(eq(areas.areaId, areaId), eq(areas.userId, userId))).limit(1);
+    if (found.length === 0) return res.status(404).json({ detail: "Alan bulunamadı" });
+    const current: AreaRow = found[0];
+    if (!current.archived) {
+      return res.status(400).json({ detail: "Silmeden önce alanı arşivleyin" });
+    }
+
+    await db.update(areas).set({ parentId: current.parentId || null, updatedAt: new Date() })
+      .where(and(eq(areas.parentId, areaId), eq(areas.userId, userId)));
+
+    const linked = await db.select({ noteId: notes.noteId, areaIds: notes.areaIds }).from(notes).where(eq(notes.userId, userId));
+    for (const n of linked as { noteId: string; areaIds: string[] | null }[]) {
+      if (n.areaIds && n.areaIds.includes(areaId)) {
+        await db.update(notes).set({ areaIds: n.areaIds.filter((id) => id !== areaId) }).where(eq(notes.noteId, n.noteId));
+      }
+    }
+
+    await db.delete(areas).where(and(eq(areas.areaId, areaId), eq(areas.userId, userId)));
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Alan silinemedi", error: err.message });
+  }
+});
+
+// Link / unlink areas on a note without creating a new note version.
+// Allowed for archived notes too: it only changes organisation metadata.
+api.patch("/notes/:note_id/areas", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const identifier = req.params.note_id;
+  try {
+    const found = await db.select().from(notes).where(
+      and(or(eq(notes.noteId, identifier), eq(notes.slug, identifier)), eq(notes.userId, userId))
+    ).limit(1);
+    if (found.length === 0) return res.status(404).json({ detail: "Not bulunamadı" });
+    const current = found[0];
+
+    let next: string[] = Array.isArray(current.areaIds) ? [...current.areaIds] : [];
+    const { area_ids, add, remove } = req.body || {};
+    if (Array.isArray(area_ids)) next = area_ids;
+    if (typeof add === "string") next.push(add);
+    if (typeof remove === "string") next = next.filter((id) => id !== remove);
+    const clean = await sanitizeAreaIds(userId, next);
+
+    await db.update(notes).set({ areaIds: clean }).where(eq(notes.noteId, current.noteId));
+    res.json({ note_id: current.noteId, area_ids: clean });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Not alanları güncellenemedi", error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Notes Endpoints (Backed by Cloud SQL + Vector Embeddings)
 // ---------------------------------------------------------------------------
 api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
@@ -1850,6 +2247,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       locationId: location_id || null,
       noteTypeId: effectiveNoteTypeId,
       customFields: finalCustomFields,
+      areaIds: await sanitizeAreaIds(userId, req.body?.area_ids),
       pinned: false,
       archived: false,
       isEncrypted: Boolean(is_encrypted),
@@ -1882,6 +2280,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       location_id: inserted.locationId,
       note_type_id: inserted.noteTypeId || "type_plain",
       custom_fields: inserted.customFields || {},
+      area_ids: inserted.areaIds || [],
       pinned: inserted.pinned,
       archived: inserted.archived || false,
       is_encrypted: Boolean(inserted.isEncrypted),
@@ -1958,6 +2357,7 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       location_id: n.locationId,
       note_type_id: n.noteTypeId || "type_plain",
       custom_fields: n.customFields || {},
+      area_ids: n.areaIds || [],
       pinned: n.pinned,
       archived: n.archived || false,
       is_encrypted: Boolean(n.isEncrypted),
@@ -1976,6 +2376,11 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
 
     if (category_id && typeof category_id === "string") {
       filtered = filtered.filter((n) => n.category_id === category_id);
+    }
+
+    const areaFilter = req.query.area_id;
+    if (areaFilter && typeof areaFilter === "string") {
+      filtered = filtered.filter((n) => Array.isArray(n.area_ids) && n.area_ids.includes(areaFilter));
     }
 
     if (note_type_id && typeof note_type_id === "string") {
@@ -2131,6 +2536,7 @@ api.get("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       location_id: n.locationId,
       note_type_id: n.noteTypeId || "type_plain",
       custom_fields: n.customFields || {},
+      area_ids: n.areaIds || [],
       pinned: n.pinned,
       archived: n.archived || false,
       is_encrypted: Boolean(n.isEncrypted),
@@ -2212,6 +2618,9 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     if (archived !== undefined) {
       updateData.archived = Boolean(archived);
     }
+    if (req.body?.area_ids !== undefined) {
+      updateData.areaIds = await sanitizeAreaIds(userId, req.body.area_ids);
+    }
     if (is_encrypted !== undefined) {
       updateData.isEncrypted = Boolean(is_encrypted);
     }
@@ -2246,6 +2655,7 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       location_id: updated.locationId,
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
+      area_ids: updated.areaIds || [],
       pinned: updated.pinned,
       archived: updated.archived || false,
       is_encrypted: Boolean(updated.isEncrypted),
@@ -2381,6 +2791,7 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
       location_id: updated.locationId,
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
+      area_ids: updated.areaIds || [],
       pinned: updated.pinned,
       archived: updated.archived || false,
       is_encrypted: Boolean(updated.isEncrypted),
@@ -2428,6 +2839,7 @@ api.patch("/notes/:note_id/pin", authMiddleware, async (req: AuthRequest, res: R
       location_id: updated.locationId,
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
+      area_ids: updated.areaIds || [],
       pinned: updated.pinned,
       archived: updated.archived || false,
       created_at: updated.createdAt.toISOString(),
@@ -2478,6 +2890,7 @@ const handleArchiveToggle = async (req: AuthRequest, res: Response) => {
       location_id: updated.locationId,
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
+      area_ids: updated.areaIds || [],
       pinned: updated.pinned,
       archived: updated.archived || false,
       created_at: updated.createdAt.toISOString(),
@@ -2570,10 +2983,10 @@ api.put("/tags/:tag_id", authMiddleware, async (req: AuthRequest, res: Response)
 
         const oldName = currentTag.name;
         const userNotes = await db.select().from(notes).where(eq(notes.userId, userId));
-        const regex = new RegExp(`(?<!\\S)#${oldName}(?!\\w)`, "gui");
+        const regex = new RegExp(`(?<!\\S)#${escapeRegExp(oldName)}(?!\\w)`, "gui");
         for (const n of userNotes) {
           if (n.tags && n.tags.includes(oldName)) {
-            const newContent = n.content.replace(regex, `#${newName}`);
+            const newContent = n.content.replace(regex, () => `#${newName}`);
             const newTags = n.tags.map((t) => (t === oldName ? newName : t));
             await db.update(notes).set({ content: newContent, tags: newTags, updatedAt: new Date() }).where(eq(notes.noteId, n.noteId));
           }
@@ -2659,10 +3072,10 @@ api.put("/people/:person_id", authMiddleware, async (req: AuthRequest, res: Resp
 
         const oldName = currentPerson.name;
         const userNotes = await db.select().from(notes).where(eq(notes.userId, userId));
-        const regex = new RegExp(`(?<!\\S)@${oldName}(?!\\w)`, "gui");
+        const regex = new RegExp(`(?<!\\S)@${escapeRegExp(oldName)}(?!\\w)`, "gui");
         for (const n of userNotes) {
           if (n.people && n.people.includes(oldName)) {
-            const newContent = n.content.replace(regex, `@${newName}`);
+            const newContent = n.content.replace(regex, () => `@${newName}`);
             const newPeople = n.people.map((p) => (p === oldName ? newName : p));
             await db.update(notes).set({ content: newContent, people: newPeople, updatedAt: new Date() }).where(eq(notes.noteId, n.noteId));
           }
@@ -3024,6 +3437,15 @@ api.delete("/phrases/:phrase_id", authMiddleware, async (req: AuthRequest, res: 
 // ---------------------------------------------------------------------------
 // Geocode (Photon/OSM proxy)
 // ---------------------------------------------------------------------------
+const CACHE_MAX_ENTRIES = 500;
+function cacheSet<V>(cache: Map<string, V>, key: string, value: V) {
+  if (cache.size >= CACHE_MAX_ENTRIES && !cache.has(key)) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, value);
+}
+
 const geocodeCache = new Map<string, { timestamp: number; data: any }>();
 const GEOCODE_TTL = 10 * 60 * 1000; // 10 min
 
@@ -3076,7 +3498,7 @@ api.get("/geocode", authMiddleware, async (req: AuthRequest, res: Response) => {
       })
       .filter(Boolean);
 
-    geocodeCache.set(cacheKey, { timestamp: Date.now(), data: out });
+    cacheSet(geocodeCache, cacheKey, { timestamp: Date.now(), data: out });
     res.json(out);
   } catch (err) {
     console.warn("Geocode proxy failed:", (err as Error).message);
@@ -3099,9 +3521,9 @@ const handleImageUpload = async (req: AuthRequest, res: Response) => {
   }
 
   // Support base64 upload in body if sent as JSON
-  if (!file && req.body && req.body.dataBase64) {
+  if (!file && req.body && typeof req.body.dataBase64 === "string" && req.body.dataBase64) {
     const fileId = genId("file");
-    const mime = req.body.contentType || "image/png";
+    const mime = typeof req.body.contentType === "string" ? req.body.contentType : "image/png";
     const buffer = Buffer.from(req.body.dataBase64.replace(/^data:image\/\w+;base64,/, ""), "base64");
     try {
       // 1. Save to database for relational backup
@@ -3193,41 +3615,55 @@ api.post(
   handleImageUpload
 );
 
+// Only these types are rendered inline; everything else (HTML, SVG, JS, ...)
+// is forced to download so uploaded files cannot run script on our origin.
+const INLINE_SAFE_TYPES = /^(image\/(png|jpe?g|gif|webp|avif|bmp|x-icon)|application\/pdf|audio\/[\w.+-]+|video\/[\w.+-]+|text\/plain)$/i;
+const FILE_ID_RE = /^file_[a-z0-9]+$/i;
+
+function setFileResponseHeaders(res: Response, contentType: string, filename: string) {
+  const ct = (contentType || "application/octet-stream").split(";")[0].trim().toLowerCase();
+  const inline = INLINE_SAFE_TYPES.test(ct);
+  res.setHeader("Content-Type", inline ? ct : "application/octet-stream");
+  res.setHeader(
+    "Content-Disposition",
+    `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(filename)}`
+  );
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox");
+  res.setHeader("Cache-Control", "private, max-age=86400, immutable");
+}
+
 api.get("/files/:file_id", async (req: Request, res: Response) => {
   const fileId = req.params.file_id;
+  // Reject anything that is not a generated file id (prevents ../ path traversal).
+  if (!FILE_ID_RE.test(fileId)) {
+    return res.status(404).json({ detail: "File not found" });
+  }
   try {
     const diskPath = path.resolve(UPLOADS_DIR, fileId);
-    
-    // Check if file is directly available on persistent volume
-    if (fs.existsSync(diskPath)) {
-      const found = await db.select().from(files).where(and(eq(files.fileId, fileId), eq(files.isDeleted, false))).limit(1);
-      const contentType = found[0]?.contentType || "application/octet-stream";
-      const filename = found[0]?.originalFilename || fileId;
-      res.setHeader("Content-Type", contentType);
-      res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(filename)}"`);
-      res.setHeader("Cache-Control", "public, max-age=86400, immutable");
-      return res.sendFile(diskPath);
+    if (path.dirname(diskPath) !== UPLOADS_DIR) {
+      return res.status(404).json({ detail: "File not found" });
     }
 
-    // Fallback: Read from database and populate persistent disk cache
     const found = await db.select().from(files).where(and(eq(files.fileId, fileId), eq(files.isDeleted, false))).limit(1);
     if (found.length === 0) {
       return res.status(404).json({ detail: "File not found" });
     }
     const file = found[0];
-    const buffer = Buffer.from(file.dataBase64, "base64");
+    setFileResponseHeaders(res, file.contentType, file.originalFilename || fileId);
 
+    // Serve from persistent volume when available
+    if (fs.existsSync(diskPath)) {
+      return res.sendFile(diskPath);
+    }
+
+    // Fallback: Read from database and populate persistent disk cache
+    const buffer = Buffer.from(file.dataBase64, "base64");
     try {
       fs.writeFileSync(diskPath, buffer);
     } catch {
       /* ignore */
     }
-
-    const contentType = file.contentType || "application/octet-stream";
-    const filename = file.originalFilename || fileId;
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(filename)}"`);
-    res.setHeader("Cache-Control", "public, max-age=86400, immutable");
     res.send(buffer);
   } catch (err: any) {
     res.status(500).json({ detail: "Dosya okunamadı", error: err.message });
@@ -3240,9 +3676,71 @@ api.get("/files/:file_id", async (req: Request, res: Response) => {
 const linkCache = new Map<string, { timestamp: number; data: any }>();
 const LINK_TTL = 30 * 60 * 1000;
 
+// SSRF guard: link previews may only reach public internet hosts.
+function isPrivateAddress(ip: string): boolean {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split(".").map(Number);
+    return (
+      a === 0 || a === 10 || a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      a >= 224
+    );
+  }
+  const v6 = ip.toLowerCase();
+  if (v6.startsWith("::ffff:")) return isPrivateAddress(v6.slice(7));
+  return (
+    v6 === "::" || v6 === "::1" ||
+    v6.startsWith("fc") || v6.startsWith("fd") ||
+    v6.startsWith("fe8") || v6.startsWith("fe9") || v6.startsWith("fea") || v6.startsWith("feb") ||
+    v6.startsWith("ff")
+  );
+}
+
+async function assertPublicHttpUrl(raw: string): Promise<URL> {
+  const u = new URL(raw);
+  if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("Unsupported protocol");
+  if (u.username || u.password) throw new Error("Credentials in URL not allowed");
+  const hostname = u.hostname.replace(/^\[|\]$/g, "");
+  const addrs = net.isIP(hostname)
+    ? [{ address: hostname }]
+    : await dns.lookup(hostname, { all: true, verbatim: true });
+  if (addrs.length === 0 || addrs.some((a) => isPrivateAddress(a.address))) {
+    throw new Error("Host not allowed");
+  }
+  return u;
+}
+
+async function fetchPublicHtml(startUrl: string): Promise<string> {
+  let current = startUrl;
+  for (let hop = 0; hop <= 5; hop++) {
+    await assertPublicHttpUrl(current);
+    const response = await axios.get(current, {
+      timeout: 6000,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      maxRedirects: 0, // redirects are followed manually so each hop is re-validated
+      maxContentLength: 2 * 1024 * 1024,
+      responseType: "text",
+      validateStatus: (s) => s >= 200 && s < 400,
+    });
+    if (response.status >= 300 && response.headers.location) {
+      current = new URL(String(response.headers.location), current).toString();
+      continue;
+    }
+    return typeof response.data === "string" ? response.data : "";
+  }
+  throw new Error("Too many redirects");
+}
+
 api.get("/link-preview", authMiddleware, async (req: AuthRequest, res: Response) => {
   const url = String(req.query.url || "").trim();
-  if (!url || !url.startsWith("http")) {
+  if (!url || !/^https?:\/\//i.test(url)) {
     return res.status(400).json({ detail: "Valid HTTP(S) URL is required" });
   }
 
@@ -3252,14 +3750,7 @@ api.get("/link-preview", authMiddleware, async (req: AuthRequest, res: Response)
   }
 
   try {
-    const response = await axios.get(url, {
-      timeout: 6000,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-      maxRedirects: 5,
-    });
+    const response = { data: await fetchPublicHtml(url) };
 
     const html = response.data;
     const $ = cheerio.load(typeof html === "string" ? html : "");
@@ -3301,7 +3792,7 @@ api.get("/link-preview", authMiddleware, async (req: AuthRequest, res: Response)
       site_name: siteName.trim(),
     };
 
-    linkCache.set(url, { timestamp: Date.now(), data });
+    cacheSet(linkCache, url, { timestamp: Date.now(), data });
     return res.json(data);
   } catch (err: any) {
     try {

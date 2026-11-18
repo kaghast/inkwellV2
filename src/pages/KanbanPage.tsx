@@ -820,7 +820,7 @@ export default function KanbanPage() {
                                 if (wikiCount === 0) return null;
                                 return (
                                   <Link
-                                    to="/graph"
+                                    to="/network"
                                     onClick={(e) => e.stopPropagation()}
                                     className="inline-flex items-center gap-0.5 text-primary bg-primary/10 hover:bg-primary/20 px-1.5 py-0.5 rounded font-mono font-medium transition-colors"
                                     title={`${wikiCount} ilişkili not (Ağ Görünümünde Aç)`}

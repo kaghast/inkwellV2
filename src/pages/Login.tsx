@@ -29,6 +29,8 @@ export default function Login() {
 
   React.useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      // Only trust OAuth results posted by our own callback page.
+      if (event.origin !== window.location.origin) return;
       if (event.data?.type === "OAUTH_AUTH_SUCCESS" && event.data?.user) {
         setUser(event.data.user);
         toast.success("Google ile giriş yapıldı");

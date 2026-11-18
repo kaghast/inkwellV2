@@ -297,6 +297,12 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 - **Doğrudan Referans Oluşturma Modalı (`NoteDetail.tsx`):** Not detayında ilişkili notlar bölümünden "+ Yeni Referans Ekle" ile başlık, tip ve içerik girildiğinde mevcut nota `[[Başlık]]` wikilink referansı otomatik enjekte edilerek yeni not/kart üretilir.
 - **Akıllı Çift Tıklama (Double-Click):** Not kartlarında, Kanban görevlerinde ve Not Detay sayfasında başlık ya da içeriğe çift tıklandığında buton ve form kontrolleri filtrelenerek doğrudan düzenleme moduna geçilir.
 
+### 4.12. Alanlar (Areas) & Alan Haritası (`AreaMapView.tsx`)
+- **Veri modeli:** `areas` tablosu (`parent_id` ile sınırsız derinlikte ana alan → alt alan hiyerarşisi, `archived`, `color`, `order_index`). Notlar `notes.area_ids` (JSONB) ile birden çok alana bağlanabilir. Yedekleme dışa/içe aktarımı alanları ve not bağlantılarını içerir.
+- **API:** `GET/POST /api/areas`, `PUT /api/areas/:id` (taşıma döngü kontrolüyle), `PATCH /api/areas/:id/archive` (arşivleme alt alanlara yayılır; arşivden çıkarma üst alanları da geri getirir), `DELETE /api/areas/:id` (yalnızca arşivdeki alanlar; notlar silinmez, alt alanlar bir üst seviyeye taşınır), `PATCH /api/notes/:id/areas` (yeni sürüm oluşturmadan bağla/çıkar), `GET /api/notes?area_id=`.
+- **Alan Haritası (`/graph`):** Merkezde "Alanlarım", iki yana dengelenmiş ana alanlar; daire yarıçapı alt alanlar dahil not sayısıyla (karekök ölçekli) büyür. Bir alana tıklamak alt alanlarını ve notlarını kademeli açar; tıklanan düğüm yerinde kalır ve açılan dal panelin altında kalmayacak şekilde görünür alana kaydırılır. Ortak notu olan alanlar kesikli "ilişki" çizgileriyle gösterilir. Eski ağ görünümü `/network` adresinde korunur.
+- **Yönetim:** Sol ağaç panelinde ana alan / alt alan ekleme, yeniden adlandırma, renk, arşivleme ve Arşiv bölümünden geri alma/kalıcı silme; sağ panelde üst alan değiştirme, açıklama, not arayıp bağlama. Not sayfasında "Alanlar" çubuğu ve yeni not ekranındaki `AreaPicker` ile düzenleme moduna girmeden alan seçme veya yerinde yeni alan oluşturma.
+
 ---
 
 ## 5. Gün Gün Kronolojik Geliştirme Günlüğü
