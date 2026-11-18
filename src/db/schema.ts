@@ -300,3 +300,16 @@ export const areas = pgTable(
   },
   (table) => [index('area_user_idx').on(table.userId)]
 );
+
+// Google Calendar connection per user. The refresh token is stored encrypted
+// (AES-256-GCM) so the user signs in to Google only once.
+export const googleIntegrations = pgTable('google_integrations', {
+  userId: text('user_id').primaryKey().references(() => users.userId, { onDelete: 'cascade' }),
+  googleEmail: text('google_email'),
+  refreshTokenEnc: text('refresh_token_enc').notNull(),
+  accessToken: text('access_token'),
+  accessTokenExpiresAt: timestamp('access_token_expires_at'),
+  scopes: text('scopes'),
+  connectedAt: timestamp('connected_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});

@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   ChevronLeft,
   ChevronRight,
@@ -15,15 +15,11 @@ import {
   PlusCircle,
   FilePlus2,
   Check,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { fetchGcalEventsForDate, GcalReconnectRequired, useGcalStatus } from "@/lib/googleCalendar";
 import {
-  connectGoogleCalendar,
-  getCalendarAccessToken,
-  getFirebaseUser,
-} from "@/lib/firebase";
-import {
-  fetchCalendarEventsForDate,
   convertEventToNoteDraft,
   formatEventTimeRange,
   CalendarEvent,
@@ -131,8 +127,10 @@ export default function CalendarPanel({
   const weeks = useMemo(() => getMonthWeeks(year, month, today), [year, month, today]);
 
   // Google Calendar integration state
-  const [calToken, setCalToken] = useState<string | null>(getCalendarAccessToken());
-  const [isConnecting, setIsConnecting] = useState(false);
+  // Connection lives on the server (Settings > Google Takvim); no sign-in here.
+  const { status: gcal } = useGcalStatus();
+  const calToken = gcal?.connected ? "connected" : null;
+  const [reconnectMessage, setReconnectMessage] = useState<string | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [convertingEventId, setConvertingEventId] = useState<string | null>(null);
@@ -155,46 +153,27 @@ export default function CalendarPanel({
   }, [activeDate]);
 
   // Fetch events for active date
-  const loadEventsForDate = async (tokenToUse?: string) => {
-    const token = tokenToUse || calToken || getCalendarAccessToken();
-    if (!token) return;
-
+  const loadEventsForDate = async () => {
+    if (!gcal?.connected) return;
     setLoadingEvents(true);
     try {
-      const fetchedEvents = await fetchCalendarEventsForDate(token, activeDate);
+      const fetchedEvents = await fetchGcalEventsForDate(activeDate);
       setEvents(fetchedEvents);
+      setReconnectMessage(null);
     } catch (err: any) {
-      console.warn("Calendar events fetch warning:", err);
-      if (err.message?.includes("401") || err.message?.includes("oturum")) {
-        setCalToken(null);
-      }
+      setEvents([]);
+      if (err instanceof GcalReconnectRequired) setReconnectMessage(err.message);
+      else console.warn("Calendar events fetch warning:", err);
     } finally {
       setLoadingEvents(false);
     }
   };
 
   useEffect(() => {
-    const currentToken = getCalendarAccessToken();
-    if (currentToken) {
-      setCalToken(currentToken);
-      loadEventsForDate(currentToken);
-    }
-  }, [activeDate]);
-
-  // Connect Google Calendar
-  const handleConnectCalendar = async () => {
-    setIsConnecting(true);
-    try {
-      const { accessToken, user } = await connectGoogleCalendar();
-      setCalToken(accessToken);
-      toast.success(`Google Takvim bağlandı (${user.email})`);
-      await loadEventsForDate(accessToken);
-    } catch (err: any) {
-      toast.error(err.message || "Google Takvim bağlantısı kurulamadı");
-    } finally {
-      setIsConnecting(false);
-    }
-  };
+    if (gcal?.connected) loadEventsForDate();
+    else setEvents([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDate, gcal?.connected]);
 
   // Convert event to Note and open in Edit screen
   const handleConvertEventToNote = async (event: CalendarEvent) => {
@@ -401,22 +380,19 @@ export default function CalendarPanel({
         {!calToken ? (
           <div className="p-3 bg-muted/40 border border-border rounded-lg text-center space-y-2">
             <p className="text-[11px] text-muted-foreground leading-relaxed">
-              Seçili güne ait Google Takvim etkinliklerini görüp tek tıkla <strong>nota dönüştürmek</strong> için bağlanın.
+              {reconnectMessage ||
+                "Seçili güne ait Google Takvim etkinliklerini görüp tek tıkla nota dönüştürmek için Ayarlar'dan bir kez bağlanın."}
             </p>
             <Button
-              type="button"
-              onClick={handleConnectCalendar}
-              disabled={isConnecting}
+              asChild
               size="sm"
               data-testid="connect-calendar-btn"
               className="w-full bg-sky-600 hover:bg-sky-700 text-white rounded-md text-xs font-medium h-8 cursor-pointer shadow-xs"
             >
-              {isConnecting ? (
-                <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-              ) : (
-                <CalendarDays className="w-3.5 h-3.5 mr-1.5" />
-              )}
-              Google Takvim'e Bağlan
+              <Link to="/settings?tab=integrations">
+                <SettingsIcon className="w-3.5 h-3.5 mr-1.5" />
+                {reconnectMessage ? "Ayarlar'dan yeniden bağlan" : "Ayarlar'dan bağla"}
+              </Link>
             </Button>
           </div>
         ) : loadingEvents ? (

@@ -310,6 +310,13 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 - **Veri:** `GET /api/link-preview?url=` sayfanın başlığını (og:title / twitter:title / <title>), açıklamasını, og:image'ını ve favicon'unu (`link rel=icon`, yoksa `/favicon.ico`) döner. Mevcut SSRF korumaları (özel/yerel adres engeli, her yönlendirmede yeniden doğrulama, 2 MB sınırı) geçerlidir; ulaşılamayan adreslerde yalnızca alan adı döner, favicon tahmin edilmez. Sonuçlar sunucuda 30 dk, istemcide oturum boyunca önbelleğe alınır.
 - **Başlıkları nota yazma:** Not kartı veya detay sayfası açıldığında, notta başlıksız link varsa `POST /api/notes/:id/link-titles` çağrılır. Sunucu sayfa başlıklarını çekip linkleri markdown içinde `[Sayfa Başlığı](url)` olarak yeniden yazar. Kod blokları, satır içi kod, görseller, kullanıcının kendi verdiği başlıklar, yorum bloğu ve gömülü (YouTube/Harita) linkler değiştirilmez; başlıktaki markdown karakterleri (`# @ [ ] *` vb.) kaçışlanır, böylece yeni etiket/kişi oluşmaz. Bu bir biçim düzeltmesidir: yeni sürüm oluşturmaz ve not bu arada değiştiyse yazmaz. Arşivli ve şifreli notlara dokunulmaz.
 
+### 4.14. Google Takvim Entegrasyonu (Ayarlar > Google Takvim)
+- **Tek seferlik bağlantı:** Ayarlar'daki "Google Takvim" sekmesinden "Google Takvim'i bağla" ile Google izin ekranı açılır (`access_type=offline`, `prompt=consent`, kapsam: `calendar.events.readonly`). Google'ın verdiği yenileme belirteci `google_integrations` tablosunda AES-256-GCM ile şifreli saklanır; erişim belirteci süresi dolunca sunucu kendisi yeniler. Sayfa yenilense veya oturum yeniden açılsa da bağlantı sürer.
+- **Akış:** `POST /api/integrations/google-calendar/connect` imzalı bir `state` (10 dk) ile izin adresini döner; mevcut `/api/auth/google/callback` adresi bu state'i tanıyıp bağlantıyı kaydeder. Geri dönüşü tamamlayan tarayıcının oturumu, bağlantıyı başlatan kullanıcıyla eşleşmek zorundadır. Açılır pencere engellenirse akış aynı sekmede sürer ve Ayarlar'a geri döner.
+- **Etkinlikler:** Takvim paneli etkinlikleri `GET /api/integrations/google-calendar/events?time_min=&time_max=` ile sunucu üzerinden okur; Google belirteci tarayıcıya hiç gelmez. Bağlı değilse panel "Ayarlar'dan bağla" düğmesi gösterir.
+- **Bağlantıyı kaldırma:** Yalnızca Ayarlar'dan yapılır (`DELETE /api/integrations/google-calendar`): belirteç Google'da iptal edilir ve kayıt silinir. Kullanıcı erişimi Google hesabından geri alırsa (`invalid_grant`) kayıt otomatik silinir ve yeniden bağlanması istenir.
+- Google Drive yedeklemesi Firebase akışıyla ayrı çalışmaya devam eder; Firebase sağlayıcısından takvim kapsamı kaldırıldı.
+
 ---
 
 ## 5. Gün Gün Kronolojik Geliştirme Günlüğü

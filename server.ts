@@ -17,7 +17,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { eq, and, or, desc, sql } from "drizzle-orm";
-import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions, stickers, phrases, areas } from "./src/db/index";
+import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions, stickers, phrases, areas, googleIntegrations } from "./src/db/index";
 import { generateTextEmbedding } from "./src/lib/embeddings";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1219,6 +1219,10 @@ api.get("/auth/google/url", (req, res) => {
 });
 
 async function handleGoogleOAuthCallback(req: Request, res: Response) {
+  // Calendar connections reuse this callback URL; their state is a signed token.
+  const gcalState = readGcalState(req.query.state);
+  if (gcalState) return handleGcalCallback(req, res, gcalState);
+
   const { code, error } = req.query;
   if (error) {
     return res.send(`
@@ -1364,6 +1368,330 @@ async function handleGoogleOAuthCallback(req: Request, res: Response) {
     `);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Google Calendar integration (Settings > Google Takvim)
+// The user consents once; the refresh token is kept server-side, encrypted,
+// and access tokens are refreshed on demand. Disconnecting revokes it at Google.
+// ---------------------------------------------------------------------------
+const GCAL_SCOPES = ["openid", "email", "https://www.googleapis.com/auth/calendar.events.readonly"];
+const GCAL_READ_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly";
+
+function integrationKey(): Buffer {
+  const material = process.env.INTEGRATION_ENCRYPTION_KEY || `inkwell-integrations:${JWT_SECRET}`;
+  return crypto.createHash("sha256").update(material).digest();
+}
+
+function encryptSecret(plain: string): string {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", integrationKey(), iv);
+  const enc = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `v1:${iv.toString("base64")}:${tag.toString("base64")}:${enc.toString("base64")}`;
+}
+
+function decryptSecret(payload: string): string {
+  const [v, iv, tag, enc] = payload.split(":");
+  if (v !== "v1" || !iv || !tag || !enc) throw new Error("Unknown secret format");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", integrationKey(), Buffer.from(iv, "base64"));
+  decipher.setAuthTag(Buffer.from(tag, "base64"));
+  return Buffer.concat([decipher.update(Buffer.from(enc, "base64")), decipher.final()]).toString("utf8");
+}
+
+function googleClientConfig() {
+  return {
+    clientId: process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || "",
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+  };
+}
+
+/** Same callback URL as Google sign-in, so no extra redirect URI has to be registered. */
+function googleCallbackUrl(req: Request): string {
+  const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000";
+  const proto = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
+  return `${String(proto).split(",")[0].trim()}://${String(host).split(",")[0].trim()}/api/auth/google/callback`;
+}
+
+class GcalReconnectError extends Error {}
+
+/** Returns a valid access token for the user's calendar, refreshing it when needed. */
+async function getGcalAccessToken(userId: string, forceRefresh = false): Promise<string> {
+  const rows = await db.select().from(googleIntegrations).where(eq(googleIntegrations.userId, userId)).limit(1);
+  const row = rows[0];
+  if (!row) throw new GcalReconnectError("Google Takvim bağlı değil");
+
+  const expiresAt = row.accessTokenExpiresAt ? new Date(row.accessTokenExpiresAt).getTime() : 0;
+  if (!forceRefresh && row.accessToken && expiresAt - Date.now() > 60_000) return row.accessToken;
+
+  const { clientId, clientSecret } = googleClientConfig();
+  let refreshToken: string;
+  try {
+    refreshToken = decryptSecret(row.refreshTokenEnc);
+  } catch {
+    // Key changed (e.g. JWT_SECRET rotated): the stored token is unusable.
+    await db.delete(googleIntegrations).where(eq(googleIntegrations.userId, userId));
+    throw new GcalReconnectError("Google Takvim bağlantısı yenilenmeli");
+  }
+
+  try {
+    const tokenRes = await axios.post(
+      "https://oauth2.googleapis.com/token",
+      new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: "refresh_token",
+      }).toString(),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" }, timeout: 10000 }
+    );
+    const { access_token, expires_in } = tokenRes.data || {};
+    if (!access_token) throw new Error("No access token");
+    await db
+      .update(googleIntegrations)
+      .set({
+        accessToken: access_token,
+        accessTokenExpiresAt: new Date(Date.now() + (Number(expires_in) || 3600) * 1000),
+        updatedAt: new Date(),
+      })
+      .where(eq(googleIntegrations.userId, userId));
+    return access_token;
+  } catch (err: any) {
+    if (err?.response?.data?.error === "invalid_grant") {
+      // Access was revoked in the Google account or the token expired.
+      await db.delete(googleIntegrations).where(eq(googleIntegrations.userId, userId));
+      throw new GcalReconnectError("Google Takvim erişimi geri alınmış; lütfen Ayarlar'dan yeniden bağlanın");
+    }
+    throw err;
+  }
+}
+
+function gcalPopupResponse(res: Response, ok: boolean, message: string) {
+  const payload = { type: ok ? "GCAL_CONNECTED" : "GCAL_ERROR", message };
+  return res.send(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Google Takvim</title></head>
+<body style="font-family:system-ui,sans-serif;padding:24px">
+<p>${escapeHtml(message)}</p>
+<script>
+  (function () {
+    var payload = ${jsonForScript(payload)};
+    if (window.opener) {
+      window.opener.postMessage(payload, window.location.origin);
+      window.close();
+    } else {
+      window.location.href = '/settings?tab=integrations&gcal=' + (payload.type === 'GCAL_CONNECTED' ? 'connected' : 'error');
+    }
+  })();
+</script>
+</body></html>`);
+}
+
+/** Handles Google's redirect when the OAuth state belongs to a calendar connection. */
+/** The Inkwell user of the browser session (cookies), if any. */
+function sessionUserId(req: Request): string | null {
+  for (const token of [req.cookies?.access_token, req.cookies?.refresh_token]) {
+    if (!token) continue;
+    try {
+      const p = jwt.verify(token, JWT_SECRET) as any;
+      if (p?.sub) return String(p.sub);
+    } catch {
+      /* try the next one */
+    }
+  }
+  return null;
+}
+
+async function handleGcalCallback(req: Request, res: Response, state: { uid: string; redirectUri: string }) {
+  // The browser finishing the flow must be signed in as the user who started it,
+  // so a connect link made by someone else cannot attach a calendar to their account.
+  if (sessionUserId(req) !== state.uid) {
+    return gcalPopupResponse(res, false, "Oturum doğrulanamadı. Lütfen Inkwell'e giriş yapıp Ayarlar'dan tekrar deneyin.");
+  }
+  const { code, error } = req.query;
+  if (error) return gcalPopupResponse(res, false, "Google Takvim izni verilmedi.");
+  if (!code || typeof code !== "string") return gcalPopupResponse(res, false, "Yetkilendirme kodu alınamadı.");
+
+  const { clientId, clientSecret } = googleClientConfig();
+  try {
+    const tokenRes = await axios.post(
+      "https://oauth2.googleapis.com/token",
+      new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: state.redirectUri,
+        grant_type: "authorization_code",
+      }).toString(),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" }, timeout: 10000 }
+    );
+    const { access_token, refresh_token, expires_in, scope } = tokenRes.data || {};
+    const granted = String(scope || "");
+    if (!granted.split(" ").includes(GCAL_READ_SCOPE)) {
+      return gcalPopupResponse(res, false, "Takvim okuma izni verilmedi. Lütfen izin ekranında takvim kutusunu işaretleyin.");
+    }
+
+    const existing = await db.select().from(googleIntegrations).where(eq(googleIntegrations.userId, state.uid)).limit(1);
+    if (!refresh_token && !existing[0]) {
+      return gcalPopupResponse(res, false, "Google kalıcı erişim vermedi. Lütfen tekrar deneyin.");
+    }
+
+    let googleEmail: string | null = null;
+    try {
+      const profile = await axios.get("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { Authorization: `Bearer ${access_token}` },
+        timeout: 10000,
+      });
+      googleEmail = profile.data?.email || null;
+    } catch {
+      /* the e-mail is only shown in Settings */
+    }
+
+    const values = {
+      googleEmail,
+      accessToken: access_token,
+      accessTokenExpiresAt: new Date(Date.now() + (Number(expires_in) || 3600) * 1000),
+      scopes: granted,
+      updatedAt: new Date(),
+      ...(refresh_token ? { refreshTokenEnc: encryptSecret(refresh_token) } : {}),
+    };
+    if (existing[0]) {
+      await db.update(googleIntegrations).set(values).where(eq(googleIntegrations.userId, state.uid));
+    } else {
+      await db.insert(googleIntegrations).values({
+        userId: state.uid,
+        refreshTokenEnc: encryptSecret(refresh_token),
+        ...values,
+      });
+    }
+    return gcalPopupResponse(res, true, "Google Takvim bağlandı. Bu pencere kapanabilir.");
+  } catch (err: any) {
+    console.error("Google Calendar connect error:", err?.response?.data || err?.message);
+    return gcalPopupResponse(res, false, "Google Takvim bağlantısı kurulamadı.");
+  }
+}
+
+/** If the OAuth state is a signed calendar-connection state, returns it. */
+function readGcalState(raw: unknown): { uid: string; redirectUri: string } | null {
+  if (typeof raw !== "string" || !raw.startsWith("eyJ")) return null;
+  try {
+    const p = jwt.verify(raw, JWT_SECRET) as any;
+    if (p?.purpose === "gcal" && typeof p.uid === "string" && typeof p.redirectUri === "string") {
+      return { uid: p.uid, redirectUri: p.redirectUri };
+    }
+  } catch {
+    /* expired or not ours */
+  }
+  return null;
+}
+
+api.get("/integrations/google-calendar", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const { clientId, clientSecret } = googleClientConfig();
+  const rows = await db
+    .select({ email: googleIntegrations.googleEmail, connectedAt: googleIntegrations.connectedAt })
+    .from(googleIntegrations)
+    .where(eq(googleIntegrations.userId, req.user!.userId))
+    .limit(1);
+  res.json({
+    configured: Boolean(clientId && clientSecret),
+    connected: rows.length > 0,
+    email: rows[0]?.email || null,
+    connected_at: rows[0]?.connectedAt || null,
+  });
+});
+
+api.post("/integrations/google-calendar/connect", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const { clientId, clientSecret } = googleClientConfig();
+  if (!clientId || !clientSecret) {
+    return res.status(503).json({ detail: "Google entegrasyonu sunucuda yapılandırılmamış (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)." });
+  }
+  const redirectUri = googleCallbackUrl(req);
+  const state = jwt.sign({ purpose: "gcal", uid: req.user!.userId, redirectUri }, JWT_SECRET, { expiresIn: "10m" });
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: GCAL_SCOPES.join(" "),
+    access_type: "offline", // returns a refresh token
+    prompt: "consent", // always issue a refresh token, even on reconnect
+    include_granted_scopes: "true",
+    state,
+  });
+  if (req.user!.email) params.set("login_hint", req.user!.email);
+  res.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}` });
+});
+
+api.delete("/integrations/google-calendar", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const rows = await db.select().from(googleIntegrations).where(eq(googleIntegrations.userId, userId)).limit(1);
+  if (rows[0]) {
+    try {
+      // Revoking the refresh token also invalidates its access tokens.
+      const token = decryptSecret(rows[0].refreshTokenEnc);
+      await axios.post("https://oauth2.googleapis.com/revoke", new URLSearchParams({ token }).toString(), {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        timeout: 8000,
+      });
+    } catch {
+      /* already revoked or unreachable: the local link is removed anyway */
+    }
+    await db.delete(googleIntegrations).where(eq(googleIntegrations.userId, userId));
+  }
+  res.json({ connected: false });
+});
+
+api.get("/integrations/google-calendar/events", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const timeMin = new Date(String(req.query.time_min || ""));
+  const timeMax = new Date(String(req.query.time_max || ""));
+  if (isNaN(timeMin.getTime()) || isNaN(timeMax.getTime()) || timeMax <= timeMin || timeMax.getTime() - timeMin.getTime() > 32 * 86400000) {
+    return res.status(400).json({ detail: "Geçerli time_min / time_max gerekli (en fazla 32 gün)" });
+  }
+  try {
+    const callGoogle = async (forceRefresh: boolean) => {
+      const token = await getGcalAccessToken(req.user!.userId, forceRefresh);
+      return axios.get("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          timeMin: timeMin.toISOString(),
+          timeMax: timeMax.toISOString(),
+          singleEvents: true,
+          orderBy: "startTime",
+          maxResults: 100,
+        },
+        timeout: 10000,
+      });
+    };
+    let data: any;
+    try {
+      ({ data } = await callGoogle(false));
+    } catch (err: any) {
+      // A rejected access token: refresh once and retry before asking the user.
+      if (err?.response?.status !== 401) throw err;
+      ({ data } = await callGoogle(true));
+    }
+    const items = Array.isArray(data?.items) ? data.items : [];
+    res.json(
+      items.map((item: any) => ({
+        id: item.id,
+        summary: item.summary || "İsimsiz Etkinlik",
+        description: item.description,
+        location: item.location,
+        start: item.start || {},
+        end: item.end || {},
+        attendees: item.attendees,
+        hangoutLink: item.hangoutLink,
+        htmlLink: item.htmlLink,
+        status: item.status,
+      }))
+    );
+  } catch (err: any) {
+    if (err instanceof GcalReconnectError) {
+      return res.status(409).json({ detail: err.message, code: "reconnect_required" });
+    }
+    if (err?.response?.status === 401 || err?.response?.status === 403) {
+      return res.status(409).json({ detail: "Google Takvim erişimi reddedildi; lütfen Ayarlar'dan yeniden bağlanın", code: "reconnect_required" });
+    }
+    res.status(502).json({ detail: "Google Takvim etkinlikleri alınamadı" });
+  }
+});
 
 api.get(["/auth/google/callback", "/auth/google/callback/"], handleGoogleOAuthCallback);
 app.get(["/auth/google/callback", "/auth/google/callback/"], handleGoogleOAuthCallback);

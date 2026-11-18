@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import GoogleCalendarSettings from "@/components/settings/GoogleCalendarSettings";
+import { useGcalStatus } from "@/lib/googleCalendar";
 import {
   Feather,
   ArrowLeft,
@@ -66,7 +68,7 @@ import {
 import { toast } from "sonner";
 import type { User } from "@/types";
 
-type SettingsTab = "appearance" | "note_types" | "drive" | "export_import" | "account";
+type SettingsTab = "appearance" | "note_types" | "integrations" | "drive" | "export_import" | "account";
 
 const FILTER_OPTIONS: { id: NoteDefaultFilter; label: string; desc: string; icon: any }[] = [
   {
@@ -116,6 +118,8 @@ export default function SettingsPage() {
 
   const tabParam = (searchParams.get("tab") as SettingsTab) || "appearance";
   const [activeTab, setActiveTab] = useState<SettingsTab>(tabParam);
+
+  const { status: gcalStatus } = useGcalStatus();
 
   // Google Drive state
   const [isConnectingDrive, setIsConnectingDrive] = useState(false);
@@ -411,6 +415,21 @@ export default function SettingsPage() {
 
           <button
             type="button"
+            onClick={() => handleTabChange("integrations")}
+            data-testid="settings-tab-integrations"
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition-all text-left cursor-pointer ${
+              activeTab === "integrations"
+                ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/70"
+            }`}
+          >
+            <Calendar className="w-4 h-4 shrink-0 text-sky-500" />
+            <span className="truncate flex-1">Google Takvim</span>
+            {gcalStatus?.connected && <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />}
+          </button>
+
+          <button
+            type="button"
             onClick={() => handleTabChange("drive")}
             data-testid="settings-tab-drive"
             className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition-all text-left cursor-pointer ${
@@ -623,6 +642,9 @@ export default function SettingsPage() {
 
           {/* TAB: Not Tipleri & Parametreler */}
           {activeTab === "note_types" && <NoteTypeManager />}
+
+          {/* Google Takvim entegrasyonu */}
+          {activeTab === "integrations" && <GoogleCalendarSettings />}
 
           {/* TAB 2: Google Drive Yedekleme & Senkronizasyon */}
           {activeTab === "drive" && (

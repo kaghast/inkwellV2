@@ -229,6 +229,16 @@ export async function initDatabaseSchema() {
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     CREATE INDEX IF NOT EXISTS area_user_idx ON areas(user_id);
+    CREATE TABLE IF NOT EXISTS google_integrations (
+      user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+      google_email TEXT,
+      refresh_token_enc TEXT NOT NULL,
+      access_token TEXT,
+      access_token_expires_at TIMESTAMP,
+      scopes TEXT,
+      connected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS files (
       file_id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,

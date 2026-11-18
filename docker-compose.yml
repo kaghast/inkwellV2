@@ -14,6 +14,7 @@ services:
       - HOST=0.0.0.0
       # Leave unset to auto-generate a random secret persisted in the data volume
       - JWT_SECRET=${JWT_SECRET:-}
+      - INTEGRATION_ENCRYPTION_KEY=${INTEGRATION_ENCRYPTION_KEY:-}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@inkwell.app}
       # Leave unset to generate a one-time random admin password (printed in logs)
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}

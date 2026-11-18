@@ -13,10 +13,10 @@ import firebaseConfig from "../../firebase-applet-config.json";
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
 
-// Provider with Drive file and Calendar readonly access scopes
+// Provider for Google Drive backups. Google Calendar is connected separately
+// through the server (Settings > Google Takvim), so it survives reloads.
 export const googleServicesProvider = new GoogleAuthProvider();
 googleServicesProvider.addScope("https://www.googleapis.com/auth/drive.file");
-googleServicesProvider.addScope("https://www.googleapis.com/auth/calendar.events.readonly");
 googleServicesProvider.setCustomParameters({
   prompt: "consent",
   access_type: "offline",
@@ -64,7 +64,6 @@ export async function connectGoogleServices(): Promise<{ user: FirebaseUser; acc
 
 // Aliases for compatibility
 export const connectGoogleDrive = connectGoogleServices;
-export const connectGoogleCalendar = connectGoogleServices;
 
 /**
  * Get current Google Access Token
@@ -73,7 +72,6 @@ export function getGoogleAccessToken(): string | null {
   return cachedGoogleAccessToken;
 }
 export const getDriveAccessToken = getGoogleAccessToken;
-export const getCalendarAccessToken = getGoogleAccessToken;
 
 /**
  * Set Google Access Token in memory
@@ -102,4 +100,3 @@ export async function disconnectGoogleServices(): Promise<void> {
   }
 }
 export const disconnectGoogleDrive = disconnectGoogleServices;
-export const disconnectGoogleCalendar = disconnectGoogleServices;

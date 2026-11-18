@@ -45,6 +45,8 @@ VITE_GOOGLE_CLIENT_ID=your_google_client_id_here.apps.googleusercontent.com
 CORS_ORIGINS=
 # Opsiyonel: frontend farklı bir sitede barınıyorsa "none" yapın (varsayılan: lax)
 COOKIE_SAMESITE=lax
+# Opsiyonel: Google Takvim yenileme belirteçlerini şifreleyen anahtar (varsayılan: JWT_SECRET'tan türetilir)
+INTEGRATION_ENCRYPTION_KEY=
 ```
 
 > **Güvenlik notları:** `JWT_SECRET` boş bırakılırsa rastgele bir anahtar üretilip veri dizinine (`.data/.jwt_secret`) kaydedilir. Production'da `ADMIN_PASSWORD` verilmezse tek seferlik rastgele bir yönetici şifresi üretilir ve sunucu loglarına yazılır. `admin12345` varsayılanı yalnızca geliştirme ortamında kullanılır.
@@ -52,6 +54,8 @@ COOKIE_SAMESITE=lax
 ### 4. Adım: Google Cloud Console Yönlendirme Ayarları
 Coolify size bir alan adı (örneğin `https://inkwell.sizin-sunucunuz.com`) tanımladığında, Google Cloud Console > Credentials sayfasında ilgili OAuth Client ID'nize şu callback URL'ini ekleyin:
 - `https://inkwell.sizin-sunucunuz.com/api/auth/google/callback`
+
+**Google Takvim (Ayarlar > Google Takvim):** Takvim bağlantısı da aynı callback URL'ini kullanır, ek bir yönlendirme adresi gerekmez. Google Cloud projesinde **Google Calendar API**'yi etkinleştirin ve OAuth izin ekranına `.../auth/calendar.events.readonly` kapsamını ekleyin. Kullanıcı bir kez izin verdikten sonra yenileme belirteci sunucuda şifreli saklanır; tekrar giriş gerekmez. `JWT_SECRET` (veya `INTEGRATION_ENCRYPTION_KEY`) değişirse kayıtlı bağlantılar çözülemez ve kullanıcılardan yeniden bağlanmaları istenir. OAuth izin ekranı "Testing" durumundaysa Google yenileme belirteçlerini 7 gün sonra geçersiz kılar; kalıcı bağlantı için uygulamayı "In production" durumuna alın.
 
 ### 5. Adım: Deploy!
 - **Deploy** butonuna tıklayın. Coolify imajı derleyecek, `dist` varlıklarını oluşturacak ve port 3000 üzerinden uygulamanızı canlıya alacaktır.
