@@ -51,7 +51,16 @@ import {
   Unlock,
   Key,
   Plus,
+  MoreVertical,
+  Scissors,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import NoteSplitView, { canSplitNote } from "@/components/NoteSplitView";
 import { toast } from "sonner";
 import type { Note, LocationItem, NoteType, Category } from "@/types";
 import DrawingEditor from "@/components/drawing/DrawingEditor";
@@ -65,7 +74,6 @@ import NoteVersionsDialog from "@/components/NoteVersionsDialog";
 import EncryptNoteDialog from "@/components/EncryptNoteDialog";
 import { verifyPassword } from "@/lib/crypto";
 import { extractCommentsFromContent, embedCommentsIntoContent } from "@/lib/comments";
-import { hasSplitMarker, splitNoteContent } from "@/lib/noteSplitMerge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -123,6 +131,7 @@ export default function NoteDetail() {
   const [detailFullFocus, setDetailFullFocus] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [encryptOpen, setEncryptOpen] = useState(false);
+  const [splitting, setSplitting] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [unlockPass, setUnlockPass] = useState("");
   const [unlocking, setUnlocking] = useState(false);
@@ -298,48 +307,6 @@ export default function NoteDetail() {
         content_mode: contentMode,
       };
       const { comments: existingComments } = extractCommentsFromContent(note.content);
-
-      if (hasSplitMarker(content)) {
-        const { part1, part2, title2 } = splitNoteContent(content, title);
-        const fullPart1 = embedCommentsIntoContent(part1, existingComments);
-
-        const { data: updatedNote } = await api.put<Note>(`/notes/${note.note_id}`, {
-          title,
-          content: fullPart1,
-          date: dateTime,
-          slug: slug.trim() || undefined,
-          location_id: locationId,
-          note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
-          custom_fields: updatedFields,
-          change_summary: "Not ikiye bölündü (1. Kısım)",
-        });
-
-        if (part2) {
-          await api.post<Note>("/notes", {
-            title: title2,
-            content: part2,
-            date: dateTime,
-            location_id: locationId,
-            note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
-            custom_fields: updatedFields,
-          });
-        }
-
-        setNote(updatedNote);
-        setDateTime(toDateTimeLocal(updatedNote.date));
-        setInlineDateVal(toDateTimeLocal(updatedNote.date));
-        setSlug(updatedNote.slug || "");
-        if (!keepEditing) setEditing(false);
-        setContent(extractCommentsFromContent(updatedNote.content || "").mainContent);
-        setContentMode(detectContentMode(updatedNote.content || "", updatedNote.custom_fields));
-        setLoc(locations.find((l) => l.location_id === updatedNote.location_id) || null);
-        toast.success(keepEditing ? "Değişiklikler kaydedildi" : "Not 2 ayrı nota bölündü ve kaydedildi");
-
-        if (updatedNote.slug && updatedNote.slug !== id) {
-          navigate(`/note/${updatedNote.slug}`, { replace: true });
-        }
-        return;
-      }
 
       const fullContentToSave = embedCommentsIntoContent(content, existingComments);
 
@@ -1130,6 +1097,40 @@ export default function NoteDetail() {
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
+
+                    {/* More actions */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="icon" variant="ghost" title="Diğer işlemler" data-testid="note-more-btn">
+                          <MoreVertical className="w-4 h-4 text-muted-foreground" strokeWidth={1.5} />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-52 bg-popover border-border p-1 shadow-lg">
+                        <DropdownMenuItem
+                          disabled={!canSplitNote(note)}
+                          onClick={() => setSplitting(true)}
+                          className="text-xs cursor-pointer text-amber-700 dark:text-amber-400"
+                          data-testid="note-split-btn"
+                        >
+                          <Scissors className="w-3.5 h-3.5 mr-2" />
+                          <div className="flex flex-col">
+                            <span>Notu Böl</span>
+                            {!canSplitNote(note) && (
+                              <span className="text-[10px] text-muted-foreground">
+                                {note.is_encrypted ? "Şifreli notlar bölünemez" : "Bu içerik satırlara bölünemez"}
+                              </span>
+                            )}
+                          </div>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setVersionsOpen(true)}
+                          className="text-xs cursor-pointer"
+                        >
+                          <History className="w-3.5 h-3.5 mr-2 text-primary" />
+                          Versiyon Geçmişi
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </>
                 )}
               </div>
@@ -1207,7 +1208,20 @@ export default function NoteDetail() {
                   </div>
                 )}
 
-            {/* Content View Modes with Double-Click to Edit */}
+            {/* Split mode: pick lines where new notes start */}
+            {splitting ? (
+              <NoteSplitView
+                note={note}
+                onCancel={() => setSplitting(false)}
+                onDone={(updated, created) => {
+                  setSplitting(false);
+                  setNote(updated);
+                  setContent(extractCommentsFromContent(updated.content || "").mainContent);
+                  setAllNotes((prev) => [...created, ...prev]);
+                }}
+              />
+            ) : (
+            /* Content View Modes with Double-Click to Edit */
             <div
               onDoubleClick={(e) => {
                 const target = e.target as HTMLElement;
@@ -1294,6 +1308,7 @@ export default function NoteDetail() {
                 />
               )}
             </div>
+            )}
 
             {/* Tags and People */}
             {(note.tags?.length > 0 || note.people?.length > 0) && (

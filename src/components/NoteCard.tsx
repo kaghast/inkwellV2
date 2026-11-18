@@ -20,6 +20,7 @@ import {
   Lock,
   Unlock,
   Key,
+  Scissors,
 } from "lucide-react";
 import api from "@/lib/api";
 import type { Note, LocationItem, Category, NoteType } from "@/types";
@@ -33,7 +34,8 @@ import NoteVersionsDialog from "@/components/NoteVersionsDialog";
 import EncryptNoteDialog from "@/components/EncryptNoteDialog";
 import { verifyPassword } from "@/lib/crypto";
 import { extractCommentsFromContent, embedCommentsIntoContent } from "@/lib/comments";
-import { hasSplitMarker, splitNoteContent } from "@/lib/noteSplitMerge";
+import NoteSplitView, { canSplitNote } from "@/components/NoteSplitView";
+import NoteAreasBar from "@/components/areas/NoteAreasBar";
 import { CustomFieldsForm, CustomFieldsView } from "@/components/CustomFieldsRenderer";
 import { formatDisplayDatetime, toDateTimeLocal } from "@/lib/datetime";
 import { Button } from "@/components/ui/button";
@@ -83,6 +85,9 @@ export default function NoteCard({
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [unlockPass, setUnlockPass] = useState("");
   const [unlocking, setUnlocking] = useState(false);
+  const [splitting, setSplitting] = useState(false);
+  const [areaIds, setAreaIds] = useState<string[]>(note.area_ids || []);
+  React.useEffect(() => setAreaIds(note.area_ids || []), [note.area_ids]);
 
   const isArchived = Boolean(note.archived);
   const isEncrypted = Boolean(note.is_encrypted);
@@ -164,37 +169,6 @@ export default function NoteCard({
     setSaving(true);
     try {
       const { comments: existingComments } = extractCommentsFromContent(note.content);
-
-      if (hasSplitMarker(content)) {
-        const { part1, part2, title2 } = splitNoteContent(content, title);
-        const fullPart1 = embedCommentsIntoContent(part1, existingComments);
-
-        await api.put(`/notes/${note.note_id}`, {
-          title: title.trim() || undefined,
-          content: fullPart1,
-          date,
-          location_id: locationId,
-          note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
-          custom_fields: customFields,
-          change_summary: "Not ikiye bölündü (1. Kısım)",
-        });
-
-        if (part2) {
-          await api.post("/notes", {
-            title: title2,
-            content: part2,
-            date,
-            location_id: locationId,
-            note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
-            custom_fields: customFields,
-          });
-        }
-
-        toast.success("Not 2 ayrı nota bölündü");
-        setEditing(false);
-        onChanged();
-        return;
-      }
 
       const fullContentToSave = embedCommentsIntoContent(content, existingComments);
 
@@ -357,7 +331,7 @@ export default function NoteCard({
         ) {
           return;
         }
-        if (!editing && !isArchived) {
+        if (!editing && !splitting && !isArchived) {
           setEditing(true);
         }
       }}
@@ -608,12 +582,25 @@ export default function NoteCard({
                 </DropdownMenuItem>
               )}
 
+              {/* Split Action: cut the note into several notes right inside the card */}
+              {!editing && canSplitNote(note) && (
+                <DropdownMenuItem
+                  onClick={() => setSplitting(true)}
+                  className="text-xs cursor-pointer text-amber-700 dark:text-amber-400"
+                  data-testid={`note-split-btn-${note.note_id}`}
+                >
+                  <Scissors className="w-3.5 h-3.5 mr-2" />
+                  Notu Böl
+                </DropdownMenuItem>
+              )}
+
               {/* Edit Action - Disabled when archived */}
               {!isArchived && (
                 <DropdownMenuItem
                   onClick={() => {
                     if (!editing) {
                       setContent(extractCommentsFromContent(note.content).mainContent);
+                      setSplitting(false);
                     }
                     setEditing(!editing);
                   }}
@@ -693,8 +680,18 @@ export default function NoteCard({
             <CustomFieldsView fields={currentType.fields} values={note.custom_fields} />
           )}
 
-          {/* Content Area (Viewing or Editing) */}
-          {editing ? (
+          {/* Content Area (Splitting, Viewing or Editing) */}
+          {splitting && !editing ? (
+            <NoteSplitView
+              note={note}
+              compact
+              onCancel={() => setSplitting(false)}
+              onDone={() => {
+                setSplitting(false);
+                onChanged();
+              }}
+            />
+          ) : editing ? (
             <div className="space-y-3 mt-3">
               {/* Dynamic Custom Fields Form in Edit Mode */}
               {currentType && currentType.fields && currentType.fields.length > 0 && (
@@ -785,9 +782,16 @@ export default function NoteCard({
             <MarkdownView content={note.content} />
           )}
 
-          {/* Note footer: tags & people */}
-          {(note.tags?.length > 0 || note.people?.length > 0) && (
+          {/* Note footer: areas, tags & people */}
+          {!splitting && (!isArchived || areaIds.length > 0 || note.tags?.length > 0 || note.people?.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-2.5 border-t border-border/40">
+              <NoteAreasBar
+                variant="card"
+                noteId={note.note_id}
+                value={areaIds}
+                onChange={setAreaIds}
+                disabled={isArchived}
+              />
               {note.tags?.map((t) => (
                 <Link
                   key={t}
@@ -810,7 +814,7 @@ export default function NoteCard({
           )}
 
           {/* Embedded Comments Section (Read Mode) */}
-          {!editing && (
+          {!editing && !splitting && (
             <NoteCommentsSection
               noteId={note.note_id}
               content={note.content}

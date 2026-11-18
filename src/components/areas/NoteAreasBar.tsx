@@ -1,73 +1,30 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { FolderTree, Plus, X } from "lucide-react";
+import React from "react";
+import { FolderTree, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { formatApiError } from "@/lib/api";
-import type { Area } from "@/types";
 import AreaPicker from "@/components/areas/AreaPicker";
-import { areaColor, areaMap, areaPath, fetchAreas, setNoteAreas } from "@/lib/areas";
+import AreaField from "@/components/areas/AreaField";
+import { AreaChips } from "@/components/areas/AreaChips";
+import { useAreas } from "@/components/areas/useAreas";
+import { rememberRecentAreas, setNoteAreas } from "@/lib/areas";
 
-interface AreaChipsProps {
-  areas: Area[];
-  value: string[];
-  onRemove?: (id: string) => void;
-}
-
-/** Coloured chips showing the full "Ana › Alt" path of each linked area. */
-export function AreaChips({ areas, value, onRemove }: AreaChipsProps) {
-  const byId = useMemo(() => areaMap(areas), [areas]);
-  return (
-    <>
-      {value
-        .map((id) => byId[id])
-        .filter(Boolean)
-        .map((a) => {
-          const color = areaColor(a, byId);
-          return (
-            <span
-              key={a.area_id}
-              className="inline-flex items-center gap-1 max-w-[16rem] rounded-full border pl-2 pr-1 py-0.5 text-xs"
-              style={{ borderColor: `${color}66`, background: `${color}14` }}
-              title={areaPath(a, byId)}
-            >
-              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
-              <Link to={`/graph?area=${a.area_id}`} className="truncate hover:underline">
-                {areaPath(a, byId)}
-              </Link>
-              {a.archived && <span className="text-[9px] uppercase text-muted-foreground">arşiv</span>}
-              {onRemove && (
-                <button
-                  type="button"
-                  onClick={() => onRemove(a.area_id)}
-                  className="p-0.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-background"
-                  title="Bu alandan çıkar"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </span>
-          );
-        })}
-    </>
-  );
-}
+export { AreaChips };
 
 interface NoteAreasBarProps {
   noteId: string;
   value: string[];
   onChange: (ids: string[]) => void;
+  /** "bar": labelled row on the note page; "card": compact chips in a note card footer. */
+  variant?: "bar" | "card";
+  disabled?: boolean;
 }
 
 /**
  * Read-mode bar on a note: shows linked areas and lets the user add/remove them.
  * Changes are saved immediately (no edit mode, no new note version).
  */
-export default function NoteAreasBar({ noteId, value, onChange }: NoteAreasBarProps) {
-  const [areas, setAreas] = useState<Area[]>([]);
-
-  useEffect(() => {
-    fetchAreas().then(setAreas).catch(() => setAreas([]));
-  }, []);
+export default function NoteAreasBar({ noteId, value, onChange, variant = "bar", disabled }: NoteAreasBarProps) {
+  const [areas, addArea] = useAreas();
 
   const save = async (ids: string[]) => {
     const previous = value;
@@ -75,11 +32,16 @@ export default function NoteAreasBar({ noteId, value, onChange }: NoteAreasBarPr
     try {
       const saved = await setNoteAreas(noteId, ids);
       onChange(saved);
+      rememberRecentAreas(saved.filter((id) => !previous.includes(id)));
     } catch (err) {
       onChange(previous);
       toast.error(formatApiError(err));
     }
   };
+
+  if (variant === "card") {
+    return <AreaField variant="card" value={value} onChange={save} disabled={disabled} />;
+  }
 
   return (
     <div className="mb-5 flex flex-wrap items-center gap-1.5" data-testid="note-areas-bar">
@@ -91,7 +53,7 @@ export default function NoteAreasBar({ noteId, value, onChange }: NoteAreasBarPr
         areas={areas}
         value={value}
         onChange={save}
-        onAreaCreated={(a) => setAreas((prev) => [...prev, a])}
+        onAreaCreated={addArea}
         trigger={
           <button
             type="button"

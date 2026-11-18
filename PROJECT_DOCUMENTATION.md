@@ -26,7 +26,7 @@ Bu belge, **Inkwell V2** projesinin başlangıcından bugüne kadar gerçekleşt
 - **Kanban & Görev Yönetimi:** Not tipleriyle entegre, dinamik kolonlu görsel iş akış panosu ve çift tıklamayla doğrudan düzenleme desteği.
 - **Akıllı Harita & Canlı Konum:** Çift motorlu harita (Google Maps + Leaflet / OpenStreetMap), GPS otomatik konum tespiti ve Nominatim destekli küresel canlı arama & otomatik mekan adı tamamlama.
 - **Gelişmiş Organizasyon:** Sola sabit modern menubar, "+ Yeni Not Ekle" hızlı erişimi ve çoklu sekmede (Etiketler, Kişiler, Konumlar, Sticker/Emoji, Cümle/Kalıplar) sürükle-bırak destekli hiyerarşik klasör/grup yönetimi.
-- **Blok Tabanlı Not İşleme:** Notu Kes (Split Note) ve Notu Birleştir (Merge Note) dinamik blokları ile kesintisiz not parçalama ve zengin metadata aktarımıyla not birleştirme.
+- **Not Bölme ve Birleştirme:** Kart ve detay sayfasındaki üç nokta menüsünden "Notu Böl" ile satır satır kesim; editördeki Notu Birleştir (Merge Note) bloğu ile zengin metadata aktarımıyla not birleştirme.
 - **Yapay Zeka ve Vektör Arama:** Google Gemini ve pgvector 768 boyutlu metin embedding'leri ile anlamsal arama ve otomatik özetleme.
 
 ---
@@ -254,10 +254,12 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
   - `/new` ve `/notes/new` rotalarında çalışan, dikkat dağıtıcı unsurlardan arındırılmış tam özellikli not editörü.
   - 4 içerik modu seçimi (Markdown, Çizim, Outline, Zihin Haritası), başlık, tarih, konum, dinamik not tipi alanları, parola korumalı şifreleme ve Tam Odaklanma Modu (Full Focus Mode) desteği.
 
-### 4.4. Notu Kes (Split) ve Notu Birleştir (Merge) Blokları
-- **Notu Kes (Split Note) Bloğu (`src/lib/splitMerge.ts` & `SplitNoteDialog.tsx`):**
-  - İçerikte imlecin bulunduğu veya seçilen ayrım noktasına `<!-- inkwell:split-note -->` bloğu yerleştirilir.
-  - Not kaydedildiğinde veya onaylandığında, ayrım noktasından önceki kısım mevcut notta kalır; sonraki kısım ise aynı etiket, kişi ve konum bilgileriyle yeni bir not olarak sisteme eklenir (`POST /notes`).
+### 4.4. Notu Böl (Split) ve Notu Birleştir (Merge)
+- **Notu Böl (`NoteSplitView.tsx`, `src/lib/noteSplitMerge.ts`):**
+  - Editörde ve yeni not ekranında artık bölme bloğu yoktur. Bölme, not kartının (liste görünümü) ve not detay sayfasının sağ üst köşesindeki üç nokta menüsünden **Notu Böl** ile yapılır.
+  - Bu mod, kartın içinde notun satırlarını listeler; yeni notun başlayacağı satıra tıklamak oraya bir kesim koyar. Birden fazla kesim eklenebilir; her kesim etiketinde yeni notun başlığı görünür ve tek tıkla kaldırılabilir. Kod blokları ve tablolar bölünmez, tek parça olarak taşınır.
+  - Onaylanınca önce yeni notlar oluşturulur (tarih, konum, kategori, tür, özel alanlar ve alanlar devralınır); hepsi oluşunca orijinal not ilk parçayla güncellenir ve sürüm geçmişine "Not N parçaya bölündü" kaydı düşer. Bir adım başarısız olursa oluşturulan notlar geri silinir. Yorumlar orijinal notta kalır.
+  - Şifreli, arşivlenmiş ve çizim / outline / zihin haritası modundaki notlar bölünemez. Esc bölme modundan çıkar.
 - **Notu Birleştir (Merge Note) Bloğu (`MergeNoteDialog.tsx`):**
   - Editörden "Notu Birleştir" seçildiğinde kullanıcının diğer notları aranabilir modalda listelenir (veya içerikteki `[[...]]` referansı seçilebilir).
   - Birleştirilen notun Markdown içeriği, konumu, etiketleri, kişileri, oluşturulma tarihi ve özel alanları mevcut notun altına zengin formatlanmış bir alıntı ve metadata bloğu olarak eklenir.
@@ -301,7 +303,7 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 - **Veri modeli:** `areas` tablosu (`parent_id` ile sınırsız derinlikte ana alan → alt alan hiyerarşisi, `archived`, `color`, `order_index`). Notlar `notes.area_ids` (JSONB) ile birden çok alana bağlanabilir. Yedekleme dışa/içe aktarımı alanları ve not bağlantılarını içerir.
 - **API:** `GET/POST /api/areas`, `PUT /api/areas/:id` (taşıma döngü kontrolüyle), `PATCH /api/areas/:id/archive` (arşivleme alt alanlara yayılır; arşivden çıkarma üst alanları da geri getirir), `DELETE /api/areas/:id` (yalnızca arşivdeki alanlar; notlar silinmez, alt alanlar bir üst seviyeye taşınır), `PATCH /api/notes/:id/areas` (yeni sürüm oluşturmadan bağla/çıkar), `GET /api/notes?area_id=`.
 - **Alan Haritası (`/graph`):** Merkezde "Alanlarım", iki yana dengelenmiş ana alanlar; daire yarıçapı alt alanlar dahil not sayısıyla (karekök ölçekli) büyür. Bir alana tıklamak alt alanlarını ve notlarını kademeli açar; tıklanan düğüm yerinde kalır ve açılan dal panelin altında kalmayacak şekilde görünür alana kaydırılır. Ortak notu olan alanlar kesikli "ilişki" çizgileriyle gösterilir. Eski ağ görünümü `/network` adresinde korunur.
-- **Yönetim:** Sol ağaç panelinde ana alan / alt alan ekleme, yeniden adlandırma, renk, arşivleme ve Arşiv bölümünden geri alma/kalıcı silme; sağ panelde üst alan değiştirme, açıklama, not arayıp bağlama. Not sayfasında "Alanlar" çubuğu ve yeni not ekranındaki `AreaPicker` ile düzenleme moduna girmeden alan seçme veya yerinde yeni alan oluşturma.
+- **Yönetim:** Sol ağaç panelinde ana alan / alt alan ekleme, yeniden adlandırma, renk, arşivleme ve Arşiv bölümünden geri alma/kalıcı silme; sağ panelde üst alan değiştirme, açıklama, not arayıp bağlama. Not sayfasında "Alanlar" çubuğu, not kartlarının alt satırındaki alan çipleri (anında kaydedilir) ve hızlı not kutusu ile yeni not ekranındaki alan alanı (`AreaField`) ile düzenleme moduna girmeden alan seçme veya yerinde yeni alan oluşturma. Son kullanılan alanlar yeni not eklerken tek tıklık öneri olarak çıkar (`localStorage: inkwell_recent_areas`). Alan listesi sayfadaki tüm kartlar arasında tek istekle paylaşılır.
 
 ---
 

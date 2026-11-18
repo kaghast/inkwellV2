@@ -134,3 +134,71 @@ export async function setNoteAreas(noteId: string, areaIds: string[]): Promise<s
   const { data } = await api.patch<{ area_ids: string[] }>(`/notes/${noteId}/areas`, { area_ids: areaIds });
   return Array.isArray(data?.area_ids) ? data.area_ids : areaIds;
 }
+
+/* ------------------------------------------------------------------ */
+/* Shared area list: one request for every card/picker on the page.    */
+/* ------------------------------------------------------------------ */
+
+let areaCache: Area[] | null = null;
+let areaRequest: Promise<Area[]> | null = null;
+const areaListeners = new Set<(areas: Area[]) => void>();
+
+function publishAreas(next: Area[]) {
+  areaCache = next;
+  areaListeners.forEach((fn) => fn(next));
+}
+
+/** Loads areas once and shares them; pass `force` to re-fetch. */
+export function loadSharedAreas(force = false): Promise<Area[]> {
+  if (areaCache && !force) return Promise.resolve(areaCache);
+  if (!areaRequest || force) {
+    areaRequest = fetchAreas()
+      .then((list) => {
+        publishAreas(list);
+        return list;
+      })
+      .catch(() => areaCache || [])
+      .finally(() => {
+        areaRequest = null;
+      });
+  }
+  return areaRequest;
+}
+
+/** Adds a newly created area to the shared list. */
+export function addSharedArea(area: Area) {
+  publishAreas([...(areaCache || []).filter((a) => a.area_id !== area.area_id), area]);
+}
+
+export function subscribeSharedAreas(fn: (areas: Area[]) => void): () => void {
+  areaListeners.add(fn);
+  return () => {
+    areaListeners.delete(fn);
+  };
+}
+
+export function getCachedAreas(): Area[] {
+  return areaCache || [];
+}
+
+/* Recently used areas, so the next note can be linked with one click. */
+const RECENT_KEY = "inkwell_recent_areas";
+
+export function getRecentAreaIds(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+    return Array.isArray(raw) ? raw.filter((x) => typeof x === "string").slice(0, 8) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function rememberRecentAreas(ids: string[]) {
+  if (!ids.length) return;
+  try {
+    const next = [...ids, ...getRecentAreaIds().filter((x) => !ids.includes(x))].slice(0, 8);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    /* storage unavailable: suggestions are a convenience only */
+  }
+}

@@ -10,7 +10,8 @@ import { toDateTimeLocal } from "@/lib/datetime";
 import { toast } from "sonner";
 import type { Note, LocationItem, Category, NoteType } from "@/types";
 
-import { hasSplitMarker, splitNoteContent } from "@/lib/noteSplitMerge";
+import AreaField from "@/components/areas/AreaField";
+import { rememberRecentAreas } from "@/lib/areas";
 
 interface Props {
   defaultDate: string;
@@ -38,6 +39,7 @@ export default function NoteComposer({
   const [noteTypes, setNoteTypes] = useState<NoteType[]>(initialNoteTypes || []);
   const [noteTypeId, setNoteTypeId] = useState<string>("type_plain");
   const [customFields, setCustomFields] = useState<Record<string, any>>({});
+  const [areaIds, setAreaIds] = useState<string[]>([]);
   const [locationDialog, setLocationDialog] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -70,7 +72,7 @@ export default function NoteComposer({
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [open, content, title, noteDateTime, locationId, noteTypeId, customFields]);
+  }, [open, content, title, noteDateTime, locationId, noteTypeId, customFields, areaIds]);
 
   function reset() {
     setTitle("");
@@ -78,6 +80,7 @@ export default function NoteComposer({
     setLocationId(null);
     setNoteTypeId("type_plain");
     setCustomFields({});
+    setAreaIds([]);
     setOpen(false);
   }
 
@@ -97,33 +100,6 @@ export default function NoteComposer({
     }
     setBusy(true);
     try {
-      if (hasSplitMarker(content)) {
-        const { part1, part2, title2 } = splitNoteContent(content, title);
-        const { data: note1 } = await api.post<Note>("/notes", {
-          title: title.trim() || undefined,
-          content: part1,
-          date: noteDateTime || defaultDate,
-          location_id: locationId,
-          note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
-          custom_fields: customFields,
-        });
-        onCreated(note1);
-
-        if (part2) {
-          await api.post<Note>("/notes", {
-            title: title2,
-            content: part2,
-            date: noteDateTime || defaultDate,
-            location_id: locationId,
-            note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
-            custom_fields: customFields,
-          });
-        }
-        reset();
-        toast.success("Not 2 ayrı nota bölündü ve eklendi");
-        return;
-      }
-
       const { data } = await api.post<Note>("/notes", {
         title,
         content,
@@ -131,7 +107,9 @@ export default function NoteComposer({
         location_id: locationId,
         note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
         custom_fields: customFields,
+        area_ids: areaIds,
       });
+      rememberRecentAreas(areaIds);
       onCreated(data);
       reset();
       toast.success("Not eklendi");
@@ -313,6 +291,9 @@ export default function NoteComposer({
         autoFocus
         onSubmit={save}
       />
+
+      {/* Knowledge areas: picker + last used areas as one-click suggestions */}
+      <AreaField value={areaIds} onChange={setAreaIds} />
 
       <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
         <div className="flex items-center gap-2 flex-wrap">
