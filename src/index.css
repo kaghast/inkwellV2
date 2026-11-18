@@ -173,8 +173,19 @@ body {
 .leaflet-tile {
   filter: grayscale(0.6) contrast(0.95) brightness(0.98);
 }
-.dark .leaflet-tile {
+.dark .leaflet-tile,
+.leaflet-tile.tile-force-dark {
   filter: grayscale(0.85) invert(0.92) contrast(0.85) brightness(0.95);
+}
+.leaflet-tile.tile-paper,
+.dark .leaflet-tile.tile-paper {
+  filter: sepia(0.45) grayscale(0.25) contrast(0.95) brightness(1.02);
+}
+.leaflet-tile.tile-standard,
+.dark .leaflet-tile.tile-standard,
+.leaflet-tile.tile-satellite,
+.dark .leaflet-tile.tile-satellite {
+  filter: none;
 }
 
 /* Calendar custom */
