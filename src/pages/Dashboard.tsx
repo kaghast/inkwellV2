@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import api from "@/lib/api";
 import type { Note, Tag, Person, LocationItem, Category, ItemGroup, CalendarCounts, NoteType } from "@/types";
 import AppMenubar from "@/components/AppMenubar";
@@ -9,6 +9,7 @@ import NoteComposer from "@/components/NoteComposer";
 import CalendarPanel from "@/components/CalendarPanel";
 import PinnedNotesPanel from "@/components/PinnedNotesPanel";
 import PeriodNotesStrip from "@/components/PeriodNotesStrip";
+import { periodLabel, periodStart, shiftPeriod, type NotePeriod } from "@/lib/period";
 import SearchBar, { FilterChip } from "@/components/SearchBar";
 import { FilterProvider, FilterType, FilterContextValue } from "@/contexts/FilterContext";
 import { useSettings, NoteDefaultFilter } from "@/contexts/SettingsContext";
@@ -26,12 +27,15 @@ import {
   ChevronDown,
   Loader2,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
 } from "lucide-react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { toast } from "sonner";
 
 interface Props {
-  mode: "day" | "tag" | "person" | "location" | "category";
+  mode: "day" | "week" | "month" | "tag" | "person" | "location" | "category";
 }
 
 interface ExtraFilters {
@@ -40,6 +44,29 @@ interface ExtraFilters {
   people: string[];
   locationIds: string[];
   categoryIds: string[];
+}
+
+const PERIOD_NAV: Record<NotePeriod, { prev: string; next: string; kicker: string }> = {
+  day: { prev: "Önceki gün", next: "Sonraki gün", kicker: "Günlük Notlar" },
+  week: { prev: "Önceki hafta", next: "Sonraki hafta", kicker: "Haftalık Notlar" },
+  month: { prev: "Önceki ay", next: "Sonraki ay", kicker: "Aylık Notlar" },
+};
+
+/** Previous / next links for the day, week and month pages. */
+function PeriodNav({ period, date }: { period: NotePeriod; date: string }) {
+  const labels = PERIOD_NAV[period];
+  const linkCls =
+    "inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-secondary transition-colors";
+  return (
+    <div className="flex items-center justify-between gap-2 mt-2 -mx-2" data-testid="period-nav">
+      <Link to={`/${period}/${shiftPeriod(date, period, -1)}`} className={linkCls} data-testid="period-nav-prev">
+        <ChevronLeft className="w-3.5 h-3.5" /> {labels.prev}
+      </Link>
+      <Link to={`/${period}/${shiftPeriod(date, period, 1)}`} className={linkCls} data-testid="period-nav-next">
+        {labels.next} <ChevronRight className="w-3.5 h-3.5" />
+      </Link>
+    </div>
+  );
 }
 
 function todayIso(): string {
@@ -159,7 +186,7 @@ export default function Dashboard({ mode }: Props) {
     extras.people.length > 0 ||
     extras.locationIds.length > 0 ||
     extras.categoryIds.length > 0 ||
-    mode !== "day";
+    (mode !== "day" && mode !== "week" && mode !== "month");
 
   const [totalCount, setTotalCount] = useState(0);
   const [filteredTotal, setFilteredTotal] = useState(0);
@@ -183,6 +210,10 @@ export default function Dashboard({ mode }: Props) {
       // If user typed a search query, search globally
     } else if (mode === "day") {
       queryParams.date = selectedDate;
+    } else if (mode === "week" || mode === "month") {
+      // Day notes inside the week/month plus the period's own notes
+      queryParams.range_period = mode;
+      queryParams.range_date = selectedDate;
     }
 
     // Combine route-based primary filter with extras
@@ -468,6 +499,31 @@ export default function Dashboard({ mode }: Props) {
       );
     }
 
+    if (mode === "week" || mode === "month") {
+      const start = periodStart(selectedDate, mode);
+      return (
+        <div className="mb-4">
+          <div className="text-[10px] tracking-[0.3em] uppercase text-muted-foreground mb-1 font-mono">
+            {PERIOD_NAV[mode].kicker}
+          </div>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <h1 className="font-serif text-3xl sm:text-4xl tracking-tight" data-testid="period-heading">
+              {periodLabel(start, mode)}
+            </h1>
+            <button
+              type="button"
+              onClick={() => navigate(`/new?period=${mode}&date=${start}`)}
+              className="inline-flex items-center gap-1.5 rounded-md bg-foreground text-background px-3 py-1.5 text-xs font-medium hover:opacity-90 cursor-pointer"
+              data-testid="period-add-note-btn"
+            >
+              <Plus className="w-3.5 h-3.5" /> {mode === "week" ? "Bu haftaya not ekle" : "Bu aya not ekle"}
+            </button>
+          </div>
+          <PeriodNav period={mode} date={start} />
+        </div>
+      );
+    }
+
     const d = new Date(selectedDate + "T00:00:00");
     const dayLabel = d.toLocaleDateString("tr-TR", {
       weekday: "long",
@@ -484,6 +540,7 @@ export default function Dashboard({ mode }: Props) {
         <h1 className="font-serif text-3xl sm:text-4xl tracking-tight" data-testid="day-heading">
           {dayLabel}
         </h1>
+        <PeriodNav period="day" date={selectedDate} />
       </div>
     );
   }
@@ -556,11 +613,19 @@ export default function Dashboard({ mode }: Props) {
               {displayNotes.length === 0 ? (
                 <div className="text-center py-16 px-4 border border-dashed border-border rounded-xl bg-card/40">
                   <div className="font-serif text-lg text-foreground">
-                    {hasSearchOrFilters ? "Arama kriterlerine uygun not bulunamadı." : "Bu gün için henüz not eklenmemiş."}
+                    {hasSearchOrFilters
+                      ? "Arama kriterlerine uygun not bulunamadı."
+                      : mode === "week"
+                      ? "Bu hafta için henüz not eklenmemiş."
+                      : mode === "month"
+                      ? "Bu ay için henüz not eklenmemiş."
+                      : "Bu gün için henüz not eklenmemiş."}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1.5">
                     {hasSearchOrFilters
                       ? "Arama metnini veya aktif filtreleri değiştirerek tekrar deneyebilirsiniz."
+                      : mode === "week" || mode === "month"
+                      ? "Yukarıdaki butonla bu döneme not ekleyebilirsiniz."
                       : "Yukarıdaki kutuyu kullanarak günün ilk notunu yazabilirsiniz."}
                   </p>
                   {hasSearchOrFilters && (

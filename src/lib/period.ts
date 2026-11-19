@@ -49,6 +49,25 @@ export function periodStart(ymd: string, period: NotePeriod): string {
   return ymd.slice(0, 10);
 }
 
+/** Last day of the period that contains `ymd`. */
+export function periodEnd(ymd: string, period: NotePeriod): string {
+  const start = periodStart(ymd, period);
+  const d = parseYmd(start);
+  if (!d) return start;
+  if (period === "week") d.setUTCDate(d.getUTCDate() + 6);
+  else if (period === "month") d.setUTCMonth(d.getUTCMonth() + 1, 0);
+  return toYmd(d);
+}
+
+/** First day of the period `delta` steps away (previous: -1, next: +1). */
+export function shiftPeriod(ymd: string, period: NotePeriod, delta: number): string {
+  const d = parseYmd(periodStart(ymd, period));
+  if (!d) return ymd.slice(0, 10);
+  if (period === "month") d.setUTCMonth(d.getUTCMonth() + delta, 1);
+  else d.setUTCDate(d.getUTCDate() + delta * (period === "week" ? 7 : 1));
+  return toYmd(d);
+}
+
 /** ISO week number and its year for `ymd`. */
 export function isoWeek(ymd: string): { year: number; week: number } {
   const d = parseYmd(ymd);

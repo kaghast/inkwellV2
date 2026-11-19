@@ -218,9 +218,9 @@ export default function CalendarPanel({
         <div className="text-center">
           <button
             type="button"
-            onClick={() => navigate(`/new?period=month&date=${year}-${String(month).padStart(2, "0")}-01`)}
+            onClick={() => navigate(`/month/${year}-${String(month).padStart(2, "0")}-01`)}
             className="font-serif text-xl tracking-tight leading-none rounded px-1.5 -mx-1.5 hover:bg-secondary cursor-pointer"
-            title={`${MONTHS[month - 1]} ${year} için ay notu ekle`}
+            title={`${MONTHS[month - 1]} ${year} notlarını göster`}
             data-testid="cal-title"
           >
             {MONTHS[month - 1]}
@@ -273,9 +273,9 @@ export default function CalendarPanel({
                   type="button"
                   onClick={() => {
                     const d = week.days.find((x) => x !== null);
-                    if (d) navigate(`/new?period=week&date=${weekStart(fmtCellDate(d))}`);
+                    if (d) navigate(`/week/${weekStart(fmtCellDate(d))}`);
                   }}
-                  title={`${week.isCurrentWeek ? "Güncel Hafta" : "Hafta"} ${week.weekNum} için hafta notu ekle`}
+                  title={`${week.isCurrentWeek ? "Güncel Hafta" : "Hafta"} ${week.weekNum} notlarını göster`}
                   data-testid={`cal-week-${week.weekNum}`}
                   className={`text-[9px] font-mono px-1 py-0.5 rounded leading-none cursor-pointer ${
                     week.isCurrentWeek

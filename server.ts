@@ -20,7 +20,7 @@ import { eq, and, or, desc, sql } from "drizzle-orm";
 import type { DriveFileRef } from "./src/db/schema";
 import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions, stickers, phrases, areas, googleIntegrations } from "./src/db/index";
 import { generateTextEmbedding } from "./src/lib/embeddings";
-import { normalizePeriod, periodStart, type NotePeriod } from "./src/lib/period";
+import { normalizePeriod, periodEnd, periodStart, type NotePeriod } from "./src/lib/period";
 import { toggleTaskInMarkdown } from "./src/lib/tasks";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -3000,6 +3000,26 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       filtered = filtered.filter((n) => n.period === p && (!start || n.date.slice(0, 10) === start));
     }
 
+    // Everything that falls inside a week or month: its day notes, the period's own note
+    // and (for a month) the week notes overlapping it. Period notes come first.
+    const rangePeriod = req.query.range_period;
+    const rangeDate = req.query.range_date;
+    if ((rangePeriod === "week" || rangePeriod === "month") && typeof rangeDate === "string" && rangeDate) {
+      const rp = normalizePeriod(rangePeriod);
+      const from = periodStart(rangeDate.slice(0, 10), rp);
+      const to = periodEnd(rangeDate.slice(0, 10), rp);
+      const inRange = (d: string) => d >= from && d <= to;
+      filtered = filtered
+        .filter((n) => {
+          const start = n.date.slice(0, 10);
+          if (n.period === "month") return rp === "month" && start === from;
+          if (n.period === "week") return rp === "week" ? start === from : start <= to && periodEnd(start, "week") >= from;
+          return extractNoteDates(n).some(inRange) || inRange(start);
+        });
+    }
+    const periodRank = (p: string) => (p === "month" ? 0 : p === "week" ? 1 : 2);
+    const rankPeriodsFirst = rangePeriod === "week" || rangePeriod === "month";
+
     if (date && typeof date === "string") {
       const targetDate = date.slice(0, 10);
       filtered = filtered.filter((n) => {
@@ -3074,6 +3094,8 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
 
     // Backend Sorting (newest first / oldest first)
     filtered.sort((a, b) => {
+      // In week/month lists the period's own notes stay on top
+      if (rankPeriodsFirst && a.period !== b.period) return periodRank(a.period) - periodRank(b.period);
       const timeA = new Date(a.date || a.created_at).getTime();
       const timeB = new Date(b.date || b.created_at).getTime();
       if (sortOrder === "oldest") {
