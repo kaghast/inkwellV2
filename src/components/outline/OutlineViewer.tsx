@@ -38,6 +38,8 @@ export default function OutlineViewer({ content, onUpdateContent, onEdit }: Outl
   const progressPercent = taskNodes.length > 0 ? Math.round((doneNodes.length / taskNodes.length) * 100) : 0;
 
   const handleToggleTask = (id: string) => {
+    // Read-only when nobody saves the change (e.g. archived or locked notes)
+    if (!onUpdateContent) return;
     const updated = nodes.map((n) => {
       if (n.id === id) {
         let nextStatus: OutlineNode["status"] = "done";
@@ -176,8 +178,13 @@ export default function OutlineViewer({ content, onUpdateContent, onEdit }: Outl
               {node.status !== "none" ? (
                 <button
                   type="button"
-                  onClick={() => handleToggleTask(node.id)}
-                  className="mt-0.5 text-muted-foreground hover:text-primary shrink-0 cursor-pointer transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleTask(node.id);
+                  }}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  disabled={!onUpdateContent}
+                  className={`mt-0.5 text-muted-foreground shrink-0 transition-colors ${onUpdateContent ? "hover:text-primary cursor-pointer" : "cursor-default"}`}
                 >
                   {node.status === "done" && (
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />

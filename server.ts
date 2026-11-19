@@ -19,6 +19,8 @@ import { createServer as createViteServer } from "vite";
 import { eq, and, or, desc, sql } from "drizzle-orm";
 import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions, stickers, phrases, areas, googleIntegrations } from "./src/db/index";
 import { generateTextEmbedding } from "./src/lib/embeddings";
+import { normalizePeriod, periodStart, type NotePeriod } from "./src/lib/period";
+import { toggleTaskInMarkdown } from "./src/lib/tasks";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -320,6 +322,12 @@ function normalizeDateToIso(dateStr?: string): string {
     return `${trimmed}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
   return trimmed;
+}
+
+// Week and month notes keep their period's first day (Monday / the 1st) as the date
+function dateForPeriod(dateIso: string, period: NotePeriod): string {
+  if (period === "day") return dateIso;
+  return `${periodStart(dateIso.slice(0, 10), period)}T00:00:00`;
 }
 
 function extractNoteDates(note: { date?: string | null; content?: string | null }): string[] {
@@ -637,6 +645,7 @@ api.get("/backup/export", authMiddleware, async (req: AuthRequest, res: Response
           note_type_id: n.noteTypeId || "type_plain",
           custom_fields: n.customFields || {},
           area_ids: n.areaIds || [],
+          period: n.period || "day",
           pinned: n.pinned,
           created_at: n.createdAt.toISOString(),
           updated_at: n.updatedAt.toISOString(),
@@ -860,6 +869,7 @@ api.post("/backup/import", authMiddleware, async (req: AuthRequest, res: Respons
           noteTypeId: effectiveNoteTypeId,
           customFields: n.custom_fields || {},
           areaIds: await sanitizeAreaIds(userId, n.area_ids),
+          period: normalizePeriod(n.period),
           pinned: Boolean(n.pinned),
           embedding: embedding || undefined,
           createdAt: n.created_at ? new Date(n.created_at) : new Date(),
@@ -2684,7 +2694,8 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
 
   const noteId = genId("note");
   const noteTitle = (title || "").trim();
-  const finalDate = normalizeDateToIso(date);
+  const notePeriod = normalizePeriod(req.body?.period);
+  const finalDate = dateForPeriod(normalizeDateToIso(date), notePeriod);
   const finalSlug = generateSlugForNote(noteTitle, finalDate, noteId, slug);
   const embedding = await generateTextEmbedding(`${noteTitle}\n${noteContent}`);
 
@@ -2709,6 +2720,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       noteTypeId: effectiveNoteTypeId,
       customFields: finalCustomFields,
       areaIds: await sanitizeAreaIds(userId, req.body?.area_ids),
+      period: notePeriod,
       pinned: false,
       archived: false,
       isEncrypted: Boolean(is_encrypted),
@@ -2742,6 +2754,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       note_type_id: inserted.noteTypeId || "type_plain",
       custom_fields: inserted.customFields || {},
       area_ids: inserted.areaIds || [],
+      period: inserted.period || "day",
       pinned: inserted.pinned,
       archived: inserted.archived || false,
       is_encrypted: Boolean(inserted.isEncrypted),
@@ -2819,6 +2832,7 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       note_type_id: n.noteTypeId || "type_plain",
       custom_fields: n.customFields || {},
       area_ids: n.areaIds || [],
+      period: n.period || "day",
       pinned: n.pinned,
       archived: n.archived || false,
       is_encrypted: Boolean(n.isEncrypted),
@@ -2827,9 +2841,19 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       updated_at: n.updatedAt.toISOString(),
     }));
 
+    // Week and month notes are listed through `period` + `period_date`, not on single days
+    const periodFilter = req.query.period;
+    const periodDate = req.query.period_date;
+    if (periodFilter && typeof periodFilter === "string") {
+      const p = normalizePeriod(periodFilter);
+      const start = typeof periodDate === "string" && periodDate ? periodStart(periodDate.slice(0, 10), p) : null;
+      filtered = filtered.filter((n) => n.period === p && (!start || n.date.slice(0, 10) === start));
+    }
+
     if (date && typeof date === "string") {
       const targetDate = date.slice(0, 10);
       filtered = filtered.filter((n) => {
+        if (n.period !== "day") return false;
         const noteDates = extractNoteDates(n);
         return noteDates.includes(targetDate) || n.date.startsWith(date);
       });
@@ -2956,6 +2980,8 @@ api.get("/notes/calendar", authMiddleware, async (req: AuthRequest, res: Respons
 
     const counts: Record<string, number> = {};
     for (const r of rows) {
+      // Week/month notes are not counted on a single calendar day
+      if (normalizePeriod(r.period) !== "day") continue;
       const dates = extractNoteDates(r);
       for (const d of dates) {
         if (d.startsWith(prefix)) {
@@ -2998,6 +3024,7 @@ api.get("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       note_type_id: n.noteTypeId || "type_plain",
       custom_fields: n.customFields || {},
       area_ids: n.areaIds || [],
+      period: n.period || "day",
       pinned: n.pinned,
       archived: n.archived || false,
       is_encrypted: Boolean(n.isEncrypted),
@@ -3007,6 +3034,68 @@ api.get("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     });
   } catch (err: any) {
     res.status(500).json({ detail: "Not alınamadı", error: err.message });
+  }
+});
+
+// Ticks or clears one task checkbox ("- [ ]" / "- [x]") without entering edit mode.
+// `index` counts the note's task lines in order; `content` (optional) is the text the
+// client saw, so a toggle based on an outdated copy is refused instead of misapplied.
+api.patch("/notes/:note_id/tasks", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const identifier = req.params.note_id;
+  const { index, checked, content: seen } = req.body || {};
+  if (!Number.isInteger(index) || index < 0 || typeof checked !== "boolean") {
+    return res.status(400).json({ detail: "Geçersiz görev isteği" });
+  }
+  try {
+    const found = await db.select().from(notes).where(
+      and(or(eq(notes.noteId, identifier), eq(notes.slug, identifier)), eq(notes.userId, userId))
+    ).limit(1);
+    if (found.length === 0) return res.status(404).json({ detail: "Not bulunamadı" });
+    const current = found[0];
+    if (current.archived) {
+      return res.status(403).json({ detail: "Arşivlenmiş notlar düzenlenemez. Lütfen önce arşivden çıkarın." });
+    }
+    const before: string = current.content || "";
+    if (typeof seen === "string" && seen !== before) {
+      return res.status(409).json({ detail: "Not başka bir yerde değişti, lütfen yenileyin" });
+    }
+    const next = toggleTaskInMarkdown(before, index, checked);
+    if (next !== before) {
+      const updated = await db
+        .update(notes)
+        .set({ content: next, updatedAt: new Date() })
+        .where(and(eq(notes.noteId, current.noteId), eq(notes.userId, userId), eq(notes.content, before)))
+        .returning({ noteId: notes.noteId });
+      if (updated.length === 0) {
+        return res.status(409).json({ detail: "Not başka bir yerde değişti, lütfen yenileyin" });
+      }
+    }
+    const n = (await db.select().from(notes).where(eq(notes.noteId, current.noteId)).limit(1))[0];
+    res.json({
+      note_id: n.noteId,
+      user_id: n.userId,
+      slug: n.slug || generateSlugForNote(n.title, n.date, n.noteId),
+      title: n.title,
+      content: n.content,
+      date: n.date,
+      tags: n.tags || [],
+      people: n.people || [],
+      category_id: n.categoryId,
+      location_id: n.locationId,
+      note_type_id: n.noteTypeId || "type_plain",
+      custom_fields: n.customFields || {},
+      area_ids: n.areaIds || [],
+      period: n.period || "day",
+      pinned: n.pinned,
+      archived: n.archived || false,
+      is_encrypted: Boolean(n.isEncrypted),
+      password_hash: n.passwordHash || null,
+      created_at: n.createdAt.toISOString(),
+      updated_at: n.updatedAt.toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ detail: "Görev güncellenemedi", error: err.message });
   }
 });
 
@@ -3048,7 +3137,10 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       ? (note_type_id && note_type_id !== "type_plain" && note_type_id !== "default" ? note_type_id : null)
       : current.noteTypeId;
 
-    const newDate = date !== undefined ? normalizeDateToIso(date) : current.date;
+    const newPeriod = req.body?.period !== undefined ? normalizePeriod(req.body.period) : normalizePeriod(current.period);
+    const newDate = date !== undefined || newPeriod !== normalizePeriod(current.period)
+      ? dateForPeriod(date !== undefined ? normalizeDateToIso(date) : current.date, newPeriod)
+      : current.date;
     
     let newSlug = current.slug;
     if (slug !== undefined && slug.trim()) {
@@ -3074,6 +3166,7 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       locationId: location_id !== undefined ? (location_id || null) : current.locationId,
       noteTypeId: effectiveNoteTypeId,
       customFields: finalCustomFields,
+      period: newPeriod,
       updatedAt: new Date(),
     };
     if (archived !== undefined) {
@@ -3117,6 +3210,7 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
       area_ids: updated.areaIds || [],
+      period: updated.period || "day",
       pinned: updated.pinned,
       archived: updated.archived || false,
       is_encrypted: Boolean(updated.isEncrypted),
@@ -3253,6 +3347,7 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
       area_ids: updated.areaIds || [],
+      period: updated.period || "day",
       pinned: updated.pinned,
       archived: updated.archived || false,
       is_encrypted: Boolean(updated.isEncrypted),
@@ -3301,6 +3396,7 @@ api.patch("/notes/:note_id/pin", authMiddleware, async (req: AuthRequest, res: R
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
       area_ids: updated.areaIds || [],
+      period: updated.period || "day",
       pinned: updated.pinned,
       archived: updated.archived || false,
       created_at: updated.createdAt.toISOString(),
@@ -3352,6 +3448,7 @@ const handleArchiveToggle = async (req: AuthRequest, res: Response) => {
       note_type_id: updated.noteTypeId || "type_plain",
       custom_fields: updated.customFields || {},
       area_ids: updated.areaIds || [],
+      period: updated.period || "day",
       pinned: updated.pinned,
       archived: updated.archived || false,
       created_at: updated.createdAt.toISOString(),

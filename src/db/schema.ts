@@ -137,6 +137,9 @@ export const notes = pgTable(
     customFields: jsonb('custom_fields').$type<Record<string, any>>().default({}).notNull(),
     // Knowledge areas (Alanlar) this note belongs to; a note can sit in many areas
     areaIds: jsonb('area_ids').$type<string[]>().default([]).notNull(),
+    // What `date` stands for: a single day (default), the ISO week starting on that
+    // Monday, or the month starting on that 1st
+    period: text('period').default('day').notNull(),
     pinned: boolean('pinned').default(false).notNull(),
     archived: boolean('archived').default(false).notNull(),
     isEncrypted: boolean('is_encrypted').default(false).notNull(),

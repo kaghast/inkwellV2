@@ -3,7 +3,8 @@ import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom"
 import api, { formatApiError } from "@/lib/api";
 import AppMenubar from "@/components/AppMenubar";
 import MarkdownEditor from "@/components/MarkdownEditor";
-import MarkdownView, { toggleTaskInMarkdown } from "@/components/MarkdownView";
+import MarkdownView from "@/components/MarkdownView";
+import { periodLabel } from "@/lib/period";
 import MiniMap from "@/components/MiniMap";
 import NoteAreasBar from "@/components/areas/NoteAreasBar";
 import LocationPicker from "@/components/LocationPicker";
@@ -600,7 +601,10 @@ export default function NoteDetail() {
     );
   }
 
-  const formattedDate = formatDisplayDatetime(note.date) || note.date;
+  const formattedDate =
+    note.period && note.period !== "day"
+      ? periodLabel(note.date.slice(0, 10), note.period)
+      : formatDisplayDatetime(note.date) || note.date;
 
   return (
     <div className="paper min-h-screen flex flex-col">
@@ -1272,7 +1276,7 @@ export default function NoteDetail() {
                     setContentMode("outline");
                     setEditing(true);
                   }}
-                  onUpdateContent={async (newContent) => {
+                  onUpdateContent={note.archived ? undefined : async (newContent) => {
                     try {
                       const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
                         title: note.title,
@@ -1300,23 +1304,29 @@ export default function NoteDetail() {
               ) : (
                 <MarkdownView
                   content={note.content}
-                  onTaskToggle={async (idx, checked) => {
-                    const newContent = toggleTaskInMarkdown(note.content, idx, checked);
-                    try {
-                      const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
-                        title: note.title,
-                        content: newContent,
-                        date: note.date,
-                        location_id: note.location_id,
-                        note_type_id: note.note_type_id,
-                        custom_fields: note.custom_fields,
-                      });
-                      setNote(data);
-                      setContent(newContent);
-                    } catch {
-                      toast.error("Güncellenemedi");
-                    }
-                  }}
+                  onTaskToggle={
+                    note.archived || (note.is_encrypted && !isUnlocked)
+                      ? undefined
+                      : async (idx, checked) => {
+                          try {
+                            const { data } = await api.patch<Note>(`/notes/${note.note_id}/tasks`, {
+                              index: idx,
+                              checked,
+                              content: note.content,
+                            });
+                            setNote(data);
+                            setContent(extractCommentsFromContent(data.content).mainContent);
+                          } catch (err: any) {
+                            toast.error(formatApiError(err) || "Görev güncellenemedi");
+                            if (err?.response?.status === 409) {
+                              try {
+                                const { data } = await api.get<Note>(`/notes/${note.note_id}`);
+                                setNote(data);
+                              } catch {}
+                            }
+                          }
+                        }
+                  }
                 />
               )}
             </div>

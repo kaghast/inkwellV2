@@ -8,6 +8,7 @@ import NoteCard from "@/components/NoteCard";
 import NoteComposer from "@/components/NoteComposer";
 import CalendarPanel from "@/components/CalendarPanel";
 import PinnedNotesPanel from "@/components/PinnedNotesPanel";
+import PeriodNotesStrip from "@/components/PeriodNotesStrip";
 import SearchBar, { FilterChip } from "@/components/SearchBar";
 import { FilterProvider, FilterType, FilterContextValue } from "@/contexts/FilterContext";
 import { useSettings, NoteDefaultFilter } from "@/contexts/SettingsContext";
@@ -537,6 +538,8 @@ export default function Dashboard({ mode }: Props) {
               extras.categoryIds.length === 0 &&
               settings.defaultFilter === "all" && (
                 <div className="mb-6">
+                  {/* Notes of the week and month this day falls in */}
+                  <PeriodNotesStrip date={selectedDate} reloadKey={refreshKey} />
                   <NoteComposer
                     defaultDate={selectedDate}
                     locations={locations}
