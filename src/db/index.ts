@@ -277,6 +277,7 @@ export async function initDatabaseSchema() {
       } catch {}
       try {
         await global._pgliteClient.exec(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS area_ids JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+        await global._pgliteClient.exec(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS period TEXT NOT NULL DEFAULT 'day';`);
       } catch (e) {
         console.warn('Add notes.area_ids note:', e);
       }
@@ -297,6 +298,7 @@ export async function initDatabaseSchema() {
       } catch {}
       try {
         await db.execute(sql.raw(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS area_ids JSONB NOT NULL DEFAULT '[]'::jsonb;`));
+        await db.execute(sql.raw(`ALTER TABLE notes ADD COLUMN IF NOT EXISTS period TEXT NOT NULL DEFAULT 'day';`));
       } catch (e) {
         console.warn('Add notes.area_ids note:', e);
       }

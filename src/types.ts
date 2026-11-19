@@ -148,6 +148,7 @@ export interface Note {
   note_type_id?: string | null;
   custom_fields?: Record<string, any>;
   area_ids?: string[];
+  period?: "day" | "week" | "month"; // what `date` stands for; missing = day
   pinned: boolean;
   archived?: boolean;
   is_encrypted?: boolean;

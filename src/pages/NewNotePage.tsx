@@ -8,6 +8,8 @@ import OutlineEditor from "@/components/outline/OutlineEditor";
 import MindmapEditor from "@/components/mindmap/MindmapEditor";
 import LocationPicker from "@/components/LocationPicker";
 import AreaField from "@/components/areas/AreaField";
+import PeriodPicker from "@/components/PeriodPicker";
+import type { NotePeriod } from "@/lib/period";
 import { rememberRecentAreas } from "@/lib/areas";
 import { CustomFieldsForm } from "@/components/CustomFieldsRenderer";
 import EncryptNoteDialog from "@/components/EncryptNoteDialog";
@@ -23,7 +25,6 @@ import {
   ListTree,
   Network,
   MapPin,
-  Calendar,
   Layers,
   Boxes,
   Lock,
@@ -53,6 +54,7 @@ export default function NewNotePage() {
   const [customFields, setCustomFields] = useState<Record<string, any>>({});
   const [picker, setPicker] = useState(false);
   const [areaIds, setAreaIds] = useState<string[]>([]);
+  const [period, setPeriod] = useState<NotePeriod>("day");
   const [saving, setSaving] = useState(false);
   const [fullFocus, setFullFocus] = useState(false);
   const [encryptOpen, setEncryptOpen] = useState(false);
@@ -96,7 +98,7 @@ export default function NewNotePage() {
     };
     window.addEventListener("keydown", handleKey, true);
     return () => window.removeEventListener("keydown", handleKey, true);
-  }, [fullFocus, title, content, dateTime, locationId, categoryId, noteTypeId, customFields, contentMode, isEncrypted, passwordHash, savedNoteId, areaIds]);
+  }, [fullFocus, title, content, dateTime, locationId, categoryId, noteTypeId, customFields, contentMode, isEncrypted, passwordHash, savedNoteId, areaIds, period]);
 
   const currentType = noteTypes.find((t) => t.type_id === noteTypeId);
 
@@ -111,7 +113,12 @@ export default function NewNotePage() {
       const payload: any = {
         title: title.trim() || "Başlıksız Not",
         content,
-        date: dateTime ? new Date(dateTime).toISOString() : new Date().toISOString(),
+        // Week/month notes only need a local day inside the period (the server picks its first day)
+        date:
+          period !== "day" && dateTime
+            ? dateTime.slice(0, 10)
+            : dateTime ? new Date(dateTime).toISOString() : new Date().toISOString(),
+        period,
         location_id: locationId || null,
         category_id: categoryId || null,
         note_type_id: noteTypeId === "type_plain" ? null : noteTypeId,
@@ -320,15 +327,13 @@ export default function NewNotePage() {
             {/* Note Metadata Row: Date, Category, Note Type */}
             <div className="flex items-center flex-wrap gap-2.5 p-3 rounded-xl bg-secondary/40 border border-border/70 text-xs">
               {/* Date & Time */}
-              <div className="flex items-center gap-1.5 bg-background px-2.5 py-1.5 rounded-lg border border-border">
-                <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
-                <input
-                  type="datetime-local"
-                  value={dateTime}
-                  onChange={(e) => setDateTime(e.target.value)}
-                  className="bg-transparent border-none text-xs text-foreground font-mono outline-none cursor-pointer"
-                />
-              </div>
+              <PeriodPicker
+                period={period}
+                onPeriodChange={setPeriod}
+                dateTime={dateTime}
+                onDateTimeChange={setDateTime}
+                testIdPrefix="new-note-period"
+              />
 
               {/* Note Type Selector */}
               {noteTypes.length > 0 && (

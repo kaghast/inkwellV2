@@ -22,7 +22,9 @@ import {
   Key,
   Scissors,
 } from "lucide-react";
-import api from "@/lib/api";
+import api, { formatApiError } from "@/lib/api";
+import { countTasks } from "@/lib/tasks";
+import { periodLabel } from "@/lib/period";
 import type { Note, LocationItem, Category, NoteType } from "@/types";
 import MarkdownView from "@/components/MarkdownView";
 import MarkdownEditor from "@/components/MarkdownEditor";
@@ -325,8 +327,41 @@ export default function NoteCard({
   };
 
   // Check if content has task items
-  const taskTotal = (note.content.match(/(^|\n)\s*- \[[ xX]\]/g) || []).length;
-  const taskDone = (note.content.match(/(^|\n)\s*- \[[xX]\]/g) || []).length;
+  const { total: taskTotal, done: taskDone } = countTasks(note.content);
+
+  // Tasks can be ticked straight from the card, with the same limits as editing
+  const canUpdateTasks = !isArchived && (!isEncrypted || isUnlocked) && !editing && !splitting;
+
+  function applyServerContent(next: string) {
+    setLinkedContent({ base: noteProp.content, content: next });
+    setContent(extractCommentsFromContent(next).mainContent);
+  }
+
+  async function handleTaskToggle(index: number, checked: boolean) {
+    try {
+      const { data } = await api.patch<Note>(`/notes/${note.note_id}/tasks`, {
+        index,
+        checked,
+        content: note.content,
+      });
+      applyServerContent(data.content);
+    } catch (err: any) {
+      toast.error(formatApiError(err) || "Görev güncellenemedi");
+      if (err?.response?.status === 409) onChanged();
+    }
+  }
+
+  async function handleOutlineUpdate(next: string) {
+    try {
+      const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
+        content: next,
+        change_summary: "Görev durumu güncellendi",
+      });
+      applyServerContent(data.content);
+    } catch (err: any) {
+      toast.error(formatApiError(err) || "Görev güncellenemedi");
+    }
+  }
 
   return (
     <article
@@ -462,7 +497,11 @@ export default function NoteCard({
                 data-testid={`note-datetime-btn-${note.note_id}`}
               >
                 <Calendar className="w-3 h-3" />
-                <span>{formatDisplayDatetime(note.date) || note.date}</span>
+                <span>
+                  {note.period && note.period !== "day"
+                    ? periodLabel(note.date.slice(0, 10), note.period)
+                    : formatDisplayDatetime(note.date) || note.date}
+                </span>
                 {!isArchived && <Edit3 className="w-2.5 h-2.5 opacity-40 hover:opacity-100" />}
               </button>
             )}
@@ -791,10 +830,14 @@ export default function NoteCard({
             </div>
           ) : note.custom_fields?.content_mode === "outline" ? (
             <div className="mt-2">
-              <OutlineViewer content={note.content} onEdit={() => setEditing(true)} />
+              <OutlineViewer
+                content={note.content}
+                onEdit={() => setEditing(true)}
+                onUpdateContent={canUpdateTasks ? handleOutlineUpdate : undefined}
+              />
             </div>
           ) : (
-            <MarkdownView content={note.content} />
+            <MarkdownView content={note.content} onTaskToggle={canUpdateTasks ? handleTaskToggle : undefined} />
           )}
 
           {/* Note footer: areas, tags & people */}

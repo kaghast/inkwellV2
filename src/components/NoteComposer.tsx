@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MapPin, Plus, X, Layers, Boxes, Calendar } from "lucide-react";
+import { MapPin, Plus, X, Layers, Boxes } from "lucide-react";
 import MarkdownEditor from "@/components/MarkdownEditor";
 import LocationPicker from "@/components/LocationPicker";
 import { CustomFieldsForm } from "@/components/CustomFieldsRenderer";
@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import type { Note, LocationItem, Category, NoteType } from "@/types";
 
 import AreaField from "@/components/areas/AreaField";
+import PeriodPicker from "@/components/PeriodPicker";
+import type { NotePeriod } from "@/lib/period";
 import { rememberRecentAreas } from "@/lib/areas";
 
 interface Props {
@@ -40,6 +42,7 @@ export default function NoteComposer({
   const [noteTypeId, setNoteTypeId] = useState<string>("type_plain");
   const [customFields, setCustomFields] = useState<Record<string, any>>({});
   const [areaIds, setAreaIds] = useState<string[]>([]);
+  const [period, setPeriod] = useState<NotePeriod>("day");
   const [locationDialog, setLocationDialog] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -81,6 +84,7 @@ export default function NoteComposer({
     setNoteTypeId("type_plain");
     setCustomFields({});
     setAreaIds([]);
+    setPeriod("day");
     setOpen(false);
   }
 
@@ -108,11 +112,12 @@ export default function NoteComposer({
         note_type_id: noteTypeId !== "type_plain" ? noteTypeId : null,
         custom_fields: customFields,
         area_ids: areaIds,
+        period,
       });
       rememberRecentAreas(areaIds);
       onCreated(data);
       reset();
-      toast.success("Not eklendi");
+      toast.success(period === "week" ? "Not haftaya eklendi" : period === "month" ? "Not aya eklendi" : "Not eklendi");
     } catch (err: any) {
       toast.error(formatApiError(err) || "Kayıt başarısız");
     } finally {
@@ -250,17 +255,14 @@ export default function NoteComposer({
             </select>
           </div>
 
-          {/* DateTime Picker */}
-          <div className="flex items-center gap-1 bg-secondary/70 border border-border text-xs rounded-sm px-2 py-1">
-            <Calendar className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-            <input
-              type="datetime-local"
-              value={noteDateTime}
-              onChange={(e) => setNoteDateTime(e.target.value)}
-              className="bg-transparent text-foreground text-xs outline-none cursor-pointer font-mono"
-              data-testid="composer-datetime-input"
-            />
-          </div>
+          {/* Day / week / month + date */}
+          <PeriodPicker
+            period={period}
+            onPeriodChange={setPeriod}
+            dateTime={noteDateTime}
+            onDateTimeChange={setNoteDateTime}
+            testIdPrefix="composer-period"
+          />
         </div>
       </div>
 

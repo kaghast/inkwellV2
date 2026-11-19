@@ -6,6 +6,7 @@ import { useFilter } from "@/contexts/FilterContext";
 import { BellRing, MapPin, Youtube, Check, Loader2, Maximize2, X, Clock, Calendar } from "lucide-react";
 import { isGmap, isYoutube, extractYoutubeId } from "@/lib/blocks";
 import { highlightText } from "@/lib/highlight";
+import { taskLineIndexMap, toggleTaskInMarkdown } from "@/lib/tasks";
 import DrawingViewer from "@/components/drawing/DrawingViewer";
 import MindmapViewer from "@/components/mindmap/MindmapViewer";
 import TimeSlotCard from "@/components/TimeSlotCard";
@@ -552,16 +553,7 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
     return isolateLinkLines(clean.trimEnd());
   }, [content]);
 
-  const taskLineToIdx = useMemo(() => {
-    const map = new Map<number, number>();
-    let idx = 0;
-    (displayContent || "").split("\n").forEach((line, i) => {
-      if (/^\s*- \[[ xX]\]\s/.test(line)) {
-        map.set(i + 1, idx++);
-      }
-    });
-    return map;
-  }, [displayContent]);
+  const taskLineToIdx = useMemo(() => taskLineIndexMap(displayContent || ""), [displayContent]);
 
   const [pendingIdx, setPendingIdx] = useState<number | null>(null);
 
@@ -587,7 +579,8 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
             const kids = Array.isArray(children) ? children : [children];
             if (isTaskItem) {
               const line: number | undefined = node?.position?.start?.line;
-              const myIdx = line != null && taskLineToIdx.has(line) ? (taskLineToIdx.get(line) as number) : 0;
+              const myIdx = line != null && taskLineToIdx.has(line) ? (taskLineToIdx.get(line) as number) : -1;
+              const interactive = Boolean(onTaskToggle) && myIdx >= 0;
               let checked = false;
               const rest_children: React.ReactNode[] = [];
               for (const c of kids) {
@@ -598,20 +591,28 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
                 }
               }
               const isPending = pendingIdx === myIdx;
-              const disabled = pendingIdx !== null;
+              const disabled = !interactive || pendingIdx !== null;
               return (
                 <li className="flex items-start gap-2 list-none -ml-6 break-words [overflow-wrap:anywhere]" data-testid={`task-item-${myIdx}`}>
                   <button
                     type="button"
-                    onClick={() => handleTaskClick(myIdx, !checked)}
+                    onClick={(e) => {
+                      // Keep the click on the checkbox: cards and the detail view react to clicks around it
+                      e.stopPropagation();
+                      e.preventDefault();
+                      if (interactive) handleTaskClick(myIdx, !checked);
+                    }}
+                    onDoubleClick={(e) => e.stopPropagation()}
                     disabled={disabled}
                     className={`mt-1 w-4 h-4 rounded-sm border flex items-center justify-center transition-colors shrink-0 ${
                       checked
                         ? "bg-[hsl(var(--accent-tag))] border-[hsl(var(--accent-tag))]"
                         : "border-border hover:border-foreground/40"
-                    } ${disabled ? "opacity-70 cursor-wait" : ""}`}
+                    } ${!interactive ? "cursor-default" : pendingIdx !== null ? "opacity-70 cursor-wait" : "cursor-pointer"}`}
                     data-testid={`task-toggle-${myIdx}`}
-                    aria-label={checked ? "İşareti kaldır" : "İşaretle"}
+                    aria-label={!interactive ? (checked ? "Tamamlandı" : "Tamamlanmadı") : checked ? "İşareti kaldır" : "İşaretle"}
+                    role="checkbox"
+                    aria-checked={checked}
                     aria-busy={isPending}
                   >
                     {isPending ? (
@@ -688,18 +689,4 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
   );
 }
 
-export function toggleTaskInMarkdown(md: string, index: number, checked: boolean): string {
-  const lines = md.split("\n");
-  let count = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^(\s*)- \[([ xX])\](.*)$/);
-    if (m) {
-      if (count === index) {
-        lines[i] = `${m[1]}- [${checked ? "x" : " "}]${m[3]}`;
-        return lines.join("\n");
-      }
-      count++;
-    }
-  }
-  return md;
-}
+export { toggleTaskInMarkdown };
