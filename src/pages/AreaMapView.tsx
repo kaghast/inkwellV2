@@ -8,6 +8,7 @@ import {
   ChevronRight,
   FolderTree,
   Link2,
+  List,
   Maximize2,
   MoreHorizontal,
   Network,
@@ -1365,6 +1366,14 @@ function AreaTreeRow(props: AreaTreePanelProps & { node: AreaTreeNode }) {
         {node.totalNotes > 0 && !renaming && (
           <span className="text-[10px] font-mono text-muted-foreground group-hover:hidden">{node.totalNotes}</span>
         )}
+        <Link
+          to={`/all-notes?area=${encodeURIComponent(a.area_id)}`}
+          className="hidden group-hover:inline-flex p-1 rounded text-muted-foreground hover:text-foreground hover:bg-background"
+          title="Bütün Notlar'da bu alanı listele"
+          data-testid={`area-row-list-${a.area_id}`}
+        >
+          <List className="w-3.5 h-3.5" />
+        </Link>
         <button
           type="button"
           onClick={() => setAddingChild(true)}
@@ -1582,6 +1591,14 @@ function AreaDetailPanel({
           {tree && tree.totalNotes !== directNotes.length ? ` · alt alanlarla ${tree.totalNotes}` : ""}
           {tree && tree.children.length > 0 ? ` · ${tree.children.length} alt alan` : ""}
         </p>
+        <Link
+          to={`/all-notes?area=${encodeURIComponent(area.area_id)}`}
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+          data-testid="area-detail-list-notes"
+        >
+          <List className="w-3.5 h-3.5" />
+          Bütün Notlar'da listele
+        </Link>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-5 min-h-0 text-sm">
