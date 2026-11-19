@@ -40,6 +40,8 @@ function AppRoutes() {
       <Route path="/kanban" element={<ProtectedRoute><KanbanPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
       <Route path="/day/:date" element={<ProtectedRoute><Dashboard mode="day" /></ProtectedRoute>} />
+      <Route path="/week/:date" element={<ProtectedRoute><Dashboard mode="week" /></ProtectedRoute>} />
+      <Route path="/month/:date" element={<ProtectedRoute><Dashboard mode="month" /></ProtectedRoute>} />
       <Route path="/category/:id" element={<ProtectedRoute><Dashboard mode="category" /></ProtectedRoute>} />
       <Route path="/tag/:name" element={<ProtectedRoute><Dashboard mode="tag" /></ProtectedRoute>} />
       <Route path="/person/:name" element={<ProtectedRoute><Dashboard mode="person" /></ProtectedRoute>} />
