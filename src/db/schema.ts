@@ -119,6 +119,14 @@ export const phrases = pgTable('phrases', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+export interface DriveFileRef {
+  id: string;
+  name: string;
+  mime_type: string;
+  web_view_link: string | null;
+  icon_link: string | null;
+}
+
 // Notes table with pgvector embeddings for AI training and semantic search
 export const notes = pgTable(
   'notes',
@@ -140,6 +148,8 @@ export const notes = pgTable(
     // What `date` stands for: a single day (default), the ISO week starting on that
     // Monday, or the month starting on that 1st
     period: text('period').default('day').notNull(),
+    // Google Drive files linked to the note (metadata only: id, name, type, link, icon)
+    driveFiles: jsonb('drive_files').$type<DriveFileRef[]>().default([]).notNull(),
     pinned: boolean('pinned').default(false).notNull(),
     archived: boolean('archived').default(false).notNull(),
     isEncrypted: boolean('is_encrypted').default(false).notNull(),

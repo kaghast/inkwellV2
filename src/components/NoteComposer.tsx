@@ -8,9 +8,10 @@ import { CustomFieldsForm } from "@/components/CustomFieldsRenderer";
 import api, { formatApiError } from "@/lib/api";
 import { toDateTimeLocal } from "@/lib/datetime";
 import { toast } from "sonner";
-import type { Note, LocationItem, Category, NoteType } from "@/types";
+import type { Note, LocationItem, Category, NoteType, DriveFileRef } from "@/types";
 
 import AreaField from "@/components/areas/AreaField";
+import { DriveFilesField } from "@/components/drive/DriveFiles";
 import PeriodPicker from "@/components/PeriodPicker";
 import type { NotePeriod } from "@/lib/period";
 import { rememberRecentAreas } from "@/lib/areas";
@@ -43,6 +44,7 @@ export default function NoteComposer({
   const [customFields, setCustomFields] = useState<Record<string, any>>({});
   const [areaIds, setAreaIds] = useState<string[]>([]);
   const [period, setPeriod] = useState<NotePeriod>("day");
+  const [driveFiles, setDriveFiles] = useState<DriveFileRef[]>([]);
   const [locationDialog, setLocationDialog] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -85,6 +87,7 @@ export default function NoteComposer({
     setCustomFields({});
     setAreaIds([]);
     setPeriod("day");
+    setDriveFiles([]);
     setOpen(false);
   }
 
@@ -113,6 +116,7 @@ export default function NoteComposer({
         custom_fields: customFields,
         area_ids: areaIds,
         period,
+        drive_files: driveFiles,
       });
       rememberRecentAreas(areaIds);
       onCreated(data);
@@ -296,6 +300,9 @@ export default function NoteComposer({
 
       {/* Knowledge areas: picker + last used areas as one-click suggestions */}
       <AreaField value={areaIds} onChange={setAreaIds} />
+
+      {/* Google Drive files linked to the note */}
+      <DriveFilesField value={driveFiles} onChange={setDriveFiles} />
 
       <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
         <div className="flex items-center gap-2 flex-wrap">

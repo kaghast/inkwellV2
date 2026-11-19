@@ -17,6 +17,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { eq, and, or, desc, sql } from "drizzle-orm";
+import type { DriveFileRef } from "./src/db/schema";
 import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions, stickers, phrases, areas, googleIntegrations } from "./src/db/index";
 import { generateTextEmbedding } from "./src/lib/embeddings";
 import { normalizePeriod, periodStart, type NotePeriod } from "./src/lib/period";
@@ -328,6 +329,32 @@ function normalizeDateToIso(dateStr?: string): string {
 function dateForPeriod(dateIso: string, period: NotePeriod): string {
   if (period === "day") return dateIso;
   return `${periodStart(dateIso.slice(0, 10), period)}T00:00:00`;
+}
+
+/** Keeps well-formed Drive file references (from the picker) and drops anything else. */
+function sanitizeDriveFiles(raw: unknown): DriveFileRef[] {
+  if (!Array.isArray(raw)) return [];
+  const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
+  const link = (v: unknown) => {
+    const u = str(v, 2000);
+    return /^https:\/\/[^\s]+$/i.test(u) ? u : null;
+  };
+  const seen = new Set<string>();
+  const out: DriveFileRef[] = [];
+  for (const f of raw) {
+    const id = str((f as any)?.id, 200);
+    if (!id || !/^[\w-]+$/.test(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id,
+      name: str((f as any)?.name, 300) || "Adsız dosya",
+      mime_type: str((f as any)?.mime_type, 200),
+      web_view_link: link((f as any)?.web_view_link),
+      icon_link: link((f as any)?.icon_link),
+    });
+    if (out.length >= 30) break;
+  }
+  return out;
 }
 
 function extractNoteDates(note: { date?: string | null; content?: string | null }): string[] {
@@ -646,6 +673,7 @@ api.get("/backup/export", authMiddleware, async (req: AuthRequest, res: Response
           custom_fields: n.customFields || {},
           area_ids: n.areaIds || [],
           period: n.period || "day",
+          drive_files: n.driveFiles || [],
           pinned: n.pinned,
           created_at: n.createdAt.toISOString(),
           updated_at: n.updatedAt.toISOString(),
@@ -870,6 +898,7 @@ api.post("/backup/import", authMiddleware, async (req: AuthRequest, res: Respons
           customFields: n.custom_fields || {},
           areaIds: await sanitizeAreaIds(userId, n.area_ids),
           period: normalizePeriod(n.period),
+          driveFiles: sanitizeDriveFiles(n.drive_files),
           pinned: Boolean(n.pinned),
           embedding: embedding || undefined,
           createdAt: n.created_at ? new Date(n.created_at) : new Date(),
@@ -1384,8 +1413,27 @@ async function handleGoogleOAuthCallback(req: Request, res: Response) {
 // The user consents once; the refresh token is kept server-side, encrypted,
 // and access tokens are refreshed on demand. Disconnecting revokes it at Google.
 // ---------------------------------------------------------------------------
-const GCAL_SCOPES = ["openid", "email", "https://www.googleapis.com/auth/calendar.events.readonly"];
 const GCAL_READ_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly";
+// Drive: file names, links and icons only (no file contents) for searching and linking files to notes
+const GDRIVE_SCOPE = "https://www.googleapis.com/auth/drive.metadata.readonly";
+
+// Calendar and Drive share one Google grant per user (google_integrations row).
+// `scopes` holds the services the user turned on here, so each one can be
+// switched off on its own; the grant is revoked when none is left.
+type GoogleService = "calendar" | "drive";
+const GOOGLE_SERVICES: Record<GoogleService, { scope: string; label: string; msg: string; tab: string; param: string }> = {
+  calendar: { scope: GCAL_READ_SCOPE, label: "Google Takvim", msg: "GCAL", tab: "integrations", param: "gcal" },
+  drive: { scope: GDRIVE_SCOPE, label: "Google Drive", msg: "GDRIVE", tab: "drive", param: "gdrive" },
+};
+
+/** Scopes of the services the user enabled. Rows from before Drive existed mean calendar only. */
+function enabledScopes(row: { scopes?: string | null } | undefined): string[] {
+  if (!row) return [];
+  const list = String(row.scopes || "").split(/\s+/).filter(Boolean);
+  const services = Object.values(GOOGLE_SERVICES).map((sv) => sv.scope);
+  const enabled = list.filter((sc) => services.includes(sc));
+  return enabled.length > 0 || list.length > 0 ? enabled : [GCAL_READ_SCOPE];
+}
 
 function integrationKey(): Buffer {
   const material = process.env.INTEGRATION_ENCRYPTION_KEY || `inkwell-integrations:${JWT_SECRET}`;
@@ -1428,7 +1476,7 @@ class GcalReconnectError extends Error {}
 async function getGcalAccessToken(userId: string, forceRefresh = false): Promise<string> {
   const rows = await db.select().from(googleIntegrations).where(eq(googleIntegrations.userId, userId)).limit(1);
   const row = rows[0];
-  if (!row) throw new GcalReconnectError("Google Takvim bağlı değil");
+  if (!row) throw new GcalReconnectError("Google hesabı bağlı değil");
 
   const expiresAt = row.accessTokenExpiresAt ? new Date(row.accessTokenExpiresAt).getTime() : 0;
   if (!forceRefresh && row.accessToken && expiresAt - Date.now() > 60_000) return row.accessToken;
@@ -1440,7 +1488,7 @@ async function getGcalAccessToken(userId: string, forceRefresh = false): Promise
   } catch {
     // Key changed (e.g. JWT_SECRET rotated): the stored token is unusable.
     await db.delete(googleIntegrations).where(eq(googleIntegrations.userId, userId));
-    throw new GcalReconnectError("Google Takvim bağlantısı yenilenmeli");
+    throw new GcalReconnectError("Google bağlantısı yenilenmeli");
   }
 
   try {
@@ -1469,16 +1517,18 @@ async function getGcalAccessToken(userId: string, forceRefresh = false): Promise
     if (err?.response?.data?.error === "invalid_grant") {
       // Access was revoked in the Google account or the token expired.
       await db.delete(googleIntegrations).where(eq(googleIntegrations.userId, userId));
-      throw new GcalReconnectError("Google Takvim erişimi geri alınmış; lütfen Ayarlar'dan yeniden bağlanın");
+      throw new GcalReconnectError("Google erişimi geri alınmış; lütfen Ayarlar'dan yeniden bağlanın");
     }
     throw err;
   }
 }
 
-function gcalPopupResponse(res: Response, ok: boolean, message: string) {
-  const payload = { type: ok ? "GCAL_CONNECTED" : "GCAL_ERROR", message };
+function gcalPopupResponse(res: Response, ok: boolean, message: string, service: GoogleService = "calendar") {
+  const svc = GOOGLE_SERVICES[service];
+  const payload = { type: ok ? `${svc.msg}_CONNECTED` : `${svc.msg}_ERROR`, message };
+  const fallback = `/settings?tab=${svc.tab}&${svc.param}=`;
   return res.send(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Google Takvim</title></head>
+<html><head><meta charset="utf-8"><title>${escapeHtml(svc.label)}</title></head>
 <body style="font-family:system-ui,sans-serif;padding:24px">
 <p>${escapeHtml(message)}</p>
 <script>
@@ -1488,7 +1538,7 @@ function gcalPopupResponse(res: Response, ok: boolean, message: string) {
       window.opener.postMessage(payload, window.location.origin);
       window.close();
     } else {
-      window.location.href = '/settings?tab=integrations&gcal=' + (payload.type === 'GCAL_CONNECTED' ? 'connected' : 'error');
+      window.location.href = ${jsonForScript(fallback)} + (/_CONNECTED$/.test(payload.type) ? 'connected' : 'error');
     }
   })();
 </script>
@@ -1510,15 +1560,18 @@ function sessionUserId(req: Request): string | null {
   return null;
 }
 
-async function handleGcalCallback(req: Request, res: Response, state: { uid: string; redirectUri: string }) {
+async function handleGcalCallback(req: Request, res: Response, state: { uid: string; redirectUri: string; service: GoogleService }) {
+  const service = state.service;
+  const svc = GOOGLE_SERVICES[service];
+  const reply = (ok: boolean, message: string) => gcalPopupResponse(res, ok, message, service);
   // The browser finishing the flow must be signed in as the user who started it,
   // so a connect link made by someone else cannot attach a calendar to their account.
   if (sessionUserId(req) !== state.uid) {
-    return gcalPopupResponse(res, false, "Oturum doğrulanamadı. Lütfen Inkwell'e giriş yapıp Ayarlar'dan tekrar deneyin.");
+    return reply(false, "Oturum doğrulanamadı. Lütfen Inkwell'e giriş yapıp Ayarlar'dan tekrar deneyin.");
   }
   const { code, error } = req.query;
-  if (error) return gcalPopupResponse(res, false, "Google Takvim izni verilmedi.");
-  if (!code || typeof code !== "string") return gcalPopupResponse(res, false, "Yetkilendirme kodu alınamadı.");
+  if (error) return reply(false, `${svc.label} izni verilmedi.`);
+  if (!code || typeof code !== "string") return reply(false, "Yetkilendirme kodu alınamadı.");
 
   const { clientId, clientSecret } = googleClientConfig();
   try {
@@ -1535,13 +1588,19 @@ async function handleGcalCallback(req: Request, res: Response, state: { uid: str
     );
     const { access_token, refresh_token, expires_in, scope } = tokenRes.data || {};
     const granted = String(scope || "");
-    if (!granted.split(" ").includes(GCAL_READ_SCOPE)) {
-      return gcalPopupResponse(res, false, "Takvim okuma izni verilmedi. Lütfen izin ekranında takvim kutusunu işaretleyin.");
+    const grantedList = granted.split(" ");
+    if (!grantedList.includes(svc.scope)) {
+      return reply(
+        false,
+        service === "drive"
+          ? "Drive erişim izni verilmedi. Lütfen izin ekranında Drive kutusunu işaretleyin."
+          : "Takvim okuma izni verilmedi. Lütfen izin ekranında takvim kutusunu işaretleyin."
+      );
     }
 
     const existing = await db.select().from(googleIntegrations).where(eq(googleIntegrations.userId, state.uid)).limit(1);
     if (!refresh_token && !existing[0]) {
-      return gcalPopupResponse(res, false, "Google kalıcı erişim vermedi. Lütfen tekrar deneyin.");
+      return reply(false, "Google kalıcı erişim vermedi. Lütfen tekrar deneyin.");
     }
 
     let googleEmail: string | null = null;
@@ -1555,11 +1614,13 @@ async function handleGcalCallback(req: Request, res: Response, state: { uid: str
       /* the e-mail is only shown in Settings */
     }
 
+    // Keep the services already enabled here (if Google still grants them) and add this one
+    const enabled = Array.from(new Set([...enabledScopes(existing[0]).filter((sc) => grantedList.includes(sc)), svc.scope]));
     const values = {
       googleEmail,
       accessToken: access_token,
       accessTokenExpiresAt: new Date(Date.now() + (Number(expires_in) || 3600) * 1000),
-      scopes: granted,
+      scopes: enabled.join(" "),
       updatedAt: new Date(),
       ...(refresh_token ? { refreshTokenEnc: encryptSecret(refresh_token) } : {}),
     };
@@ -1572,20 +1633,20 @@ async function handleGcalCallback(req: Request, res: Response, state: { uid: str
         ...values,
       });
     }
-    return gcalPopupResponse(res, true, "Google Takvim bağlandı. Bu pencere kapanabilir.");
+    return reply(true, `${svc.label} bağlandı. Bu pencere kapanabilir.`);
   } catch (err: any) {
-    console.error("Google Calendar connect error:", err?.response?.data || err?.message);
-    return gcalPopupResponse(res, false, "Google Takvim bağlantısı kurulamadı.");
+    console.error(`${svc.label} connect error:`, err?.response?.data || err?.message);
+    return reply(false, `${svc.label} bağlantısı kurulamadı.`);
   }
 }
 
 /** If the OAuth state is a signed calendar-connection state, returns it. */
-function readGcalState(raw: unknown): { uid: string; redirectUri: string } | null {
+function readGcalState(raw: unknown): { uid: string; redirectUri: string; service: GoogleService } | null {
   if (typeof raw !== "string" || !raw.startsWith("eyJ")) return null;
   try {
     const p = jwt.verify(raw, JWT_SECRET) as any;
     if (p?.purpose === "gcal" && typeof p.uid === "string" && typeof p.redirectUri === "string") {
-      return { uid: p.uid, redirectUri: p.redirectUri };
+      return { uid: p.uid, redirectUri: p.redirectUri, service: p.service === "drive" ? "drive" : "calendar" };
     }
   } catch {
     /* expired or not ours */
@@ -1593,60 +1654,85 @@ function readGcalState(raw: unknown): { uid: string; redirectUri: string } | nul
   return null;
 }
 
-api.get("/integrations/google-calendar", authMiddleware, async (req: AuthRequest, res: Response) => {
-  const { clientId, clientSecret } = googleClientConfig();
-  const rows = await db
-    .select({ email: googleIntegrations.googleEmail, connectedAt: googleIntegrations.connectedAt })
-    .from(googleIntegrations)
-    .where(eq(googleIntegrations.userId, req.user!.userId))
-    .limit(1);
-  res.json({
-    configured: Boolean(clientId && clientSecret),
-    connected: rows.length > 0,
-    email: rows[0]?.email || null,
-    connected_at: rows[0]?.connectedAt || null,
-  });
-});
+function registerGoogleServiceRoutes(service: GoogleService, path: string) {
+  const svc = GOOGLE_SERVICES[service];
 
-api.post("/integrations/google-calendar/connect", authMiddleware, async (req: AuthRequest, res: Response) => {
-  const { clientId, clientSecret } = googleClientConfig();
-  if (!clientId || !clientSecret) {
-    return res.status(503).json({ detail: "Google entegrasyonu sunucuda yapılandırılmamış (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)." });
-  }
-  const redirectUri = googleCallbackUrl(req);
-  const state = jwt.sign({ purpose: "gcal", uid: req.user!.userId, redirectUri }, JWT_SECRET, { expiresIn: "10m" });
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    response_type: "code",
-    scope: GCAL_SCOPES.join(" "),
-    access_type: "offline", // returns a refresh token
-    prompt: "consent", // always issue a refresh token, even on reconnect
-    include_granted_scopes: "true",
-    state,
+  api.get(path, authMiddleware, async (req: AuthRequest, res: Response) => {
+    const { clientId, clientSecret } = googleClientConfig();
+    const rows = await db.select().from(googleIntegrations).where(eq(googleIntegrations.userId, req.user!.userId)).limit(1);
+    const connected = enabledScopes(rows[0]).includes(svc.scope);
+    res.json({
+      configured: Boolean(clientId && clientSecret),
+      connected,
+      email: connected ? rows[0]?.googleEmail || null : null,
+      connected_at: connected ? rows[0]?.connectedAt || null : null,
+    });
   });
-  if (req.user!.email) params.set("login_hint", req.user!.email);
-  res.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}` });
-});
 
-api.delete("/integrations/google-calendar", authMiddleware, async (req: AuthRequest, res: Response) => {
-  const userId = req.user!.userId;
-  const rows = await db.select().from(googleIntegrations).where(eq(googleIntegrations.userId, userId)).limit(1);
-  if (rows[0]) {
-    try {
-      // Revoking the refresh token also invalidates its access tokens.
-      const token = decryptSecret(rows[0].refreshTokenEnc);
-      await axios.post("https://oauth2.googleapis.com/revoke", new URLSearchParams({ token }).toString(), {
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        timeout: 8000,
-      });
-    } catch {
-      /* already revoked or unreachable: the local link is removed anyway */
+  api.post(`${path}/connect`, authMiddleware, async (req: AuthRequest, res: Response) => {
+    const { clientId, clientSecret } = googleClientConfig();
+    if (!clientId || !clientSecret) {
+      return res.status(503).json({ detail: "Google entegrasyonu sunucuda yapılandırılmamış (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)." });
     }
-    await db.delete(googleIntegrations).where(eq(googleIntegrations.userId, userId));
+    const redirectUri = googleCallbackUrl(req);
+    const state = jwt.sign({ purpose: "gcal", service, uid: req.user!.userId, redirectUri }, JWT_SECRET, { expiresIn: "10m" });
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: ["openid", "email", svc.scope].join(" "),
+      access_type: "offline", // returns a refresh token
+      prompt: "consent", // always issue a refresh token, even on reconnect
+      include_granted_scopes: "true", // one token covers every enabled Google service
+      state,
+    });
+    if (req.user!.email) params.set("login_hint", req.user!.email);
+    res.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}` });
+  });
+
+  api.delete(path, authMiddleware, async (req: AuthRequest, res: Response) => {
+    const userId = req.user!.userId;
+    const rows = await db.select().from(googleIntegrations).where(eq(googleIntegrations.userId, userId)).limit(1);
+    if (rows[0]) {
+      const remaining = enabledScopes(rows[0]).filter((sc) => sc !== svc.scope);
+      if (remaining.length > 0) {
+        // Another Google service still uses the grant: only switch this one off here
+        await db
+          .update(googleIntegrations)
+          .set({ scopes: remaining.join(" "), updatedAt: new Date() })
+          .where(eq(googleIntegrations.userId, userId));
+      } else {
+        try {
+          // Revoking the refresh token also invalidates its access tokens.
+          const token = decryptSecret(rows[0].refreshTokenEnc);
+          await axios.post("https://oauth2.googleapis.com/revoke", new URLSearchParams({ token }).toString(), {
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            timeout: 8000,
+          });
+        } catch {
+          /* already revoked or unreachable: the local link is removed anyway */
+        }
+        await db.delete(googleIntegrations).where(eq(googleIntegrations.userId, userId));
+      }
+    }
+    res.json({ connected: false });
+  });
+}
+
+registerGoogleServiceRoutes("calendar", "/integrations/google-calendar");
+registerGoogleServiceRoutes("drive", "/integrations/google-drive");
+
+/** Throws GcalReconnectError unless the user turned this Google service on. */
+async function requireGoogleService(userId: string, service: GoogleService) {
+  const rows = await db
+    .select({ scopes: googleIntegrations.scopes })
+    .from(googleIntegrations)
+    .where(eq(googleIntegrations.userId, userId))
+    .limit(1);
+  if (!enabledScopes(rows[0]).includes(GOOGLE_SERVICES[service].scope)) {
+    throw new GcalReconnectError(`${GOOGLE_SERVICES[service].label} bağlı değil; lütfen Ayarlar'dan bağlanın`);
   }
-  res.json({ connected: false });
-});
+}
 
 api.get("/integrations/google-calendar/events", authMiddleware, async (req: AuthRequest, res: Response) => {
   const timeMin = new Date(String(req.query.time_min || ""));
@@ -1655,6 +1741,7 @@ api.get("/integrations/google-calendar/events", authMiddleware, async (req: Auth
     return res.status(400).json({ detail: "Geçerli time_min / time_max gerekli (en fazla 32 gün)" });
   }
   try {
+    await requireGoogleService(req.user!.userId, "calendar");
     const callGoogle = async (forceRefresh: boolean) => {
       const token = await getGcalAccessToken(req.user!.userId, forceRefresh);
       return axios.get("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
@@ -1700,6 +1787,66 @@ api.get("/integrations/google-calendar/events", authMiddleware, async (req: Auth
       return res.status(409).json({ detail: "Google Takvim erişimi reddedildi; lütfen Ayarlar'dan yeniden bağlanın", code: "reconnect_required" });
     }
     res.status(502).json({ detail: "Google Takvim etkinlikleri alınamadı" });
+  }
+});
+
+// Searches the user's Drive by file name for files to link to a note.
+// Only metadata is read; file contents never pass through Inkwell.
+api.get("/integrations/google-drive/files", authMiddleware, async (req: AuthRequest, res: Response) => {
+  const q = String(req.query.q || "").trim().slice(0, 200);
+  const pageToken = typeof req.query.page_token === "string" ? req.query.page_token : undefined;
+  const escaped = q.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const query = q
+    ? `trashed = false and name contains '${escaped}'`
+    : "trashed = false and mimeType != 'application/vnd.google-apps.folder'";
+  try {
+    await requireGoogleService(req.user!.userId, "drive");
+    const callGoogle = async (forceRefresh: boolean) => {
+      const token = await getGcalAccessToken(req.user!.userId, forceRefresh);
+      return axios.get("https://www.googleapis.com/drive/v3/files", {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          q: query,
+          pageSize: 25,
+          pageToken,
+          orderBy: "modifiedTime desc",
+          fields: "nextPageToken,files(id,name,mimeType,iconLink,webViewLink,modifiedTime,owners(displayName))",
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+        },
+        timeout: 10000,
+      });
+    };
+    let data: any;
+    try {
+      ({ data } = await callGoogle(false));
+    } catch (err: any) {
+      // A rejected access token: refresh once and retry before asking the user.
+      if (err?.response?.status !== 401) throw err;
+      ({ data } = await callGoogle(true));
+    }
+    const files = Array.isArray(data?.files) ? data.files : [];
+    res.json({
+      files: files.map((f: any) => ({
+        id: f.id,
+        name: f.name || "Adsız dosya",
+        mime_type: f.mimeType || "",
+        icon_link: f.iconLink || null,
+        web_view_link: f.webViewLink || null,
+        modified_time: f.modifiedTime || null,
+        owner: f.owners?.[0]?.displayName || null,
+      })),
+      next_page_token: data?.nextPageToken || null,
+    });
+  } catch (err: any) {
+    if (err instanceof GcalReconnectError) {
+      return res.status(409).json({ detail: err.message, code: "reconnect_required" });
+    }
+    if (err?.response?.status === 401 || err?.response?.status === 403) {
+      return res.status(409).json({ detail: "Google Drive erişimi reddedildi; lütfen Ayarlar'dan yeniden bağlanın", code: "reconnect_required" });
+    }
+    console.error("Google Drive search error:", err?.response?.data || err?.message);
+    res.status(502).json({ detail: "Google Drive dosyaları alınamadı" });
   }
 });
 
@@ -2721,6 +2868,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       customFields: finalCustomFields,
       areaIds: await sanitizeAreaIds(userId, req.body?.area_ids),
       period: notePeriod,
+      driveFiles: sanitizeDriveFiles(req.body?.drive_files),
       pinned: false,
       archived: false,
       isEncrypted: Boolean(is_encrypted),
@@ -2755,6 +2903,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       custom_fields: inserted.customFields || {},
       area_ids: inserted.areaIds || [],
       period: inserted.period || "day",
+      drive_files: inserted.driveFiles || [],
       pinned: inserted.pinned,
       archived: inserted.archived || false,
       is_encrypted: Boolean(inserted.isEncrypted),
@@ -2833,6 +2982,7 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       custom_fields: n.customFields || {},
       area_ids: n.areaIds || [],
       period: n.period || "day",
+      drive_files: n.driveFiles || [],
       pinned: n.pinned,
       archived: n.archived || false,
       is_encrypted: Boolean(n.isEncrypted),
@@ -2917,7 +3067,8 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
           n.title.toLowerCase().includes(queryStr) ||
           n.content.toLowerCase().includes(queryStr) ||
           n.tags.some((t) => t.toLowerCase().includes(queryStr)) ||
-          n.people.some((p) => p.toLowerCase().includes(queryStr))
+          n.people.some((p) => p.toLowerCase().includes(queryStr)) ||
+          (n.drive_files || []).some((f: any) => String(f?.name || "").toLowerCase().includes(queryStr))
       );
     }
 
@@ -3025,6 +3176,7 @@ api.get("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       custom_fields: n.customFields || {},
       area_ids: n.areaIds || [],
       period: n.period || "day",
+      drive_files: n.driveFiles || [],
       pinned: n.pinned,
       archived: n.archived || false,
       is_encrypted: Boolean(n.isEncrypted),
@@ -3087,6 +3239,7 @@ api.patch("/notes/:note_id/tasks", authMiddleware, async (req: AuthRequest, res:
       custom_fields: n.customFields || {},
       area_ids: n.areaIds || [],
       period: n.period || "day",
+      drive_files: n.driveFiles || [],
       pinned: n.pinned,
       archived: n.archived || false,
       is_encrypted: Boolean(n.isEncrypted),
@@ -3175,6 +3328,9 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     if (req.body?.area_ids !== undefined) {
       updateData.areaIds = await sanitizeAreaIds(userId, req.body.area_ids);
     }
+    if (req.body?.drive_files !== undefined) {
+      updateData.driveFiles = sanitizeDriveFiles(req.body.drive_files);
+    }
     if (is_encrypted !== undefined) {
       updateData.isEncrypted = Boolean(is_encrypted);
     }
@@ -3211,6 +3367,7 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       custom_fields: updated.customFields || {},
       area_ids: updated.areaIds || [],
       period: updated.period || "day",
+      drive_files: updated.driveFiles || [],
       pinned: updated.pinned,
       archived: updated.archived || false,
       is_encrypted: Boolean(updated.isEncrypted),
@@ -3348,6 +3505,7 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
       custom_fields: updated.customFields || {},
       area_ids: updated.areaIds || [],
       period: updated.period || "day",
+      drive_files: updated.driveFiles || [],
       pinned: updated.pinned,
       archived: updated.archived || false,
       is_encrypted: Boolean(updated.isEncrypted),
@@ -3397,6 +3555,7 @@ api.patch("/notes/:note_id/pin", authMiddleware, async (req: AuthRequest, res: R
       custom_fields: updated.customFields || {},
       area_ids: updated.areaIds || [],
       period: updated.period || "day",
+      drive_files: updated.driveFiles || [],
       pinned: updated.pinned,
       archived: updated.archived || false,
       created_at: updated.createdAt.toISOString(),
@@ -3449,6 +3608,7 @@ const handleArchiveToggle = async (req: AuthRequest, res: Response) => {
       custom_fields: updated.customFields || {},
       area_ids: updated.areaIds || [],
       period: updated.period || "day",
+      drive_files: updated.driveFiles || [],
       pinned: updated.pinned,
       archived: updated.archived || false,
       created_at: updated.createdAt.toISOString(),

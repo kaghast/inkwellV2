@@ -149,6 +149,7 @@ export interface Note {
   custom_fields?: Record<string, any>;
   area_ids?: string[];
   period?: "day" | "week" | "month"; // what `date` stands for; missing = day
+  drive_files?: DriveFileRef[]; // linked Google Drive files
   pinned: boolean;
   archived?: boolean;
   is_encrypted?: boolean;
@@ -192,4 +193,12 @@ export interface Area {
   note_count: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface DriveFileRef {
+  id: string;
+  name: string;
+  mime_type: string;
+  web_view_link: string | null;
+  icon_link: string | null;
 }

@@ -128,8 +128,9 @@ export default function GoogleCalendarSettings() {
               <AlertDialogHeader>
                 <AlertDialogTitle className="font-serif">Google Takvim bağlantısı kaldırılsın mı?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Inkwell'in takvim erişimi Google tarafında da iptal edilir. Takvimden oluşturduğun notlar silinmez.
-                  Tekrar kullanmak için yeniden bağlanman gerekir.
+                  Takvim etkinlikleri artık gösterilmez; takvimden oluşturduğun notlar silinmez. Google Drive da bağlı
+                  değilse Inkwell'in Google erişimi Google tarafında da iptal edilir. Tekrar kullanmak için yeniden
+                  bağlanman gerekir.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
