@@ -38,6 +38,7 @@ import { verifyPassword } from "@/lib/crypto";
 import { extractCommentsFromContent, embedCommentsIntoContent } from "@/lib/comments";
 import NoteSplitView, { canSplitNote } from "@/components/NoteSplitView";
 import NoteAreasBar from "@/components/areas/NoteAreasBar";
+import { DriveFileChips } from "@/components/drive/DriveFiles";
 import { CustomFieldsForm, CustomFieldsView } from "@/components/CustomFieldsRenderer";
 import { formatDisplayDatetime, toDateTimeLocal } from "@/lib/datetime";
 import { useLinkTitleSync } from "@/lib/linkTitles";
@@ -841,6 +842,12 @@ export default function NoteCard({
           )}
 
           {/* Note footer: areas, tags & people */}
+          {!splitting && (note.drive_files?.length ?? 0) > 0 && (
+            <div className="mt-3">
+              <DriveFileChips files={note.drive_files || []} />
+            </div>
+          )}
+
           {!splitting && (!isArchived || areaIds.length > 0 || note.tags?.length > 0 || note.people?.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-2.5 border-t border-border/40">
               <NoteAreasBar

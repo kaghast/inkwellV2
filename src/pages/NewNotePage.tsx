@@ -8,6 +8,7 @@ import OutlineEditor from "@/components/outline/OutlineEditor";
 import MindmapEditor from "@/components/mindmap/MindmapEditor";
 import LocationPicker from "@/components/LocationPicker";
 import AreaField from "@/components/areas/AreaField";
+import { DriveFilesField } from "@/components/drive/DriveFiles";
 import PeriodPicker from "@/components/PeriodPicker";
 import type { NotePeriod } from "@/lib/period";
 import { rememberRecentAreas } from "@/lib/areas";
@@ -33,7 +34,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Note, LocationItem, NoteType, Category } from "@/types";
+import type { Note, LocationItem, NoteType, Category, DriveFileRef } from "@/types";
 
 export type ContentMode = "markdown" | "drawing" | "outline" | "mindmap";
 
@@ -55,6 +56,7 @@ export default function NewNotePage() {
   const [picker, setPicker] = useState(false);
   const [areaIds, setAreaIds] = useState<string[]>([]);
   const [period, setPeriod] = useState<NotePeriod>("day");
+  const [driveFiles, setDriveFiles] = useState<DriveFileRef[]>([]);
   const [saving, setSaving] = useState(false);
   const [fullFocus, setFullFocus] = useState(false);
   const [encryptOpen, setEncryptOpen] = useState(false);
@@ -98,7 +100,7 @@ export default function NewNotePage() {
     };
     window.addEventListener("keydown", handleKey, true);
     return () => window.removeEventListener("keydown", handleKey, true);
-  }, [fullFocus, title, content, dateTime, locationId, categoryId, noteTypeId, customFields, contentMode, isEncrypted, passwordHash, savedNoteId, areaIds, period]);
+  }, [fullFocus, title, content, dateTime, locationId, categoryId, noteTypeId, customFields, contentMode, isEncrypted, passwordHash, savedNoteId, areaIds, period, driveFiles]);
 
   const currentType = noteTypes.find((t) => t.type_id === noteTypeId);
 
@@ -129,6 +131,7 @@ export default function NewNotePage() {
         is_encrypted: isEncrypted,
         password_hash: passwordHash,
         area_ids: areaIds,
+        drive_files: driveFiles,
       };
       rememberRecentAreas(areaIds);
 
@@ -389,6 +392,7 @@ export default function NewNotePage() {
 
               {/* Knowledge areas (Alanlar) */}
               <AreaField value={areaIds} onChange={setAreaIds} />
+              <DriveFilesField value={driveFiles} onChange={setDriveFiles} />
             </div>
 
             {/* Custom Fields if Note Type has fields */}

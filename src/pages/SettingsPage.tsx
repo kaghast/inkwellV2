@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import GoogleCalendarSettings from "@/components/settings/GoogleCalendarSettings";
+import GoogleDriveFilesSettings from "@/components/settings/GoogleDriveFilesSettings";
+import { useGdriveStatus } from "@/lib/googleDrive";
 import InstallAppCard from "@/components/settings/InstallAppCard";
 import { useGcalStatus } from "@/lib/googleCalendar";
 import {
@@ -121,6 +123,7 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>(tabParam);
 
   const { status: gcalStatus } = useGcalStatus();
+  const { status: gdriveStatus } = useGdriveStatus();
 
   // Google Drive state
   const [isConnectingDrive, setIsConnectingDrive] = useState(false);
@@ -440,8 +443,8 @@ export default function SettingsPage() {
             }`}
           >
             <Cloud className="w-4 h-4 shrink-0 text-sky-400" />
-            <span className="truncate flex-1">Google Drive Yedekleme</span>
-            {driveToken && <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />}
+            <span className="truncate flex-1">Google Drive</span>
+            {(driveToken || gdriveStatus?.connected) && <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />}
           </button>
 
           <button
@@ -652,6 +655,9 @@ export default function SettingsPage() {
           {/* TAB 2: Google Drive Yedekleme & Senkronizasyon */}
           {activeTab === "drive" && (
             <div className="space-y-8 animate-in fade-in duration-200">
+              {/* Linking Drive files to notes (server-side Google connection) */}
+              <GoogleDriveFilesSettings />
+              <div className="border-t border-border" />
               <div>
                 <h2 className="font-serif text-2xl font-bold flex items-center gap-2">
                   <Cloud className="w-5 h-5 text-sky-500" strokeWidth={1.5} /> Google Drive Yedekleme & İçe Aktarma

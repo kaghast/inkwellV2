@@ -7,6 +7,7 @@ import MarkdownView from "@/components/MarkdownView";
 import { periodLabel } from "@/lib/period";
 import MiniMap from "@/components/MiniMap";
 import NoteAreasBar from "@/components/areas/NoteAreasBar";
+import { DriveFilesField } from "@/components/drive/DriveFiles";
 import LocationPicker from "@/components/LocationPicker";
 import { CustomFieldsForm, CustomFieldsView } from "@/components/CustomFieldsRenderer";
 import { formatDisplayDatetime, toDateTimeLocal } from "@/lib/datetime";
@@ -1206,6 +1207,30 @@ export default function NoteDetail() {
                   value={note.area_ids || []}
                   onChange={(ids) => setNote((prev) => (prev ? { ...prev, area_ids: ids } : prev))}
                 />
+
+                {/* Google Drive files linked to the note — editable without entering edit mode */}
+                {(!note.archived || (note.drive_files?.length ?? 0) > 0) && (
+                  <div className="mt-2">
+                    <DriveFilesField
+                      value={note.drive_files || []}
+                      disabled={Boolean(note.archived)}
+                      onChange={async (files) => {
+                        const before = note.drive_files || [];
+                        setNote((prev) => (prev ? { ...prev, drive_files: files } : prev));
+                        try {
+                          const { data } = await api.put<Note>(`/notes/${note.note_id}`, {
+                            drive_files: files,
+                            change_summary: "Drive dosya bağlantıları güncellendi",
+                          });
+                          setNote((prev) => (prev ? { ...prev, drive_files: data.drive_files || [] } : prev));
+                        } catch (err: any) {
+                          setNote((prev) => (prev ? { ...prev, drive_files: before } : prev));
+                          toast.error(formatApiError(err) || "Drive bağlantısı kaydedilemedi");
+                        }
+                      }}
+                    />
+                  </div>
+                )}
 
                 {/* Custom fields view in read mode */}
                 {currentType && currentType.fields && currentType.fields.length > 0 && (
