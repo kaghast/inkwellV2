@@ -27,6 +27,7 @@ import {
 import api, { formatApiError } from "@/lib/api";
 import { toast } from "sonner";
 import type { CalendarCounts, Note } from "@/types";
+import { weekStart } from "@/lib/period";
 
 /**
  * Calculates standard ISO 8601 week number for a given date
@@ -215,9 +216,15 @@ export default function CalendarPanel({
           <ChevronLeft className="w-4 h-4" strokeWidth={1.5} />
         </Button>
         <div className="text-center">
-          <div className="font-serif text-xl tracking-tight leading-none" data-testid="cal-title">
+          <button
+            type="button"
+            onClick={() => navigate(`/new?period=month&date=${year}-${String(month).padStart(2, "0")}-01`)}
+            className="font-serif text-xl tracking-tight leading-none rounded px-1.5 -mx-1.5 hover:bg-secondary cursor-pointer"
+            title={`${MONTHS[month - 1]} ${year} için ay notu ekle`}
+            data-testid="cal-title"
+          >
             {MONTHS[month - 1]}
-          </div>
+          </button>
           <div className="text-xs text-muted-foreground font-mono mt-1 font-medium">{year}</div>
         </div>
         <Button
@@ -262,16 +269,22 @@ export default function CalendarPanel({
             >
               {/* Week Number Badge */}
               <div className="flex items-center justify-center">
-                <span
-                  title={week.isCurrentWeek ? `Güncel Hafta (Hafta ${week.weekNum})` : `Hafta ${week.weekNum}`}
-                  className={`text-[9px] font-mono px-1 py-0.5 rounded leading-none ${
+                <button
+                  type="button"
+                  onClick={() => {
+                    const d = week.days.find((x) => x !== null);
+                    if (d) navigate(`/new?period=week&date=${weekStart(fmtCellDate(d))}`);
+                  }}
+                  title={`${week.isCurrentWeek ? "Güncel Hafta" : "Hafta"} ${week.weekNum} için hafta notu ekle`}
+                  data-testid={`cal-week-${week.weekNum}`}
+                  className={`text-[9px] font-mono px-1 py-0.5 rounded leading-none cursor-pointer ${
                     week.isCurrentWeek
-                      ? "bg-foreground text-background font-bold shadow-xs"
-                      : "text-muted-foreground/60 hover:text-muted-foreground font-medium"
+                      ? "bg-foreground text-background font-bold shadow-xs hover:opacity-80"
+                      : "text-muted-foreground/60 hover:text-foreground hover:bg-secondary font-medium"
                   }`}
                 >
                   {week.weekNum}
-                </span>
+                </button>
               </div>
 
               {/* 7 Days in Week */}
