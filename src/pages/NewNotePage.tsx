@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import api, { formatApiError } from "@/lib/api";
 import AppMenubar from "@/components/AppMenubar";
 import MarkdownEditor from "@/components/MarkdownEditor";
@@ -10,7 +10,7 @@ import LocationPicker from "@/components/LocationPicker";
 import AreaField from "@/components/areas/AreaField";
 import { DriveFilesField } from "@/components/drive/DriveFiles";
 import PeriodPicker from "@/components/PeriodPicker";
-import type { NotePeriod } from "@/lib/period";
+import { normalizePeriod, type NotePeriod } from "@/lib/period";
 import { rememberRecentAreas } from "@/lib/areas";
 import { CustomFieldsForm } from "@/components/CustomFieldsRenderer";
 import EncryptNoteDialog from "@/components/EncryptNoteDialog";
@@ -40,11 +40,18 @@ export type ContentMode = "markdown" | "drawing" | "outline" | "mindmap";
 
 export default function NewNotePage() {
   const navigate = useNavigate();
+  // Prefill from links such as /new?date=2026-11-16&period=week (calendar week number / month title)
+  const [searchParams] = useSearchParams();
+  const dateParam = searchParams.get("date") || "";
+  const initialDate = /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : null;
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [contentMode, setContentMode] = useState<ContentMode>("markdown");
-  const [dateTime, setDateTime] = useState(() => toDateTimeLocal(new Date().toISOString()));
+  const [dateTime, setDateTime] = useState(() => {
+    const now = toDateTimeLocal(new Date().toISOString());
+    return initialDate ? `${initialDate}T${now.slice(11, 16) || "09:00"}` : now;
+  });
   const [locationId, setLocationId] = useState<string | null>(null);
   const [loc, setLoc] = useState<LocationItem | null>(null);
   const [locations, setLocations] = useState<LocationItem[]>([]);
@@ -55,7 +62,7 @@ export default function NewNotePage() {
   const [customFields, setCustomFields] = useState<Record<string, any>>({});
   const [picker, setPicker] = useState(false);
   const [areaIds, setAreaIds] = useState<string[]>([]);
-  const [period, setPeriod] = useState<NotePeriod>("day");
+  const [period, setPeriod] = useState<NotePeriod>(() => normalizePeriod(searchParams.get("period")));
   const [driveFiles, setDriveFiles] = useState<DriveFileRef[]>([]);
   const [saving, setSaving] = useState(false);
   const [fullFocus, setFullFocus] = useState(false);
