@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import SettingsDialog from "@/components/SettingsDialog";
+import { DrawerTabsBar } from "@/components/NoteDrawer";
 import type { User } from "@/types";
 
 interface Props {
@@ -142,7 +143,7 @@ export default function AppMenubar({
         className="fixed top-0 left-0 lg:left-16 right-0 h-14 z-30 bg-background/95 backdrop-blur-md border-b border-border flex items-center justify-between px-3 sm:px-5 select-none"
         data-testid="app-header"
       >
-        {/* Left Area: Mobile Menu Toggle, Universal Capture and Search */}
+        {/* Left Area: Mobile Menu Toggle, Universal Capture, Search and open drawer tabs */}
         <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
           <Button
             size="icon"
@@ -170,10 +171,11 @@ export default function AppMenubar({
               </Button>
             </>
           )}
+          <DrawerTabsBar />
         </div>
 
         {/* Right Area: Inkwell Logo + Başlık & Bildirimler & Tema & Kişisel Menü */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {/* Inkwell Logo ve Başlık (Header üzerinde sağda) */}
           <Link
             to="/"

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   Archive,
@@ -16,8 +16,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Share2,
-  StickyNote,
   Trash2,
   X,
   ZoomIn,
@@ -58,224 +56,110 @@ import {
   isEffectivelyArchived,
   setNoteAreas,
 } from "@/lib/areas";
+import { useDrawerTabs } from "@/contexts/DrawerTabsContext";
 
 // ---------------------------------------------------------------------------
-// Mindmap layout
+// Circle packing: areas are plain circles that touch each other, no lines.
 // ---------------------------------------------------------------------------
-const ROOT_ID = "__root";
 const UNASSIGNED_ID = "__unassigned";
-const ROOT_R = 36;
-const MAX_NOTE_LEAVES = 6;
-const COL_FIRST = 250; // distance root → main areas
-const COL_STEP = 220; // distance between deeper levels
-const NOTE_OFFSET = 175; // distance area → note leaves
-const NOTE_ROW = 26;
-const GAP = 14;
+const MAX_RELATED = 6;
 
-type MapNodeKind = "root" | "area" | "note" | "more" | "unassigned";
+/** focus = the opened area in the middle; child = its sub-areas; related = areas sharing notes with it. */
+type BubbleRole = "top" | "focus" | "child" | "related" | "match";
 
-interface MapNode {
+interface Bubble {
   id: string;
-  kind: MapNodeKind;
+  kind: "area" | "unassigned";
+  role: BubbleRole;
   label: string;
   x: number;
   y: number;
   r: number;
-  side: 1 | -1;
   color: string;
-  parentId: string | null;
   areaId?: string;
-  note?: Note;
-  count?: number;
-  hasChildren?: boolean;
-  expanded?: boolean;
-  archived?: boolean;
+  count: number;
+  childCount: number;
+  shared?: number;
 }
 
-interface MapEdge {
-  id: string;
-  from: MapNode;
-  to: MapNode;
-  color: string;
-  width: number;
+/** Bigger circles for more notes; sqrt keeps very large areas from dominating. */
+function bubbleRadius(total: number, role: BubbleRole) {
+  const r = 34 + Math.sqrt(total) * 11;
+  if (role === "focus") return Math.min(Math.max(r * 1.15, 86), 150);
+  if (role === "related") return Math.min(r * 0.8, 80);
+  return Math.min(r, 112);
 }
 
-/** Bigger areas for more notes; sqrt keeps very large areas from dominating. */
-function areaRadius(total: number, depth: number) {
-  const base = depth === 0 ? 22 : 15;
-  return Math.min(base + Math.sqrt(total) * 8, depth === 0 ? 74 : 56);
+interface Pt {
+  x: number;
+  y: number;
+}
+interface Circle extends Pt {
+  r: number;
 }
 
-interface LayoutInput {
-  forest: AreaTreeNode[];
-  expanded: Set<string>;
-  showNotes: boolean;
-  notesByArea: Record<string, Note[]>;
-  unassignedCount: number;
-  byId: Record<string, Area>;
+/** Centres of the circles of radius r that touch both a and b. */
+function tangentPoints(a: Circle, b: Circle, r: number): Pt[] {
+  const ra = a.r + r;
+  const rb = b.r + r;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const d = Math.hypot(dx, dy);
+  if (d === 0 || d > ra + rb || d < Math.abs(ra - rb)) return [];
+  const l = (ra * ra - rb * rb + d * d) / (2 * d);
+  const h = Math.sqrt(Math.max(0, ra * ra - l * l));
+  const mx = a.x + (dx * l) / d;
+  const my = a.y + (dy * l) / d;
+  return [
+    { x: mx - (dy * h) / d, y: my + (dx * h) / d },
+    { x: mx + (dy * h) / d, y: my - (dx * h) / d },
+  ];
 }
 
-function computeLayout({ forest, expanded, showNotes, notesByArea, unassignedCount, byId }: LayoutInput) {
-  const nodes: MapNode[] = [];
-  const edges: MapEdge[] = [];
-
-  type Block =
-    | { kind: "area"; tree: AreaTreeNode; children: Block[]; h: number; r: number }
-    | { kind: "note"; note: Note; h: number }
-    | { kind: "more"; areaId: string; extra: number; h: number };
-
-  const measure = (tree: AreaTreeNode): Block => {
-    const r = areaRadius(tree.totalNotes, tree.depth);
-    const children: Block[] = [];
-    if (expanded.has(tree.area.area_id)) {
-      tree.children.forEach((c) => children.push(measure(c)));
-      if (showNotes) {
-        const list = notesByArea[tree.area.area_id] || [];
-        list.slice(0, MAX_NOTE_LEAVES).forEach((n) => children.push({ kind: "note", note: n, h: NOTE_ROW }));
-        if (list.length > MAX_NOTE_LEAVES) {
-          children.push({ kind: "more", areaId: tree.area.area_id, extra: list.length - MAX_NOTE_LEAVES, h: NOTE_ROW });
+/**
+ * Greedy front packing: the first circle sits at the origin and every next one is
+ * placed touching two already placed circles, as close to the origin as possible
+ * without overlapping. Small inputs (tens of areas), so O(n³) is fine.
+ */
+function packCircles(radii: number[], secondAngle = 0): Pt[] {
+  const placed: Circle[] = [];
+  const EPS = 0.01;
+  const fits = (p: Pt, r: number) => placed.every((c) => Math.hypot(c.x - p.x, c.y - p.y) >= c.r + r - EPS);
+  for (const r of radii) {
+    if (placed.length === 0) {
+      placed.push({ x: 0, y: 0, r });
+      continue;
+    }
+    if (placed.length === 1) {
+      const a = placed[0];
+      const d = a.r + r;
+      placed.push({ x: a.x + Math.cos(secondAngle) * d, y: a.y + Math.sin(secondAngle) * d, r });
+      continue;
+    }
+    let best: Pt | null = null;
+    let bestD = Infinity;
+    const consider = (p: Pt) => {
+      const d = Math.hypot(p.x, p.y);
+      if (d < bestD && fits(p, r)) {
+        best = p;
+        bestD = d;
+      }
+    };
+    for (let i = 0; i < placed.length; i++) {
+      for (let j = i + 1; j < placed.length; j++) tangentPoints(placed[i], placed[j], r).forEach(consider);
+    }
+    if (!best) {
+      for (const c of placed) {
+        for (let k = 0; k < 24; k++) {
+          const t = (k / 24) * Math.PI * 2;
+          consider({ x: c.x + Math.cos(t) * (c.r + r), y: c.y + Math.sin(t) * (c.r + r) });
         }
       }
     }
-    const own = r * 2 + 30; // circle + label below it
-    const kids = children.reduce((s, c) => s + c.h, 0) + Math.max(0, children.length - 1) * GAP;
-    return { kind: "area", tree, children, h: Math.max(own, kids), r };
-  };
-
-  const root: MapNode = {
-    id: ROOT_ID,
-    kind: "root",
-    label: "Alanlarım",
-    x: 0,
-    y: 0,
-    r: ROOT_R,
-    side: 1,
-    color: "hsl(var(--foreground))",
-    parentId: null,
-  };
-  nodes.push(root);
-
-  // Balance main areas between the right and left side, like a classic mindmap.
-  // Sides are decided from the *collapsed* size only, so expanding a branch never
-  // makes other areas jump to the opposite side.
-  const blocks = forest.map(measure);
-  const order = blocks
-    .map((b, i) => ({ b, i, base: areaRadius(forest[i].totalNotes, 0) * 2 + 30 }))
-    .sort((a, z) => z.base - a.base || a.i - z.i);
-  const sides: Record<1 | -1, { b: Block; i: number }[]> = { 1: [], [-1]: [] } as any;
-  let rightH = 0;
-  let leftH = 0;
-  for (const item of order) {
-    if (rightH <= leftH) {
-      sides[1].push(item);
-      rightH += item.base + GAP * 2;
-    } else {
-      sides[-1].push(item);
-      leftH += item.base + GAP * 2;
-    }
+    const p = (best as Pt | null) || { x: 0, y: 0 };
+    placed.push({ x: p.x, y: p.y, r });
   }
-
-  const place = (block: Block, parent: MapNode, depth: number, top: number, side: 1 | -1, parentColor: string) => {
-    const cy = top + block.h / 2;
-    if (block.kind === "area") {
-      const a = block.tree.area;
-      const color = areaColor(a, byId);
-      const x = depth === 1 ? side * COL_FIRST : parent.x + side * COL_STEP;
-      const node: MapNode = {
-        id: a.area_id,
-        kind: "area",
-        label: a.name,
-        x,
-        y: cy,
-        r: block.r,
-        side,
-        color,
-        parentId: parent.id,
-        areaId: a.area_id,
-        count: block.tree.totalNotes,
-        hasChildren: block.tree.children.length > 0 || (notesByArea[a.area_id] || []).length > 0,
-        expanded: expanded.has(a.area_id),
-        archived: a.archived,
-      };
-      nodes.push(node);
-      edges.push({ id: `${parent.id}->${node.id}`, from: parent, to: node, color, width: 1.5 + Math.min(block.tree.totalNotes, 30) / 6 });
-      const kidsH = block.children.reduce((s, c) => s + c.h, 0) + Math.max(0, block.children.length - 1) * GAP;
-      let y = top + (block.h - kidsH) / 2;
-      for (const c of block.children) {
-        place(c, node, depth + 1, y, side, color);
-        y += c.h + GAP;
-      }
-    } else if (block.kind === "note") {
-      const node: MapNode = {
-        id: `note:${parent.id}:${block.note.note_id}`,
-        kind: "note",
-        label: block.note.title || "Başlıksız Not",
-        x: parent.x + side * NOTE_OFFSET,
-        y: cy,
-        r: 5,
-        side,
-        color: parentColor,
-        parentId: parent.id,
-        note: block.note,
-      };
-      nodes.push(node);
-      edges.push({ id: `${parent.id}->${node.id}`, from: parent, to: node, color: parentColor, width: 1 });
-    } else {
-      const node: MapNode = {
-        id: `more:${block.areaId}`,
-        kind: "more",
-        label: `+${block.extra} not daha`,
-        x: parent.x + side * NOTE_OFFSET,
-        y: cy,
-        r: 5,
-        side,
-        color: parentColor,
-        parentId: parent.id,
-        areaId: block.areaId,
-      };
-      nodes.push(node);
-      edges.push({ id: `${parent.id}->${node.id}`, from: parent, to: node, color: parentColor, width: 1 });
-    }
-  };
-
-  ([1, -1] as const).forEach((side) => {
-    const list = sides[side].sort((a, z) => a.i - z.i).map((x) => x.b);
-    const total = list.reduce((s, b) => s + b.h, 0) + Math.max(0, list.length - 1) * GAP * 2;
-    let y = -total / 2;
-    for (const b of list) {
-      place(b, root, 1, y, side, "hsl(var(--foreground))");
-      y += b.h + GAP * 2;
-    }
-  });
-
-  if (unassignedCount > 0) {
-    const node: MapNode = {
-      id: UNASSIGNED_ID,
-      kind: "unassigned",
-      label: `Alana bağlı olmayan ${unassignedCount} not`,
-      x: 0,
-      y: ROOT_R + 92,
-      r: 14,
-      side: 1,
-      color: "hsl(var(--muted-foreground))",
-      parentId: ROOT_ID,
-      count: unassignedCount,
-    };
-    nodes.push(node);
-  }
-
-  return { nodes, edges };
-}
-
-function edgePath(e: MapEdge) {
-  const { from, to } = e;
-  const side = to.side;
-  const x1 = from.kind === "root" ? from.x + side * from.r : from.x + side * from.r;
-  const y1 = from.y;
-  const x2 = to.x - side * to.r;
-  const y2 = to.y;
-  const mx = (x1 + x2) / 2;
-  return `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`;
+  return placed.map(({ x, y }) => ({ x, y }));
 }
 
 function useMediaQuery(query: string) {
@@ -292,25 +176,27 @@ function useMediaQuery(query: string) {
 }
 
 function truncate(s: string, n: number) {
-  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+  return s.length > n ? `${s.slice(0, Math.max(1, n - 1))}…` : s;
 }
 
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 export default function AreaMapView() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { openTab, open: drawerOpen } = useDrawerTabs();
 
   const [areas, setAreas] = useState<Area[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
 
+  /** Area opened in the middle of the canvas; null shows all main areas. */
+  const [focusId, setFocusId] = useState<string | null>(null);
+  /** Open rows in the left tree panel. */
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  /** Area whose edit panel is open (or UNASSIGNED_ID). */
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [showNotes, setShowNotes] = useState(true);
-  const [showRelations, setShowRelations] = useState(true);
   const [query, setQuery] = useState("");
   const [treeOpenMobile, setTreeOpenMobile] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Area | null>(null);
@@ -368,6 +254,19 @@ export default function AreaMapView() {
   const unassignedNotes = useMemo(
     () => activeNotes.filter((n) => !(n.area_ids || []).some((id) => visibleAreaIds.has(id))),
     [activeNotes, visibleAreaIds]
+  );
+
+  const ancestorsOf = useCallback(
+    (id: string) => {
+      const out: string[] = [];
+      let cur = byId[id]?.parent_id || null;
+      while (cur && !out.includes(cur)) {
+        out.push(cur);
+        cur = byId[cur]?.parent_id || null;
+      }
+      return out;
+    },
+    [byId]
   );
 
   // ---- mutations --------------------------------------------------------
@@ -458,67 +357,114 @@ export default function AreaMapView() {
     }
   };
 
-  // ---- layout + view ----------------------------------------------------
-  const layout = useMemo(
-    () =>
-      computeLayout({
-        forest,
-        expanded,
-        showNotes,
-        notesByArea,
-        unassignedCount: unassignedNotes.length,
-        byId,
-      }),
-    [forest, expanded, showNotes, notesByArea, unassignedNotes.length, byId]
-  );
-  const nodeById = useMemo(() => {
-    const m: Record<string, MapNode> = {};
-    layout.nodes.forEach((n) => (m[n.id] = n));
-    return m;
-  }, [layout]);
+  // ---- focus ------------------------------------------------------------
+  // An archived or deleted focus falls back to its nearest visible parent
+  useEffect(() => {
+    if (!focusId || loading || visibleAreaIds.has(focusId)) return;
+    const up = ancestorsOf(focusId).find((id) => visibleAreaIds.has(id)) || null;
+    setFocusId(up);
+  }, [focusId, loading, visibleAreaIds, ancestorsOf]);
 
-  // Relations: dashed links between visible areas that share notes
-  const relations = useMemo(() => {
-    if (!showRelations) return [];
-    const visibleAreas = layout.nodes.filter((n) => n.kind === "area");
-    const visibleSet = new Set(visibleAreas.map((n) => n.id));
-    const isLineage = (a: string, b: string) => {
-      const up = (id: string) => {
-        const out: string[] = [];
-        let cur = byId[id]?.parent_id;
-        while (cur && !out.includes(cur)) {
-          out.push(cur);
-          cur = byId[cur]?.parent_id;
-        }
-        return out;
-      };
-      return up(a).includes(b) || up(b).includes(a);
-    };
-    const pairs: Record<string, number> = {};
-    for (const n of activeNotes) {
-      const ids = (n.area_ids || []).filter((id) => visibleSet.has(id));
-      for (let i = 0; i < ids.length; i++) {
-        for (let j = i + 1; j < ids.length; j++) {
-          if (isLineage(ids[i], ids[j])) continue;
-          const key = [ids[i], ids[j]].sort().join("|");
-          pairs[key] = (pairs[key] || 0) + 1;
-        }
+  const focusArea = useCallback(
+    (id: string | null) => {
+      setFocusId(id);
+      if (id) {
+        const chain = ancestorsOf(id);
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          chain.forEach((c) => next.add(c));
+          return next;
+        });
+      }
+    },
+    [ancestorsOf]
+  );
+
+  // ?area=<id> deep link
+  useEffect(() => {
+    const target = searchParams.get("area");
+    if (!loading && target && byId[target]) {
+      focusArea(target);
+      searchParams.delete("area");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [loading, searchParams, byId, focusArea, setSearchParams]);
+
+  // ---- bubbles ----------------------------------------------------------
+  const q = query.trim().toLocaleLowerCase("tr");
+
+  const related = useMemo(() => {
+    if (!focusId) return [] as { id: string; shared: number }[];
+    const lineage = new Set([focusId, ...ancestorsOf(focusId)]);
+    const counts: Record<string, number> = {};
+    for (const n of notesByArea[focusId] || []) {
+      for (const id of n.area_ids || []) {
+        if (lineage.has(id) || !visibleAreaIds.has(id)) continue;
+        if (byId[id]?.parent_id === focusId) continue; // children are shown anyway
+        if (ancestorsOf(id).includes(focusId)) continue; // deeper descendants: not "related"
+        counts[id] = (counts[id] || 0) + 1;
       }
     }
-    return Object.entries(pairs).map(([key, count]) => {
-      const [a, b] = key.split("|");
-      return { key, a: nodeById[a], b: nodeById[b], count };
-    }).filter((r) => r.a && r.b);
-  }, [showRelations, layout, activeNotes, byId, nodeById]);
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, MAX_RELATED)
+      .map(([id, shared]) => ({ id, shared }));
+  }, [focusId, notesByArea, visibleAreaIds, byId, ancestorsOf]);
 
+  const bubbles = useMemo<Bubble[]>(() => {
+    const make = (t: AreaTreeNode, role: BubbleRole, shared?: number): Omit<Bubble, "x" | "y"> => ({
+      id: t.area.area_id,
+      kind: "area",
+      role,
+      label: t.area.name,
+      r: bubbleRadius(t.totalNotes, role),
+      color: areaColor(t.area, byId),
+      areaId: t.area.area_id,
+      count: t.totalNotes,
+      childCount: t.children.length,
+      shared,
+    });
+    let list: Omit<Bubble, "x" | "y">[] = [];
+    if (q) {
+      list = flat
+        .filter((t) => t.area.name.toLocaleLowerCase("tr").includes(q))
+        .map((t) => make(t, "match"))
+        .sort((a, b) => b.r - a.r);
+    } else if (focusId && treeById[focusId]) {
+      const t = treeById[focusId];
+      list = [
+        make(t, "focus"),
+        ...t.children.map((c) => make(c, "child")).sort((a, b) => b.r - a.r),
+        ...related.filter((x) => treeById[x.id]).map((x) => make(treeById[x.id], "related", x.shared)),
+      ];
+    } else {
+      list = forest.map((t) => make(t, "top")).sort((a, b) => b.r - a.r);
+      if (unassignedNotes.length > 0) {
+        list.push({
+          id: UNASSIGNED_ID,
+          kind: "unassigned",
+          role: "top",
+          label: "Alansız notlar",
+          r: Math.min(26 + Math.sqrt(unassignedNotes.length) * 6, 64),
+          color: "hsl(var(--muted-foreground))",
+          count: unassignedNotes.length,
+          childCount: 0,
+        });
+      }
+    }
+    // With an opened area, its sub-areas start on the left so the corner buttons on its right stay free
+    const pts = packCircles(list.map((b) => b.r), !q && focusId ? Math.PI * 0.8 : 0);
+    return list.map((b, i) => ({ ...b, x: pts[i].x, y: pts[i].y }));
+  }, [q, flat, focusId, treeById, related, forest, unassignedNotes.length, byId]);
+
+  // ---- view (pan / zoom / fit) -------------------------------------------
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [view, setView] = useState({ x: 400, y: 300, k: 1 });
+  const [smooth, setSmooth] = useState(false);
   const viewRef = useRef(view);
   viewRef.current = view;
-  const didInitialFit = useRef(false);
-  const anchorRef = useRef<{ id: string; x: number; y: number } | null>(null);
 
   useLayoutEffect(() => {
     const el = containerRef.current;
@@ -529,148 +475,46 @@ export default function AreaMapView() {
     return () => ro.disconnect();
   }, []);
 
-  const fitView = useCallback(() => {
-    const ns = layout.nodes;
-    if (!ns.length) return;
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const n of ns) {
-      const labelW = n.kind === "note" || n.kind === "more" ? 190 : 70;
-      const left = n.side === -1 && (n.kind === "note" || n.kind === "more") ? labelW : n.r + 60;
-      const right = n.side === 1 && (n.kind === "note" || n.kind === "more") ? labelW : n.r + 60;
-      minX = Math.min(minX, n.x - left);
-      maxX = Math.max(maxX, n.x + right);
-      minY = Math.min(minY, n.y - n.r - 10);
-      maxY = Math.max(maxY, n.y + n.r + 30);
-    }
-    const pad = 40;
-    const k = Math.max(0.3, Math.min(1.3, (size.w - pad * 2) / (maxX - minX), (size.h - pad * 2) / (maxY - minY)));
-    setView({ k, x: size.w / 2 - ((minX + maxX) / 2) * k, y: size.h / 2 - ((minY + maxY) / 2) * k });
-  }, [layout, size]);
-
-  useEffect(() => {
-    if (!loading && !didInitialFit.current && size.w > 0) {
-      didInitialFit.current = true;
-      fitView();
-    }
-  }, [loading, size, fitView]);
-
-  // Space on the right covered by the detail panel (desktop layout only).
-  const panelOpen = Boolean(selectedId);
-  // Same breakpoint as the panel's `sm:` classes: side panel vs. bottom sheet.
+  // Same breakpoint as the panels' `sm:` classes: side panel vs. bottom sheet.
   const isWide = useMediaQuery("(min-width: 640px)");
-  const reservedRight = panelOpen && isWide ? 344 : 0;
+  const panelOpen = Boolean(selectedId);
+  const reservedRight = isWide ? (drawerOpen ? 384 : 0) + (panelOpen ? 344 : 0) : 0;
   const reservedBottom = panelOpen && !isWide ? Math.round(size.h * 0.6) : 0;
-  const revealRef = useRef<string | null>(null);
 
-  // After a re-layout: keep the clicked node visually still, then pan just enough
-  // that a freshly opened branch is fully visible (not hidden under the panel).
-  useLayoutEffect(() => {
-    const anchor = anchorRef.current;
-    const revealId = revealRef.current;
-    anchorRef.current = null;
-    revealRef.current = null;
-    if (!anchor && !revealId) return;
-
-    setView((v0) => {
-      let v = v0;
-      if (anchor) {
-        const n = nodeById[anchor.id];
-        if (n) v = { ...v, x: v.x - (n.x - anchor.x) * v.k, y: v.y - (n.y - anchor.y) * v.k };
-      }
-      const target = revealId ? nodeById[revealId] : null;
-      if (!target) return v;
-
-      // the target plus everything hanging below it
-      const inSubtree = (n: MapNode): boolean => {
-        let cur: MapNode | undefined = n;
-        while (cur) {
-          if (cur.id === target.id) return true;
-          cur = cur.parentId ? nodeById[cur.parentId] : undefined;
-        }
-        return false;
-      };
+  const fitView = useCallback(
+    (animate = true) => {
+      if (!bubbles.length) return;
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for (const n of layout.nodes) {
-        if (!inSubtree(n)) continue;
-        const isLeaf = n.kind === "note" || n.kind === "more";
-        const l = isLeaf && n.side === -1 ? 190 : n.r + 50;
-        const r = isLeaf && n.side === 1 ? 190 : n.r + 50;
-        minX = Math.min(minX, (n.x - l) * v.k + v.x);
-        maxX = Math.max(maxX, (n.x + r) * v.k + v.x);
-        minY = Math.min(minY, (n.y - n.r - 10) * v.k + v.y);
-        maxY = Math.max(maxY, (n.y + n.r + 30) * v.k + v.y);
+      for (const b of bubbles) {
+        minX = Math.min(minX, b.x - b.r);
+        maxX = Math.max(maxX, b.x + b.r);
+        minY = Math.min(minY, b.y - b.r);
+        maxY = Math.max(maxY, b.y + b.r);
       }
-      const box = { l: 16, t: isWide ? 64 : 150, r: size.w - reservedRight - 16, b: size.h - reservedBottom - 16 };
-      const fit = (lo: number, hi: number, bl: number, bh: number, preferLow: boolean) => {
-        if (hi - lo > bh - bl) return preferLow ? bl - lo : bh - hi; // too big: keep the root-facing edge in view
-        if (lo < bl) return bl - lo;
-        if (hi > bh) return bh - hi;
-        return 0;
-      };
-      const dx = fit(minX, maxX, box.l, box.r, target.side === 1);
-      const dy = fit(minY, maxY, box.t, box.b, true);
-      return dx || dy ? { ...v, x: v.x + dx, y: v.y + dy } : v;
-    });
-  }, [nodeById]);
+      const top = 64; // toolbar
+      const pad = 24;
+      const w = Math.max(160, size.w - reservedRight - pad * 2);
+      const h = Math.max(160, size.h - reservedBottom - top - pad * 2);
+      const k = Math.max(0.25, Math.min(2, w / (maxX - minX), h / (maxY - minY)));
+      setSmooth(animate);
+      setView({
+        k,
+        x: pad + w / 2 - ((minX + maxX) / 2) * k,
+        y: top + pad + h / 2 - ((minY + maxY) / 2) * k,
+      });
+    },
+    [bubbles, size, reservedRight, reservedBottom]
+  );
 
-  const centerOn = useCallback((id: string) => {
-    const n = nodeById[id];
-    if (!n) return;
-    const visibleW = size.w - reservedRight;
-    const visibleH = size.h - reservedBottom;
-    setView((v) => ({ ...v, x: visibleW / 2 - n.x * v.k, y: visibleH / 2 - n.y * v.k }));
-  }, [nodeById, size, reservedRight, reservedBottom]);
-
-  const toggleExpand = (id: string) => {
-    const n = nodeById[id];
-    if (n) anchorRef.current = { id, x: n.x, y: n.y };
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        // collapsing also collapses the whole subtree, so re-opening starts tidy
-        next.delete(id);
-        const t = treeById[id];
-        if (t) flattenTree(t.children).forEach((c) => next.delete(c.area.area_id));
-      } else {
-        next.add(id);
-        revealRef.current = id;
-      }
-      return next;
-    });
-  };
-
-  const pendingCenter = useRef<string | null>(null);
-  const revealArea = useCallback((id: string) => {
-    const chain: string[] = [];
-    let cur = byId[id]?.parent_id || null;
-    while (cur && !chain.includes(cur)) {
-      chain.push(cur);
-      cur = byId[cur]?.parent_id || null;
-    }
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      chain.forEach((c) => next.add(c));
-      return next;
-    });
-    setSelectedId(id);
-    pendingCenter.current = id; // centred after the re-layout below
-  }, [byId]);
+  // Re-fit whenever the set of circles or the free space changes
+  const didInitialFit = useRef(false);
+  const bubbleKey = bubbles.map((b) => `${b.id}:${Math.round(b.r)}`).join(",");
   useEffect(() => {
-    if (pendingCenter.current && nodeById[pendingCenter.current]) {
-      centerOn(pendingCenter.current);
-      pendingCenter.current = null;
-    }
-  });
-
-  // ?area=<id> deep link (used by the area chips on notes)
-  useEffect(() => {
-    const target = searchParams.get("area");
-    if (!loading && target && byId[target]) {
-      revealArea(target);
-      searchParams.delete("area");
-      setSearchParams(searchParams, { replace: true });
-    }
-  }, [loading, searchParams, byId, revealArea, setSearchParams]);
+    if (loading || size.w === 0) return;
+    fitView(didInitialFit.current);
+    didInitialFit.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, bubbleKey, size.w, size.h, reservedRight, reservedBottom]);
 
   // Wheel zoom around the cursor (non-passive so the page does not scroll)
   useEffect(() => {
@@ -681,14 +525,15 @@ export default function AreaMapView() {
       const rect = svg.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
+      setSmooth(false);
       setView((v) => {
-        const k = Math.max(0.25, Math.min(2.5, v.k * Math.exp(-e.deltaY * 0.0015)));
+        const k = Math.max(0.25, Math.min(3, v.k * Math.exp(-e.deltaY * 0.0015)));
         return { k, x: mx - (mx - v.x) * (k / v.k), y: my - (my - v.y) * (k / v.k) };
       });
     };
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [loading]);
 
   const panRef = useRef<{ x: number; y: number; vx: number; vy: number; moved: boolean } | null>(null);
   const onPointerDown = (e: React.PointerEvent) => {
@@ -702,6 +547,7 @@ export default function AreaMapView() {
     const dx = e.clientX - p.x;
     const dy = e.clientY - p.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) p.moved = true;
+    setSmooth(false);
     setView((v) => ({ ...v, x: p.vx + dx, y: p.vy + dy }));
   };
   const onPointerUp = (e: React.PointerEvent) => {
@@ -709,63 +555,34 @@ export default function AreaMapView() {
     panRef.current = null;
     if (p && !p.moved && !(e.target as Element).closest("[data-node]")) setSelectedId(null);
   };
-  const zoomBy = (f: number) =>
+  const zoomBy = (f: number) => {
+    setSmooth(true);
     setView((v) => {
-      const k = Math.max(0.25, Math.min(2.5, v.k * f));
-      const cx = size.w / 2;
+      const k = Math.max(0.25, Math.min(3, v.k * f));
+      const cx = (size.w - reservedRight) / 2;
       const cy = size.h / 2;
       return { k, x: cx - (cx - v.x) * (k / v.k), y: cy - (cy - v.y) * (k / v.k) };
     });
-
-  // Search highlights matching areas and opens their branches
-  const q = query.trim().toLocaleLowerCase("tr");
-  const matchIds = useMemo(
-    () => (q ? new Set(flat.filter((t) => t.area.name.toLocaleLowerCase("tr").includes(q)).map((t) => t.area.area_id)) : null),
-    [q, flat]
-  );
-  useEffect(() => {
-    if (!matchIds || matchIds.size === 0) return;
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      matchIds.forEach((id) => {
-        let cur = byId[id]?.parent_id || null;
-        const seen = new Set<string>();
-        while (cur && !seen.has(cur)) {
-          next.add(cur);
-          seen.add(cur);
-          cur = byId[cur]?.parent_id || null;
-        }
-      });
-      return next;
-    });
-  }, [matchIds, byId]);
-
-  const onNodeActivate = (n: MapNode) => {
-    if (n.kind === "area") {
-      setSelectedId(n.id);
-      if (n.hasChildren) {
-        toggleExpand(n.id);
-      } else {
-        // nothing to open: just make sure the panel does not cover the node
-        const sx = n.x * view.k + view.x;
-        const sy = n.y * view.k + view.y;
-        if (isWide ? sx + n.r * view.k > size.w - 344 - 16 : sy + n.r * view.k > size.h * 0.4 - 16) centerOn(n.id);
-      }
-    } else if (n.kind === "note" && n.note) {
-      navigate(`/note/${n.note.slug || n.note.note_id}`);
-    } else if (n.kind === "more" && n.areaId) {
-      setSelectedId(n.areaId);
-    } else if (n.kind === "unassigned") {
-      setSelectedId(UNASSIGNED_ID);
-    } else if (n.kind === "root") {
-      fitView();
-    }
   };
 
-  const focusId = hoveredId || selectedId;
-  const isDimmed = (n: MapNode) => {
-    if (matchIds) return n.kind === "area" ? !matchIds.has(n.id) : n.kind !== "root";
-    return false;
+  // ---- interactions -----------------------------------------------------
+  const onBubbleActivate = (b: Bubble) => {
+    if (b.kind === "unassigned") {
+      setSelectedId(UNASSIGNED_ID);
+      return;
+    }
+    if (!b.areaId) return;
+    if (q) setQuery("");
+    if (b.role === "focus") {
+      // clicking the opened area steps back out to its parent
+      focusArea(byId[b.areaId]?.parent_id && visibleAreaIds.has(byId[b.areaId].parent_id!) ? byId[b.areaId].parent_id! : null);
+    } else {
+      focusArea(b.areaId);
+    }
+  };
+  const openNotes = (b: Bubble) => {
+    if (!b.areaId) return;
+    openTab({ kind: "area", value: b.areaId, label: b.label, color: b.color });
   };
 
   const selectedArea = selectedId && selectedId !== UNASSIGNED_ID ? byId[selectedId] : null;
@@ -773,6 +590,8 @@ export default function AreaMapView() {
     () => areas.filter((a) => a.archived && !(a.parent_id && byId[a.parent_id]?.archived)),
     [areas, byId]
   );
+  const trail = focusId ? [...ancestorsOf(focusId)].reverse().map((id) => byId[id]).filter(Boolean) : [];
+  const focusAreaObj = focusId ? byId[focusId] : null;
 
   // ---- render -----------------------------------------------------------
   const treePanel = (
@@ -780,11 +599,19 @@ export default function AreaMapView() {
       forest={forest}
       byId={byId}
       expanded={expanded}
-      selectedId={selectedId}
+      selectedId={focusId}
       archivedAreas={archivedAreas}
-      onToggle={toggleExpand}
+      onToggle={(id) =>
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        })
+      }
       onSelect={(id) => {
-        revealArea(id);
+        setQuery("");
+        focusArea(id);
         setTreeOpenMobile(false);
       }}
       onCreate={createArea}
@@ -812,7 +639,7 @@ export default function AreaMapView() {
           </SheetContent>
         </Sheet>
 
-        {/* Center: mindmap */}
+        {/* Center: packed circles */}
         <main className="flex-1 relative min-w-0 overflow-hidden bg-dot-grid">
           <div className="absolute top-3 left-3 right-3 z-20 flex flex-wrap items-center gap-2 pointer-events-none">
             <Button
@@ -824,13 +651,13 @@ export default function AreaMapView() {
             >
               <PanelLeft className="w-4 h-4" />
             </Button>
-            <div className="pointer-events-auto flex items-center gap-2 bg-card/90 backdrop-blur-md px-2.5 h-9 rounded-lg border border-border shadow-sm w-full max-w-xs">
+            <div className="pointer-events-auto flex items-center gap-2 bg-card/90 backdrop-blur-md px-2.5 h-9 rounded-lg border border-border shadow-sm w-full max-w-[14rem]">
               <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Alan ara…"
-                className="flex-1 bg-transparent text-sm outline-none"
+                className="flex-1 min-w-0 bg-transparent text-sm outline-none"
                 data-testid="area-map-search"
               />
               {query && (
@@ -839,17 +666,50 @@ export default function AreaMapView() {
                 </button>
               )}
             </div>
-            <div className="pointer-events-auto flex items-center gap-1 bg-card/90 backdrop-blur-md p-1 rounded-lg border border-border shadow-sm text-xs">
-              <ToggleChip active={showNotes} onClick={() => setShowNotes((v) => !v)} icon={<StickyNote className="w-3.5 h-3.5" />} label="Notlar" />
-              <ToggleChip active={showRelations} onClick={() => setShowRelations((v) => !v)} icon={<Share2 className="w-3.5 h-3.5" />} label="İlişkiler" />
-            </div>
+            {/* Breadcrumb of the opened area */}
+            <nav
+              className="pointer-events-auto flex items-center gap-0.5 h-9 px-1.5 rounded-lg border border-border bg-card/90 backdrop-blur-md shadow-sm text-xs min-w-0 max-w-full overflow-x-auto no-scrollbar"
+              aria-label="Alan yolu"
+              data-testid="area-breadcrumb"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  focusArea(null);
+                }}
+                className={`inline-flex items-center gap-1 px-1.5 py-1 rounded-md shrink-0 ${
+                  focusId ? "text-muted-foreground hover:text-foreground hover:bg-accent" : "font-semibold"
+                }`}
+              >
+                <FolderTree className="w-3.5 h-3.5" /> Alanlarım
+              </button>
+              {trail.map((a) => (
+                <React.Fragment key={a.area_id}>
+                  <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                  <button
+                    type="button"
+                    onClick={() => focusArea(a.area_id)}
+                    className="px-1.5 py-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent shrink-0"
+                  >
+                    {a.name}
+                  </button>
+                </React.Fragment>
+              ))}
+              {focusAreaObj && (
+                <>
+                  <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                  <span className="px-1.5 py-1 font-semibold shrink-0">{focusAreaObj.name}</span>
+                </>
+              )}
+            </nav>
             <Link
               to="/network"
               className="pointer-events-auto ml-auto inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-border bg-card/90 backdrop-blur-md text-xs text-muted-foreground hover:text-foreground shadow-sm"
               title="Notlar, etiketler ve kişilerle tüm bağlantı ağı"
             >
               <Network className="w-3.5 h-3.5" />
-              Ağ görünümü
+              <span className="hidden sm:inline">Ağ görünümü</span>
             </Link>
           </div>
 
@@ -865,68 +725,40 @@ export default function AreaMapView() {
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
-                data-testid="area-mindmap"
+                data-testid="area-circles"
               >
-                <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
-                  {/* hierarchy edges */}
-                  {layout.edges.map((e) => {
-                    const active = focusId && (e.to.id === focusId || e.from.id === focusId);
-                    return (
-                      <path
-                        key={e.id}
-                        d={edgePath(e)}
-                        fill="none"
-                        stroke={e.color}
-                        strokeWidth={e.width}
-                        strokeLinecap="round"
-                        opacity={matchIds ? 0.15 : active ? 0.9 : 0.45}
-                        className="area-edge"
-                      />
-                    );
-                  })}
-
-                  {/* cross-area relations (shared notes) */}
-                  {relations.map((r) => {
-                    const active = focusId && (r.a.id === focusId || r.b.id === focusId);
-                    const mx = (r.a.x + r.b.x) / 2;
-                    const my = (r.a.y + r.b.y) / 2;
-                    // bow the curve away from the root so it does not cut through the tree
-                    const cx = mx * 1.25;
-                    const cy = my * 1.25 + (r.a.side === r.b.side ? 0 : -80);
-                    return (
-                      <g key={r.key} opacity={focusId ? (active ? 0.85 : 0.08) : 0.3}>
-                        <path
-                          d={`M ${r.a.x} ${r.a.y} Q ${cx} ${cy} ${r.b.x} ${r.b.y}`}
-                          fill="none"
-                          stroke="hsl(var(--foreground))"
-                          strokeWidth={1 + Math.log2(1 + r.count)}
-                          strokeDasharray="5 6"
-                        />
-                        {active && (
-                          <text x={cx} y={cy} textAnchor="middle" fontSize={10} fill="hsl(var(--muted-foreground))">
-                            {r.count} ortak not
-                          </text>
-                        )}
-                      </g>
-                    );
-                  })}
-
-                  {layout.nodes.map((n) => (
-                    <MapNodeView
-                      key={n.id}
-                      node={n}
-                      selected={selectedId === n.id}
-                      dimmed={isDimmed(n)}
-                      onActivate={() => onNodeActivate(n)}
-                      onHover={(h) => setHoveredId(h ? n.id : null)}
+                <g
+                  style={{
+                    transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})`,
+                    transition: smooth ? "transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1)" : "none",
+                  }}
+                >
+                  {(["body", "buttons"] as const).map((layer) =>
+                    bubbles.map((b) => (
+                    <BubbleView
+                      key={`${layer}:${b.id}`}
+                      layer={layer}
+                      bubble={b}
+                      selected={selectedId === b.id}
+                      dimmed={Boolean(hoveredId && hoveredId !== b.id && b.role === "related")}
+                      onActivate={() => onBubbleActivate(b)}
+                      onEdit={() => b.areaId && setSelectedId(b.areaId)}
+                      onNotes={() => openNotes(b)}
+                      onHover={(h) => setHoveredId(h ? b.id : null)}
                     />
-                  ))}
+                    ))
+                  )}
                 </g>
               </svg>
             )}
             {loading && (
               <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
                 Alanlar yükleniyor…
+              </div>
+            )}
+            {!loading && q && bubbles.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground pointer-events-none">
+                "{query}" ile eşleşen alan yok
               </div>
             )}
           </div>
@@ -939,40 +771,49 @@ export default function AreaMapView() {
             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => zoomBy(1 / 1.2)} title="Uzaklaştır">
               <ZoomOut className="w-4 h-4" />
             </Button>
-            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={fitView} title="Ekrana sığdır">
+            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => fitView()} title="Ekrana sığdır">
               <Maximize2 className="w-4 h-4" />
             </Button>
           </div>
-          <div className="absolute bottom-4 right-4 z-10 hidden sm:block text-[11px] text-muted-foreground bg-card/80 backdrop-blur px-2.5 py-1 rounded-md border border-border">
-            Bir alana tıklayınca alt alanları açılır · Daire boyutu not sayısını gösterir
+          <div className="absolute bottom-4 left-16 z-10 hidden lg:block text-[11px] text-muted-foreground bg-card/80 backdrop-blur px-2.5 py-1 rounded-md border border-border">
+            Daireye tıkla: alt ve ilişkili alanlar · Sağ üst: düzenle · Sağ alt: notlar · Daire boyutu not sayısını gösterir
           </div>
 
-          {/* Right: detail panel */}
+          {/* Right: edit panel */}
           {selectedArea && (
-            <AreaDetailPanel
-              key={selectedArea.area_id}
-              area={selectedArea}
-              areas={areas}
-              byId={byId}
-              tree={treeById[selectedArea.area_id]}
-              notes={activeNotes}
-              directNotes={notesByArea[selectedArea.area_id] || []}
-              onClose={() => setSelectedId(null)}
-              onSelectArea={revealArea}
-              onUpdate={(patch) => updateArea(selectedArea.area_id, patch)}
-              onCreateChild={(name) => createArea(name, selectedArea.area_id)}
-              onArchive={() => setArchived(selectedArea, true)}
-              onLinkNote={(note, link) =>
-                updateNoteAreas(
-                  note,
-                  link
-                    ? Array.from(new Set([...(note.area_ids || []), selectedArea.area_id]))
-                    : (note.area_ids || []).filter((x) => x !== selectedArea.area_id)
-                )
-              }
-            />
+            <div
+              className="contents"
+              style={{ ["--panel-right" as any]: drawerOpen && isWide ? "24.75rem" : "0.75rem" }}
+            >
+              <AreaDetailPanel
+                key={selectedArea.area_id}
+                area={selectedArea}
+                areas={areas}
+                byId={byId}
+                tree={treeById[selectedArea.area_id]}
+                notes={activeNotes}
+                directNotes={notesByArea[selectedArea.area_id] || []}
+                onClose={() => setSelectedId(null)}
+                onSelectArea={(id) => {
+                  focusArea(id);
+                  setSelectedId(id);
+                }}
+                onUpdate={(patch) => updateArea(selectedArea.area_id, patch)}
+                onCreateChild={(name) => createArea(name, selectedArea.area_id)}
+                onArchive={() => setArchived(selectedArea, true)}
+                onLinkNote={(note, link) =>
+                  updateNoteAreas(
+                    note,
+                    link
+                      ? Array.from(new Set([...(note.area_ids || []), selectedArea.area_id]))
+                      : (note.area_ids || []).filter((x) => x !== selectedArea.area_id)
+                  )
+                }
+              />
+            </div>
           )}
           {selectedId === UNASSIGNED_ID && (
+            <div className="contents" style={{ ["--panel-right" as any]: drawerOpen && isWide ? "24.75rem" : "0.75rem" }}>
             <UnassignedPanel
               notes={unassignedNotes}
               areas={areas}
@@ -980,6 +821,7 @@ export default function AreaMapView() {
               onAssign={updateNoteAreas}
               onAreaCreated={(a) => setAreas((prev) => [...prev, a])}
             />
+            </div>
           )}
         </main>
       </div>
@@ -1012,143 +854,176 @@ export default function AreaMapView() {
 }
 
 // ---------------------------------------------------------------------------
-// Mindmap node
+// One circle: name + count inside, edit button top-right, notes dot bottom-right
 // ---------------------------------------------------------------------------
-function MapNodeView({
-  node: n,
+function BubbleView({
+  layer,
+  bubble: b,
   selected,
   dimmed,
   onActivate,
+  onEdit,
+  onNotes,
   onHover,
 }: {
-  node: MapNode;
+  /** Circles are drawn first, then every circle's corner buttons on top of all circles. */
+  layer: "body" | "buttons";
+  bubble: Bubble;
   selected: boolean;
   dimmed: boolean;
   onActivate: () => void;
+  onEdit: () => void;
+  onNotes: () => void;
   onHover: (h: boolean) => void;
 }) {
-  const common = {
-    "data-node": n.id,
-    role: "button",
-    tabIndex: 0,
-    onClick: (e: React.MouseEvent) => {
+  const keyActivate = (fn: () => void) => (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
       e.stopPropagation();
-      onActivate();
-    },
-    onKeyDown: (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        onActivate();
-      }
-    },
-    onMouseEnter: () => onHover(true),
-    onMouseLeave: () => onHover(false),
-    className: "area-node outline-none cursor-pointer",
-    style: { transform: `translate(${n.x}px, ${n.y}px)`, opacity: dimmed ? 0.25 : 1 } as React.CSSProperties,
+      fn();
+    }
   };
+  const nodeStyle = {
+    transform: `translate(${b.x}px, ${b.y}px)`,
+    opacity: dimmed ? 0.45 : 1,
+  } as React.CSSProperties;
 
-  if (n.kind === "root") {
+  if (b.kind === "unassigned") {
+    if (layer === "buttons") return null;
     return (
-      <g {...common} aria-label="Tüm alanları göster">
-        <circle r={n.r} fill="hsl(var(--foreground))" />
-        <FolderTree x={-9} y={-15} width={18} height={18} color="hsl(var(--background))" strokeWidth={1.75} />
-        <text y={14} textAnchor="middle" fontSize={10} fontWeight={600} fill="hsl(var(--background))">
-          Alanlarım
+      <g
+        data-node={b.id}
+        role="button"
+        tabIndex={0}
+        aria-label={`Alana bağlı olmayan ${b.count} not`}
+        className="area-node outline-none cursor-pointer"
+        style={nodeStyle}
+        onClick={(e) => {
+          e.stopPropagation();
+          onActivate();
+        }}
+        onKeyDown={keyActivate(onActivate)}
+      >
+        <circle r={b.r} fill="hsl(var(--card))" stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" strokeWidth={1.5} className="area-circle" />
+        <text textAnchor="middle" y={-2} fontSize={Math.max(12, b.r / 3)} fontWeight={700} fill="hsl(var(--muted-foreground))">
+          {b.count}
+        </text>
+        <text textAnchor="middle" y={Math.max(12, b.r / 3) - 2} fontSize={10} fill="hsl(var(--muted-foreground))">
+          alansız not
         </text>
       </g>
     );
   }
 
-  if (n.kind === "unassigned") {
-    return (
-      <g {...common} aria-label={n.label}>
-        <circle r={n.r} fill="hsl(var(--card))" stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" strokeWidth={1.5} />
-        <text textAnchor="middle" dy="0.35em" fontSize={10} fontWeight={700} fill="hsl(var(--muted-foreground))">
-          {n.count}
-        </text>
-        <text y={n.r + 15} textAnchor="middle" fontSize={11} fill="hsl(var(--muted-foreground))">
-          {n.label}
-        </text>
-      </g>
-    );
-  }
+  const isRelated = b.role === "related";
+  const isFocus = b.role === "focus";
+  const fs = Math.max(11, Math.min(isFocus ? 20 : 17, b.r / 4.2));
+  const maxChars = Math.max(4, Math.floor((b.r * 1.6) / (fs * 0.56)));
+  const textFill = isRelated ? "hsl(var(--foreground))" : "#fff";
+  const btn = Math.max(10, Math.min(15, b.r * 0.17));
+  const corner = b.r * Math.SQRT1_2; // 45° on the rim
+  const subFs = Math.max(9.5, fs * 0.62);
+  const subMax = Math.max(6, Math.floor((b.r * 1.7) / (subFs * 0.55)));
+  const sub = isRelated
+    ? `${b.shared} ortak not`
+    : `${b.count} not${b.childCount ? ` · ${b.childCount} alt alan` : ""}`;
 
-  if (n.kind === "note" || n.kind === "more") {
-    const anchor = n.side === 1 ? "start" : "end";
-    return (
-      <g {...common} aria-label={n.kind === "note" ? `Not: ${n.label}` : n.label}>
-        <circle r={n.kind === "note" ? 4.5 : 3.5} fill={n.kind === "note" ? n.color : "hsl(var(--card))"} stroke={n.color} strokeWidth={1.5} />
-        <text
-          x={n.side * 10}
-          dy="0.35em"
-          textAnchor={anchor}
-          fontSize={11.5}
-          fill={n.kind === "note" ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))"}
-          fontStyle={n.kind === "more" ? "italic" : undefined}
-        >
-          {truncate(n.label, 30)}
-        </text>
-      </g>
-    );
-  }
-
-  // area
-  const showCount = n.r >= 20;
-  return (
-    <g {...common} aria-label={`${n.label}, ${n.count} not${n.hasChildren ? (n.expanded ? ", açık" : ", kapalı") : ""}`} aria-expanded={n.hasChildren ? n.expanded : undefined}>
-      {selected && <circle r={n.r + 6} fill="none" stroke={n.color} strokeWidth={2} opacity={0.6} />}
+  if (layer === "body") return (
+    <g
+      data-node={b.id}
+      role="button"
+      tabIndex={0}
+      aria-label={`${b.label}, ${sub}${isFocus ? ", açık" : ""}`}
+      className="area-node outline-none cursor-pointer"
+      style={nodeStyle}
+      onClick={(e) => {
+        e.stopPropagation();
+        onActivate();
+      }}
+      onKeyDown={keyActivate(onActivate)}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
+      data-role={b.role}
+    >
+      <title>
+        {isFocus ? `${b.label} — üst seviyeye dönmek için tıkla` : `${b.label} — alt ve ilişkili alanları göster`}
+      </title>
       <circle
-        r={n.r}
-        fill={n.color}
-        fillOpacity={n.expanded ? 0.95 : 0.8}
-        stroke="hsl(var(--background))"
-        strokeWidth={2.5}
+        r={b.r}
+        fill={b.color}
+        fillOpacity={isRelated ? 0.22 : isFocus ? 0.95 : 0.85}
+        stroke={selected ? "hsl(var(--foreground))" : "hsl(var(--background))"}
+        strokeWidth={selected ? 3 : 2}
         className="area-circle"
       />
-      {showCount && (
-        <text textAnchor="middle" dy="0.35em" fontSize={Math.min(16, 9 + n.r / 6)} fontWeight={700} fill="#fff">
-          {n.count}
-        </text>
+      {isRelated && (
+        <circle r={b.r - 4} fill="none" stroke={b.color} strokeWidth={1.5} strokeDasharray="3 4" opacity={0.8} pointerEvents="none" />
       )}
       <text
-        y={n.r + 15}
         textAnchor="middle"
-        fontSize={12.5}
-        fontWeight={600}
-        fill="hsl(var(--foreground))"
-        paintOrder="stroke"
-        stroke="hsl(var(--background))"
-        strokeWidth={4}
-        strokeLinejoin="round"
+        y={-fs * 0.15}
+        fontSize={fs}
+        fontWeight={700}
+        fill={textFill}
+        pointerEvents="none"
       >
-        {truncate(n.label, 24)}
-        {!showCount && n.count ? ` · ${n.count}` : ""}
+        {truncate(b.label, maxChars)}
       </text>
-      {n.hasChildren && (
-        <g style={{ transform: `translate(${n.side * n.r}px, 0px)` }}>
-          <circle r={8} fill="hsl(var(--card))" stroke={n.color} strokeWidth={1.5} />
-          <text textAnchor="middle" dy="0.35em" fontSize={12} fontWeight={700} fill={n.color}>
-            {n.expanded ? "−" : "+"}
-          </text>
-        </g>
-      )}
+      <text
+        textAnchor="middle"
+        y={fs * 0.95}
+        fontSize={subFs}
+        fill={textFill}
+        opacity={0.85}
+        pointerEvents="none"
+      >
+        {truncate(sub, subMax)}
+      </text>
     </g>
   );
-}
 
-function ToggleChip({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`inline-flex items-center gap-1.5 h-7 px-2 rounded-md transition-colors ${
-        active ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground hover:bg-accent"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
+    <g data-node={`${b.id}:buttons`} className="area-node" style={nodeStyle}>
+      {/* edit (top-right) */}
+      <g
+        role="button"
+        tabIndex={0}
+        aria-label={`${b.label} alanını düzenle`}
+        className="area-btn outline-none"
+        style={{ transform: `translate(${corner}px, ${-corner}px)` }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit();
+        }}
+        onKeyDown={keyActivate(onEdit)}
+        data-testid={`area-edit-${b.id}`}
+      >
+        <title>Düzenle</title>
+        <circle r={btn} fill="hsl(var(--card))" stroke={b.color} strokeWidth={1.5} />
+        <Pencil x={-btn * 0.5} y={-btn * 0.5} width={btn} height={btn} color={b.color} strokeWidth={2.25} />
+      </g>
+
+      {/* notes (bottom-right) */}
+      <g
+        role="button"
+        tabIndex={0}
+        aria-label={`${b.label} alanının notlarını panelde aç`}
+        className="area-btn outline-none"
+        style={{ transform: `translate(${corner}px, ${corner}px)` }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onNotes();
+        }}
+        onKeyDown={keyActivate(onNotes)}
+        data-testid={`area-notes-${b.id}`}
+      >
+        <title>Notları panelde aç</title>
+        <circle r={btn} fill="hsl(var(--foreground))" stroke="hsl(var(--background))" strokeWidth={2} />
+        <text textAnchor="middle" dy="0.35em" fontSize={btn * (b.count > 99 ? 0.7 : 0.95)} fontWeight={700} fill="hsl(var(--background))">
+          {b.count > 99 ? "99+" : b.count}
+        </text>
+      </g>
+    </g>
   );
 }
 
@@ -1481,7 +1356,7 @@ function PanelShell({ children, onClose, testId }: { children: React.ReactNode; 
     <aside
       className="absolute z-30 bg-card border border-border shadow-xl flex flex-col min-h-0
                  inset-x-0 bottom-0 h-[60%] rounded-t-2xl
-                 sm:inset-x-auto sm:right-3 sm:top-16 sm:bottom-3 sm:w-80 sm:h-auto sm:rounded-xl
+                 sm:inset-x-auto sm:right-[var(--panel-right,0.75rem)] sm:top-16 sm:bottom-3 sm:w-80 sm:h-auto sm:rounded-xl
                  animate-in fade-in slide-in-from-right-4"
       data-testid={testId}
     >

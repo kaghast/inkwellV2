@@ -1,6 +1,8 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { DrawerTabsProvider } from "@/contexts/DrawerTabsContext";
+import NoteDrawer from "@/components/NoteDrawer";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ReminderProvider } from "@/contexts/ReminderContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
@@ -25,7 +27,6 @@ import SpacesPage from "@/pages/SpacesPage";
 import CommandPalette from "@/components/CommandPalette";
 import TemplateDialog from "@/components/TemplateDialog";
 import { WorkspaceProvider } from "@/contexts/WorkspaceContext";
-import { useAuth } from "@/contexts/AuthContext";
 
 function AppRoutes() {
   const location = useLocation();
@@ -80,6 +81,12 @@ function WorkspaceOverlays() {
   );
 }
 
+/** The tabbed note drawer is only mounted for a signed-in user. */
+function DrawerHost() {
+  const { user } = useAuth();
+  return user ? <NoteDrawer /> : null;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -87,10 +94,12 @@ export default function App() {
         <SettingsProvider>
           <BrowserRouter>
             <ReminderProvider>
-              <WorkspaceProvider>
-                <AppRoutes />
-                <WorkspaceOverlays />
-              </WorkspaceProvider>
+              <DrawerTabsProvider>
+                <WorkspaceProvider>
+                  <AppRoutes />
+                  <WorkspaceOverlays />
+                  <DrawerHost />
+                </WorkspaceProvider>
               <Toaster
                 position="bottom-right"
                 toastOptions={{
@@ -103,6 +112,7 @@ export default function App() {
                   },
                 }}
               />
+              </DrawerTabsProvider>
             </ReminderProvider>
           </BrowserRouter>
         </SettingsProvider>
