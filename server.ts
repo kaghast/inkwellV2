@@ -1007,6 +1007,14 @@ api.get("/auth/google/url", (req, res) => {
     const proto = req.headers["x-forwarded-proto"] || "http";
     redirectUri = `${proto}://${host}/api/auth/google/callback`;
   }
+  if (!/^https?:\/\/[^/\s]+\/(api\/)?auth\/google\/callback\/?$/.test(redirectUri)) {
+    return res.status(400).json({ detail: "Geçersiz yönlendirme adresi" });
+  }
+
+  // Google requires the token exchange to repeat the exact redirect_uri used here.
+  // Behind a proxy (Coolify/Traefik) the callback cannot reliably rebuild it from
+  // request headers, so carry it in a signed, short-lived state value.
+  const state = jwt.sign({ purpose: "google_login", redirectUri }, JWT_SECRET, { expiresIn: "15m" });
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -1015,6 +1023,7 @@ api.get("/auth/google/url", (req, res) => {
     scope: "openid email profile",
     access_type: "offline",
     prompt: "select_account",
+    state,
   });
 
   const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
@@ -1053,12 +1062,26 @@ async function handleGoogleOAuthCallback(req: Request, res: Response) {
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
 
-  const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000";
-  const proto = req.headers["x-forwarded-proto"] || (req.secure ? "https" : "http");
+  // Proxies may send comma-separated lists ("https,http"); the first entry is the client's.
+  const firstHeader = (v: unknown) => String(Array.isArray(v) ? v[0] : v || "").split(",")[0].trim();
+  const host = firstHeader(req.headers["x-forwarded-host"]) || firstHeader(req.headers.host) || "localhost:3000";
+  const proto = firstHeader(req.headers["x-forwarded-proto"]) || (req.secure ? "https" : "http");
   const cleanPath = ((req.baseUrl || "") + req.path).replace(/\/+$/, "") || "/api/auth/google/callback";
-  
+
   let redirectUri = `${proto}://${host}${cleanPath}`;
-  if (req.query.state && typeof req.query.state === "string") {
+  let signedLoginState = false;
+  if (typeof req.query.state === "string" && req.query.state.startsWith("eyJ")) {
+    try {
+      const p = jwt.verify(req.query.state, JWT_SECRET) as any;
+      if (p?.purpose === "google_login" && typeof p.redirectUri === "string") {
+        redirectUri = p.redirectUri;
+        signedLoginState = true;
+      }
+    } catch {
+      /* expired or not ours: fall back to the request-derived address */
+    }
+  }
+  if (!signedLoginState && req.query.state && typeof req.query.state === "string") {
     try {
       const parsedState = JSON.parse(decodeURIComponent(req.query.state));
       if (parsedState?.redirectUri) {
@@ -1151,8 +1174,12 @@ async function handleGoogleOAuthCallback(req: Request, res: Response) {
       </html>
     `);
   } catch (err: any) {
-    console.error("Google OAuth token exchange error:", err?.response?.data || err?.message);
-    const errMsg = err?.response?.data?.error_description || err?.response?.data?.error || err?.message || "OAuth error";
+    const g = err?.response?.data || {};
+    console.error("Google OAuth token exchange error:", g.error ? g : err?.message, "redirect_uri:", redirectUri, "signed state:", signedLoginState);
+    // Google often says only "Bad Request"; show its error code too so the cause is visible.
+    const errMsg = g.error
+      ? `Google: ${g.error}${g.error_description && g.error_description !== g.error ? ` (${g.error_description})` : ""}`
+      : err?.message || "OAuth error";
     return res.send(`
       <!DOCTYPE html>
       <html>
