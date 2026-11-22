@@ -991,6 +991,14 @@ api.post("/auth/google/session", async (req, res) => {
 // Google OAuth 2.0 Start URL
 api.get("/auth/google/url", (req, res) => {
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || "";
+  // Without credentials Google answers "400 invalid_request" (empty client_id) and the
+  // code exchange would fail anyway, so say so here instead of sending the user there.
+  if (!clientId.trim() || !(process.env.GOOGLE_CLIENT_SECRET || "").trim()) {
+    return res.status(503).json({
+      detail:
+        "Google ile giriş bu sunucuda yapılandırılmamış. .env dosyasına GOOGLE_CLIENT_ID ve GOOGLE_CLIENT_SECRET ekleyip sunucuyu yeniden başlatın.",
+    });
+  }
   const requestedRedirect = req.query.redirect_uri as string;
 
   let redirectUri = requestedRedirect;

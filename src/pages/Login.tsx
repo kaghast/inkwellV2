@@ -47,32 +47,13 @@ export default function Login() {
   async function handleGoogleLogin() {
     try {
       const redirectUri = `${window.location.origin}/api/auth/google/callback`;
-      let authUrl = "";
-
-      try {
-        const { data } = await api.get<{ url: string }>(`/auth/google/url?redirect_uri=${encodeURIComponent(redirectUri)}`);
-        if (data?.url) {
-          authUrl = data.url;
-        }
-      } catch {}
-
+      // The server builds the URL; it answers 503 with an explanation when Google
+      // sign-in is not configured, which formatApiError shows below.
+      const { data } = await api.get<{ url: string }>(`/auth/google/url?redirect_uri=${encodeURIComponent(redirectUri)}`);
+      const authUrl = data?.url;
       if (!authUrl) {
-        const clientId =
-          (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || "";
-        if (!clientId) {
-          toast.error("Google Client ID tanımlanmamış. Lütfen .env dosyasını kontrol edin.");
-          return;
-        }
-        const params = new URLSearchParams({
-          client_id: clientId,
-          redirect_uri: redirectUri,
-          response_type: "code",
-          scope: "openid email profile",
-          access_type: "offline",
-          prompt: "select_account",
-          state: JSON.stringify({ redirectUri }),
-        });
-        authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+        toast.error("Google giriş adresi alınamadı");
+        return;
       }
 
       const width = 520;
