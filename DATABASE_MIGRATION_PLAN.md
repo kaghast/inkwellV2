@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS relation_types (
   user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE,  -- NULL = system type
   label TEXT NOT NULL,
   inverse_label TEXT NOT NULL,
-  symmetric BOOLEAN NOT NULL DEFAULT false,
+  is_symmetric BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS object_relations (
