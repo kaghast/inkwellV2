@@ -18,7 +18,7 @@ The current icon rail (`AppMenubar`, `w-16`) lists six destinations flat. The ne
 | Bilgi (Knowledge) | `/all-notes` | All objects, filter by type/space |
 | Keşfet ▸ (Explore) | flyout | Alan haritası `/graph`, Ağ `/network`, Harita `/map`, Zaman çizelgesi `/timeline`, Günlük akış `/feed` |
 | İş ▸ (Work) | flyout | Kanban `/kanban`, open tasks (Today) |
-| Alanlar (Spaces) | `/spaces` | Spaces, their object counts, defaults |
+| Bölümler (Spaces) | `/spaces` | Spaces, their object counts, defaults. Named "Bölümler" because "Alanlar" already means Areas in the UI |
 | Ayarlar | `/settings` | Existing settings; object types tab renamed "Nesne tipleri" |
 
 Flyouts open on click and on keyboard focus (Radix DropdownMenu, so arrow keys and Esc work). The mobile drawer shows the same groups as headed lists. The AI section joins in Phase 2.
@@ -74,4 +74,12 @@ Below the content: **İlişkiler** panel — outgoing and incoming typed relatio
 
 ## 9. Onboarding
 
-First visit to Home with zero objects: the checklist is expanded and the capture bar has a pulsing hint "Bir düşünce, bağlantı ya da dosya yapıştır". After the first capture the Inbox badge animates once. No product tour overlay.
+Phase 1 ships the Home activation checklist ("İlk adımlar"), computed from real data, which hides itself once every step is done, and the large capture entry at the top of Home. No product tour overlay.
+
+Planned, not yet built: a pulsing first-run hint on the capture bar and a one-time animation on the Inbox badge after the first capture.
+
+## 10. Implementation status (Phase 1)
+
+Built and verified in the browser: grouped rail with Explore/Work flyouts and Inbox badge; header capture bar (`c`, Enter → Inbox, Ctrl/⌘+Enter → note, paste/attach files); command palette (`Ctrl/⌘+K`, `/`, `g h|i|t|k|s`, quick task, templates, recent searches); Home; Inbox review (accept, edit, save raw, reject, retry, batch, J/K/A/E/S/R); Today (daily note, timeslot timeline, tasks, reminders, captures, add-to-day); Bölümler (Spaces) list/detail; İlişkiler panel with Bölüm picker; template dialog. Mobile (375 px) has no horizontal scroll.
+
+Old daily feed moved from `/` to `/feed`; every other route is unchanged.

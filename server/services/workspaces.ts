@@ -102,12 +102,12 @@ export class AccessError extends Error {
 /** Load a space the caller may read (and optionally write). Throws AccessError. */
 export async function requireSpace(userId: string, spaceId: string, need: "read" | "write" | "manage" = "read") {
   const found = await db.select().from(spaces).where(eq(spaces.spaceId, spaceId)).limit(1);
-  if (found.length === 0) throw new AccessError(404, "Alan bulunamadı");
+  if (found.length === 0) throw new AccessError(404, "Bölüm bulunamadı");
   const role = await membership(userId, found[0].workspaceId);
   // 404 instead of 403 so ids of other tenants cannot be probed
-  if (!role) throw new AccessError(404, "Alan bulunamadı");
-  if (need === "write" && !WRITE_ROLES.includes(role)) throw new AccessError(403, "Bu alanda yazma yetkin yok");
-  if (need === "manage" && !MANAGE_ROLES.includes(role)) throw new AccessError(403, "Bu alanı yönetme yetkin yok");
+  if (!role) throw new AccessError(404, "Bölüm bulunamadı");
+  if (need === "write" && !WRITE_ROLES.includes(role)) throw new AccessError(403, "Bu bölümde yazma yetkin yok");
+  if (need === "manage" && !MANAGE_ROLES.includes(role)) throw new AccessError(403, "Bu bölümü yönetme yetkin yok");
   return { space: found[0], role };
 }
 
@@ -146,7 +146,7 @@ export async function listSpaces(userId: string) {
 
 export async function createSpace(userId: string, input: { name: string; description?: string; color?: string; icon?: string }) {
   const ctx = await ensurePersonalWorkspace(userId);
-  if (!MANAGE_ROLES.includes(ctx.role)) throw new AccessError(403, "Alan oluşturma yetkin yok");
+  if (!MANAGE_ROLES.includes(ctx.role)) throw new AccessError(403, "Bölüm oluşturma yetkin yok");
   const spaceId = genId("space");
   const maxOrder = await db
     .select({ m: sql<number>`coalesce(max(${spaces.orderIndex}), 0)` })
@@ -172,7 +172,7 @@ export async function updateSpace(
   patch: { name?: string; description?: string; color?: string | null; icon?: string | null; archived?: boolean }
 ) {
   const { space } = await requireSpace(userId, spaceId, "manage");
-  if (patch.archived && space.isDefault) throw new AccessError(400, "Varsayılan alan arşivlenemez");
+  if (patch.archived && space.isDefault) throw new AccessError(400, "Varsayılan bölüm arşivlenemez");
   const set: Record<string, any> = { updatedAt: new Date() };
   if (patch.name !== undefined) set.name = patch.name;
   if (patch.description !== undefined) set.description = patch.description;
@@ -189,7 +189,7 @@ export async function resolveTargetSpace(userId: string, spaceId?: string | null
   const ctx = await ensurePersonalWorkspace(userId);
   if (!spaceId) return { workspaceId: ctx.workspaceId, spaceId: ctx.defaultSpaceId };
   const { space } = await requireSpace(userId, spaceId, "write");
-  if (space.archived) throw new AccessError(400, "Arşivlenmiş alana nesne eklenemez");
+  if (space.archived) throw new AccessError(400, "Arşivlenmiş bölüme nesne eklenemez");
   return { workspaceId: space.workspaceId, spaceId: space.spaceId };
 }
 

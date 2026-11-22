@@ -23,7 +23,7 @@ Backend
 - Universal capture: `POST /api/capture` (text, URL, pasted content, file id; also usable by a future web clipper / share sheet with the same auth), Inbox (`/api/inbox`), review actions (accept with edits, save without AI, reject, retry, batch accept).
 - AI service abstraction with Gemini + deterministic heuristic provider; capture pipeline (context → parse → type → metadata → relation suggestions) on an in-process job runner with retries and boot recovery.
 - Today: `/api/today` (daily note get-or-create, the day's objects, captures, open tasks, reminders); captures accepted on a day are related to that day's daily note.
-- Global search `/api/search` (titles, content, tags, people, types, spaces, captures; semantic boost when embeddings exist).
+- Global search `/api/search` (titles, content, tags, people, types, spaces, captures). Semantic ranking is deliberately left out until Phase 2: without an AI key the existing embeddings are hash vectors that carry no meaning.
 - Templates that create connected objects: Research, Meeting, Project, Daily.
 - Rate limiting and zod validation on new endpoints; generic error bodies.
 - Privacy-respecting analytics events (`first_object`, `first_capture`, `first_relation`, `first_backlink`, `returned`) and an activation summary endpoint.
@@ -34,7 +34,12 @@ Frontend
 - Home, Inbox (review UI), Today, Spaces pages; object relations panel on the note page; template dialog.
 - "Encryption" renamed to **Parola kilidi** in the UI (it is a lock, not encryption).
 
+Verification: `npm run lint` (tsc), `npx vite build`, `npm test` (16 unit tests) and `npm run test:api` (12 end-to-end API tests incl. tenant isolation, against a running server) pass. The boot migrations were run against a copy of a real pre-Phase-1 PGlite database; all 15 existing notes were attached to the default space. The UI flows were exercised in a browser at desktop and 375 px widths.
+
 Known limits after Phase 1 (by design, documented in the PR):
+- The Gemini extraction path (`server/ai/gemini.ts`) is implemented but **not exercised**: no `GEMINI_API_KEY` was available. Its response parser and prompt are unit-tested; the live call is not.
+- The job runner is in-process: work survives restarts (re-queued at boot from `captures.status`) but not multiple server instances.
+- Team workspaces, invites and roles beyond the owner exist only in the schema and access helpers.
 - OCR, PDF/DOCX text extraction and audio transcription need an AI provider with vision/audio → Phase 2. Files and images are captured into the Inbox with their file attached and metadata from the filename.
 - Search ranks in Node over the user's rows (same O(n) cost as today's list endpoint); SQL/pgvector retrieval → Phase 2.
 

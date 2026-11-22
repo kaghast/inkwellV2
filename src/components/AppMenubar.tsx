@@ -18,7 +18,16 @@ import {
   LogOut,
   Menu,
   X,
+  Home,
+  Inbox as InboxIcon,
+  Compass,
+  Briefcase,
+  Share2,
+  Layers,
+  Search,
 } from "lucide-react";
+import CaptureBar from "@/components/capture/CaptureBar";
+import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useReminders } from "@/contexts/ReminderContext";
@@ -49,6 +58,7 @@ export default function AppMenubar({
   const { user, logout } = useAuth();
   const { theme, toggle } = useTheme();
   const { reminders, unreadCount, markAsRead, markAllAsRead } = useReminders();
+  const { inbox, openPalette } = useWorkspace();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const navigate = useNavigate();
@@ -61,44 +71,69 @@ export default function AppMenubar({
     (a, b) => new Date(b.targetIso).getTime() - new Date(a.targetIso).getTime()
   );
 
-  const navItems = [
+  // Grouped, collapsible navigation (see UX_REDESIGN_PLAN.md). Explore and
+  // Work open as flyouts so the rail stays short.
+  type NavItem = { label: string; path: string; icon: any; testId: string; badge?: number; match?: (p: string) => boolean };
+  const needsReview = inbox?.needs_review || 0;
+  const primaryNav: NavItem[] = [
+    { label: "Ana sayfa", path: "/", icon: Home, testId: "nav-home", match: (p) => p === "/" || p === "/home" },
+    { label: "Gelen kutusu", path: "/inbox", icon: InboxIcon, testId: "nav-inbox", badge: needsReview },
+    { label: "Bugün", path: "/today", icon: Sun, testId: "nav-today", match: (p) => p.startsWith("/today") },
+    { label: "Bilgi · Bütün notlar", path: "/all-notes", icon: FileText, testId: "nav-all-notes", match: (p) => p === "/all-notes" || p === "/notes" },
+  ];
+  const groups: Array<{ label: string; icon: any; testId: string; items: NavItem[] }> = [
     {
-      label: "Günlük Akış",
-      path: "/",
-      icon: Calendar,
-      testId: "nav-daily",
+      label: "Keşfet",
+      icon: Compass,
+      testId: "nav-explore",
+      items: [
+        { label: "Alan haritası", path: "/graph", icon: Network, testId: "nav-graph" },
+        { label: "Ağ görünümü", path: "/network", icon: Share2, testId: "nav-network" },
+        { label: "Harita", path: "/map", icon: MapPin, testId: "nav-map" },
+        { label: "Zaman çizelgesi", path: "/timeline", icon: CalendarRange, testId: "nav-timeline" },
+        { label: "Günlük akış", path: "/feed", icon: Calendar, testId: "nav-daily", match: (p) => p === "/feed" || /^\/(day|week|month)\//.test(p) },
+      ],
     },
     {
-      label: "Zaman Çizelgesi",
-      path: "/timeline",
-      icon: CalendarRange,
-      testId: "nav-timeline",
-    },
-    {
-      label: "Bütün Notlar",
-      path: "/all-notes",
-      icon: FileText,
-      testId: "nav-all-notes",
-    },
-    {
-      label: "Alan Haritası",
-      path: "/graph",
-      icon: Network,
-      testId: "nav-graph",
-    },
-    {
-      label: "Harita",
-      path: "/map",
-      icon: MapPin,
-      testId: "nav-map",
-    },
-    {
-      label: "Kanban",
-      path: "/kanban",
-      icon: KanbanIcon,
-      testId: "nav-kanban",
+      label: "İş",
+      icon: Briefcase,
+      testId: "nav-work",
+      items: [
+        { label: "Kanban", path: "/kanban", icon: KanbanIcon, testId: "nav-kanban" },
+        { label: "Bugünün görevleri", path: "/today", icon: CheckCheck, testId: "nav-work-today" },
+      ],
     },
   ];
+  const tailNav: NavItem[] = [{ label: "Bölümler", path: "/spaces", icon: Layers, testId: "nav-spaces", match: (p) => p.startsWith("/spaces") }];
+  const isActive = (item: NavItem) => (item.match ? item.match(location.pathname) : location.pathname === item.path);
+
+  const railLink = (item: NavItem) => {
+    const Icon = item.icon;
+    const active = isActive(item);
+    return (
+      <Link
+        key={item.testId}
+        to={item.path}
+        data-testid={item.testId}
+        title={item.label}
+        aria-label={item.badge ? `${item.label} (${item.badge})` : item.label}
+        className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all group relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          active ? "bg-primary/15 text-primary border border-primary/25 shadow-2xs font-semibold" : "text-muted-foreground hover:text-foreground hover:bg-muted/70"
+        }`}
+      >
+        {active && <span className="absolute -left-2 top-1/2 -translate-y-1/2 w-1 h-4 bg-primary rounded-r-full" />}
+        <Icon className="w-4 h-4" strokeWidth={active ? 2 : 1.75} />
+        {!!item.badge && (
+          <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-amber-500 text-[9px] font-bold leading-4 text-white text-center" data-testid={`${item.testId}-badge`}>
+            {item.badge > 99 ? "99+" : item.badge}
+          </span>
+        )}
+        <span className="absolute left-14 px-2.5 py-1 bg-popover text-popover-foreground text-xs font-medium rounded-md shadow-md border border-border pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap">
+          {item.label}
+        </span>
+      </Link>
+    );
+  };
 
   return (
     <>
@@ -107,8 +142,8 @@ export default function AppMenubar({
         className="fixed top-0 left-0 lg:left-16 right-0 h-14 z-30 bg-background/95 backdrop-blur-md border-b border-border flex items-center justify-between px-3 sm:px-5 select-none"
         data-testid="app-header"
       >
-        {/* Left Area: Mobile Menu Toggle & Optional Breadcrumb */}
-        <div className="flex items-center gap-2">
+        {/* Left Area: Mobile Menu Toggle, Universal Capture and Search */}
+        <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
           <Button
             size="icon"
             variant="ghost"
@@ -118,6 +153,23 @@ export default function AppMenubar({
           >
             <Menu className="w-4 h-4" strokeWidth={1.5} />
           </Button>
+          {u && u.user_id && (
+            <>
+              <CaptureBar />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 shrink-0 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
+                onClick={() => openPalette("search")}
+                title="Ara ve komutlar (Ctrl/⌘ K)"
+                aria-label="Ara ve komutlar"
+                data-testid="header-search-btn"
+              >
+                <Search className="w-4 h-4" />
+                <kbd className="hidden xl:inline font-mono text-[10px]">Ctrl K</kbd>
+              </Button>
+            </>
+          )}
         </div>
 
         {/* Right Area: Inkwell Logo + Başlık & Bildirimler & Tema & Kişisel Menü */}
@@ -125,7 +177,7 @@ export default function AppMenubar({
           {/* Inkwell Logo ve Başlık (Header üzerinde sağda) */}
           <Link
             to="/"
-            className="flex items-center gap-2 px-2.5 py-1 rounded-lg hover:bg-muted/50 transition-colors group cursor-pointer"
+            className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-lg hover:bg-muted/50 transition-colors group cursor-pointer"
             data-testid="header-logo-link"
           >
             <div className="w-7 h-7 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all shadow-2xs">
@@ -328,37 +380,43 @@ export default function AppMenubar({
           <div className="w-8 h-[1px] bg-border/80" />
 
           {/* Navigation Icon Menu */}
-          <nav className="flex flex-col items-center gap-1.5 w-full px-2">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive =
-                item.path === "/"
-                  ? location.pathname === "/" || location.pathname.startsWith("/day/")
-                  : location.pathname === item.path;
-
+          <nav className="flex flex-col items-center gap-1.5 w-full px-2" aria-label="Ana gezinme">
+            {primaryNav.map(railLink)}
+            {groups.map((g) => {
+              const Icon = g.icon;
+              const active = g.items.some((i) => i.testId !== "nav-work-today" && isActive(i));
               return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  data-testid={item.testId}
-                  title={item.label}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all group relative cursor-pointer ${
-                    isActive
-                      ? "bg-primary/15 text-primary border border-primary/25 shadow-2xs font-semibold"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/70"
-                  }`}
-                >
-                  {isActive && (
-                    <span className="absolute -left-2 top-1/2 -translate-y-1/2 w-1 h-4 bg-primary rounded-r-full" />
-                  )}
-                  <Icon className="w-4 h-4" strokeWidth={isActive ? 2 : 1.75} />
-                  {/* Floating Hover Tooltip */}
-                  <span className="absolute left-14 px-2.5 py-1 bg-popover text-popover-foreground text-xs font-medium rounded-md shadow-md border border-border pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap">
-                    {item.label}
-                  </span>
-                </Link>
+                <DropdownMenu key={g.testId}>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      data-testid={g.testId}
+                      title={g.label}
+                      aria-label={g.label}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                        active ? "bg-primary/15 text-primary border border-primary/25" : "text-muted-foreground hover:text-foreground hover:bg-muted/70"
+                      }`}
+                    >
+                      {active && <span className="absolute -left-2 top-1/2 -translate-y-1/2 w-1 h-4 bg-primary rounded-r-full" />}
+                      <Icon className="w-4 h-4" strokeWidth={1.75} />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="right" align="start" className="w-52">
+                    <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-muted-foreground">{g.label}</DropdownMenuLabel>
+                    {g.items.map((i) => {
+                      const II = i.icon;
+                      return (
+                        <DropdownMenuItem key={i.testId} onClick={() => navigate(i.path)} data-testid={i.testId} className={`cursor-pointer ${isActive(i) ? "text-primary font-semibold" : ""}`}>
+                          <II className="w-4 h-4 mr-2" strokeWidth={1.75} /> {i.label}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               );
             })}
+            <div className="w-6 h-[1px] bg-border/80 my-1" />
+            {tailNav.map(railLink)}
           </nav>
         </div>
 
@@ -428,29 +486,29 @@ export default function AppMenubar({
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-1">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const isActive =
-                  item.path === "/"
-                    ? location.pathname === "/" || location.pathname.startsWith("/day/")
-                    : location.pathname === item.path;
-
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                      isActive
-                        ? "bg-primary/10 text-primary font-semibold border border-primary/20"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" strokeWidth={1.75} />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
+              {[{ label: "", items: primaryNav }, ...groups.map((g) => ({ label: g.label, items: g.items })), { label: "", items: tailNav }].map((sec, si) => (
+                <div key={si} className="space-y-1">
+                  {sec.label && <div className="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{sec.label}</div>}
+                  {sec.items.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item);
+                    return (
+                      <Link
+                        key={item.testId}
+                        to={item.path}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                          active ? "bg-primary/10 text-primary font-semibold border border-primary/20" : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" strokeWidth={1.75} />
+                        <span className="flex-1">{item.label}</span>
+                        {!!item.badge && <span className="rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">{item.badge}</span>}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
 
             <div className="pt-4 border-t border-border/80 flex items-center justify-between">

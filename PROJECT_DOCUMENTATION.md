@@ -323,6 +323,21 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 - **Kayıt ve yükleme:** `setupPwa()` worker'ı yalnızca üretim derlemesinde kaydeder (geliştirmede Vite HMR etkilenmez) ve `beforeinstallprompt` olayını yakalar. Yükleme düğmesi kullanıcı menüsünde ve Ayarlar > Görünüm'deki "Uygulama olarak kullan" kartında; iOS'ta "Ana Ekrana Ekle" talimatı gösterilir.
 - **Sunucu:** `sw.js`, `index.html`, manifest ve çevrimdışı sayfa `Cache-Control: no-cache` ile, `/assets/*` bir yıllık `immutable` önbellek başlığıyla sunulur; manifest `application/manifest+json` tipindedir.
 
+### 4.16. Bilgi Çalışma Alanı — Faz 1 (Yakalama, Gelen Kutusu, Bugün, Nesneler)
+Ürün yönü ve fazlar: `PRODUCT_ARCHITECTURE.md`, `TECHNICAL_ROADMAP.md`, `DATABASE_MIGRATION_PLAN.md`, `UX_REDESIGN_PLAN.md`.
+- **Nesne modeli:** `notes` satırı artık "nesne"dir; yeni sütunlar `workspace_id`, `space_id`, `visibility`, `source`, `ai_meta`. Tipler `note_types` üzerindedir (Nesne Tipleri 2.0): Fikir, Proje, Kişi, Toplantı, Etkinlik, Kitap, Araştırma Makalesi, Makale/Web, Alıntı, Referans, Konum, Dosya, Günlük Not yerleşik; özellik şemaları mevcut alan editörüyle çalışır.
+- **Göç defteri:** `schema_migrations` + `src/db/migrations.ts`; yalnızca ekleyici DDL, veri doldurmaları bir kez çalışır (kişisel çalışma alanı/bölüm ve wikilink ilişkileri).
+- **İlişkiler:** `object_relations` (tipli, iki yönlü) ve `relation_types` (yerleşik + kullanıcı tanımlı). `[[wikilink]]`ler her kayıtta `links_to` ilişkisine eşitlenir; geri bağlantılar ilişkilerden gelir. Not sayfasında "İlişkiler" paneli.
+- **Bölümler (Spaces):** Her kullanıcıya kişisel çalışma alanı ve "Kişisel" bölümü. `/spaces`. ("Alanlar" adı mevcut Areas özelliğine ait olduğu için Spaces "Bölümler" olarak adlandırıldı.)
+- **Evrensel yakalama:** Başlıktaki "Aklında ne var?" alanı (`C`), `POST /api/capture`. Enter → Gelen kutusu (arka planda işlenir), Ctrl/⌘+Enter → doğrudan not. Dosya ve yapıştırılan görsel desteklenir. İşleme hattı: bağlantı önizleme → tip tespiti → başlık/özet/etiket/kişi/tarih/görev → somut gerekçeli bağlantı önerileri. AI anahtarı yoksa kural tabanlı çıkarım kullanılır ve arayüzde öyle etiketlenir.
+- **Gelen kutusu (`/inbox`):** Yeni / İşleniyor / İncelemeye hazır / İşlendi / Hata. Tümünü kabul et, Düzenle, Yapay zekasız kaydet, Reddet (ham metin silinmez), Tekrar işle, toplu kabul; J/K/A/E/S/R kısayolları.
+- **Bugün (`/today`):** Otomatik günlük not, zaman bloklarından gün çizelgesi, açık görevler, hatırlatmalar, günün yakalamaları; o gün yakalananlar günlük nota `captured_on` ilişkisiyle bağlanır.
+- **Ana sayfa (`/`):** Yakalama, gelen kutusu özeti, bugün, son nesneler, bağlantı önerileri, gerçek verilerden "İlk adımlar" listesi. Eski günlük akış `/feed` adresine taşındı.
+- **Arama ve komut paleti:** `Ctrl/⌘+K`, `/`, `g h|i|t|k|s`; `/api/search` başlık, içerik, etiket, kişi, tip ve gelen kutusunda arar; parola kilitli notların yalnızca başlığı aranır.
+- **Şablonlar:** Toplantı (katılımcı Kişi nesneleri + proje), Proje (görev kartları), Araştırma (sorular + makaleler), Günlük — bağlı nesneler oluşturur.
+- **Parola kilidi:** Eski "şifreleme" bir şifreleme değildir (içerik düz metin saklanır); arayüzde "Parola kilidi" olarak yeniden adlandırıldı.
+- **Testler:** `npm test` (birim), `INKWELL_BASE_URL=… npm run test:api` (çalışan sunucuya karşı uçtan uca).
+
 ---
 
 ## 5. Gün Gün Kronolojik Geliştirme Günlüğü

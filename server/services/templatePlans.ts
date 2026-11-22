@@ -47,7 +47,7 @@ export type TemplateKey = (typeof TEMPLATES)[number]["key"];
 const clean = (list?: string[]) => Array.from(new Set((list || []).map((s) => s.trim()).filter(Boolean))).slice(0, 30);
 
 export function dailyContent(date: string): string {
-  return `## Plan\n- [ ] \n\n## Notlar\n\n## Yansıma\n- Bugün ne iyi gitti?\n- Neyi farklı yapardım?\n`;
+  return `## Plan\n\n## Notlar\n\n## Yansıma\n- Bugün ne iyi gitti?\n- Neyi farklı yapardım?\n`;
 }
 
 export function planTemplate(key: TemplateKey, input: TemplateInput, today: string): TemplatePlan {
@@ -63,7 +63,7 @@ export function planTemplate(key: TemplateKey, input: TemplateInput, today: stri
           ref: "meeting",
           title,
           type_id: "type_meeting",
-          content: `## Gündem\n- \n\n## Notlar\n\n## Kararlar\n- \n\n## Aksiyonlar\n- [ ] \n`,
+          content: `## Gündem\n\n## Notlar\n\n## Kararlar\n\n## Aksiyonlar\n`,
         },
         ...people.map((p, i) => ({ ref: `person${i}`, title: p, type_id: "type_person", content: "", reuse: true })),
       ];
@@ -109,7 +109,7 @@ export function planTemplate(key: TemplateKey, input: TemplateInput, today: stri
             ref: "questions",
             title: `${title} · Araştırma soruları`,
             type_id: null,
-            content: questions.length ? questions.map((q) => `- [ ] ${q}`).join("\n") : "- [ ] ",
+            content: questions.length ? questions.map((q) => `- [ ] ${q}`).join("\n") : "",
           },
           ...papers.map((p, i) => ({ ref: `paper${i}`, title: p, type_id: "type_paper", content: "", reuse: true, custom_fields: { reading_status: "Okunacak" } })),
         ],

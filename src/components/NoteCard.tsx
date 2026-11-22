@@ -626,12 +626,12 @@ export default function NoteCard({
                   {isEncrypted ? (
                     <>
                       <Key className="w-3.5 h-3.5 mr-2 text-amber-500" />
-                      <span>Şifreyi Yönet / Kaldır</span>
+                      <span>Parola Kilidini Yönet</span>
                     </>
                   ) : (
                     <>
                       <Lock className="w-3.5 h-3.5 mr-2 text-amber-500" />
-                      <span>Notu Şifrele</span>
+                      <span>Parola ile Kilitle</span>
                     </>
                   )}
                 </DropdownMenuItem>
@@ -688,7 +688,7 @@ export default function NoteCard({
         <div className="flex items-center justify-between px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-300 mt-2">
           <div className="flex items-center gap-1.5 font-medium">
             <Unlock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-            <span>Şifreli Not (Açık)</span>
+            <span>Parola Kilitli Not (Açık)</span>
           </div>
           <button
             type="button"
@@ -707,7 +707,7 @@ export default function NoteCard({
             <Lock className="w-5 h-5" />
           </div>
           <div className="space-y-0.5">
-            <p className="text-xs font-semibold text-foreground">Bu Not Şifrelenmiştir</p>
+            <p className="text-xs font-semibold text-foreground">Bu Not Parola ile Kilitli</p>
             <p className="text-[11px] text-muted-foreground">İçeriği ve yorumları görüntülemek için parolayı girin</p>
           </div>
           <form onSubmit={handleUnlock} className="flex items-center gap-1.5 w-full max-w-xs mt-1">
