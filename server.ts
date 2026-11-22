@@ -22,6 +22,18 @@ import { db, initDatabaseSchema, users, notes, tags, people, locations, categori
 import { generateTextEmbedding } from "./src/lib/embeddings";
 import { normalizePeriod, periodEnd, periodStart, type NotePeriod } from "./src/lib/period";
 import { toggleTaskInMarkdown } from "./src/lib/tasks";
+import {
+  genId, TAG_RE, MENTION_RE, extractTags, extractPeople, extractReminders, ensureTags, ensurePeople,
+  syncReminders, saveNoteVersion, todayIso, nowDatetimeIso, normalizeDateToIso, dateForPeriod,
+  sanitizeDriveFiles, extractNoteDates, slugify, generateSlugForNote,
+} from "./server/services/notesCore";
+import { runMigrations, runOnce } from "./src/db/migrations";
+import { createWorkspaceRouter } from "./server/http/workspaceRoutes";
+import { backfillPersonalWorkspaces, resolveTargetSpace, AccessError } from "./server/services/workspaces";
+import { backfillWikilinkRelations, syncWikilinkRelations } from "./server/services/relations";
+import { configureCapture, recoverCaptures } from "./server/services/capture";
+import { recordEvent } from "./server/services/analytics";
+import { SYSTEM_OBJECT_TYPES, isSystemTypeId } from "./src/lib/objectTypes";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -142,267 +154,6 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
 });
-
-function genId(prefix: string): string {
-  // Cryptographically random IDs: some IDs (e.g. file IDs) act as unguessable URLs.
-  return `${prefix}_${crypto.randomBytes(8).toString("hex")}${Date.now().toString(36).substring(4)}`;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers & Regex
-// ---------------------------------------------------------------------------
-const TAG_RE = /(?<!\S)#([a-zA-Z0-9_\-ğüşıöçĞÜŞİÖÇ]+)(?!\S)/gu;
-const MENTION_RE = /(?<!\S)@([a-zA-Z0-9_\-ğüşıöçĞÜŞİÖÇ]+)(?!\S)/gu;
-const REMINDER_RE = /```reminder\s*\n([^\n]+)\n([\s\S]*?)\n?```/gi;
-
-function extractTags(content: string): string[] {
-  // Strip fenced code blocks before extracting tags
-  const cleanContent = (content || "").replace(/```[\s\S]*?```/g, "");
-  const extracted: string[] = [];
-  const re = new RegExp(TAG_RE.source, "gu");
-  let m;
-  while ((m = re.exec(cleanContent)) !== null) {
-    const t = m[1].toLowerCase();
-    if (!extracted.includes(t)) extracted.push(t);
-  }
-  return extracted;
-}
-
-function extractPeople(content: string): string[] {
-  // Strip fenced code blocks before extracting people
-  const cleanContent = (content || "").replace(/```[\s\S]*?```/g, "");
-  const extracted: string[] = [];
-  const re = new RegExp(MENTION_RE.source, "gu");
-  let m;
-  while ((m = re.exec(cleanContent)) !== null) {
-    const p = m[1].toLowerCase();
-    if (!extracted.includes(p)) extracted.push(p);
-  }
-  return extracted;
-}
-
-function extractReminders(content: string): Array<{ at: string; text: string }> {
-  const out: Array<{ at: string; text: string }> = [];
-  const re = new RegExp(REMINDER_RE.source, "gi");
-  let m;
-  while ((m = re.exec(content || "")) !== null) {
-    const iso = m[1].trim();
-    const text = (m[2] || "").trim();
-    const dt = new Date(iso);
-    if (!isNaN(dt.getTime())) {
-      out.push({ at: dt.toISOString(), text: text || "Hatırlatma" });
-    }
-  }
-  return out;
-}
-
-async function ensureTags(userId: string, tagNames: string[]) {
-  for (const raw of tagNames) {
-    const name = raw.trim().toLowerCase();
-    if (!name) continue;
-    try {
-      const existing = await db.select().from(tags).where(and(eq(tags.userId, userId), eq(tags.name, name))).limit(1);
-      if (existing.length === 0) {
-        await db.insert(tags).values({
-          tagId: genId("tag"),
-          userId,
-          name,
-        });
-      }
-    } catch (e) {
-      console.warn("Failed ensuring tag in db:", e);
-    }
-  }
-}
-
-async function ensurePeople(userId: string, names: string[]) {
-  for (const raw of names) {
-    const name = raw.trim().toLowerCase();
-    if (!name) continue;
-    try {
-      const existing = await db.select().from(people).where(and(eq(people.userId, userId), eq(people.name, name))).limit(1);
-      if (existing.length === 0) {
-        await db.insert(people).values({
-          personId: genId("person"),
-          userId,
-          name,
-        });
-      }
-    } catch (e) {
-      console.warn("Failed ensuring person in db:", e);
-    }
-  }
-}
-
-async function syncReminders(userId: string, noteId: string, content: string) {
-  try {
-    await db.delete(reminders).where(and(eq(reminders.userId, userId), eq(reminders.noteId, noteId)));
-    const items = extractReminders(content);
-    for (const item of items) {
-      await db.insert(reminders).values({
-        reminderId: genId("rem"),
-        userId,
-        noteId,
-        at: new Date(item.at),
-        text: item.text,
-        fired: false,
-      });
-    }
-  } catch (err) {
-    console.warn("Error syncing reminders in db:", err);
-  }
-}
-
-async function saveNoteVersion(
-  userId: string,
-  noteId: string,
-  noteData: {
-    title?: string;
-    content?: string;
-    date?: string;
-    tags?: string[];
-    people?: string[];
-    custom_fields?: Record<string, any>;
-    customFields?: Record<string, any>;
-    is_encrypted?: boolean;
-    isEncrypted?: boolean;
-    password_hash?: string | null;
-    passwordHash?: string | null;
-  },
-  changeSummary = "Değişiklik yapıldı"
-) {
-  try {
-    const existingVersions = await db
-      .select({ versionNumber: noteVersions.versionNumber })
-      .from(noteVersions)
-      .where(and(eq(noteVersions.noteId, noteId), eq(noteVersions.userId, userId)))
-      .orderBy(desc(noteVersions.versionNumber))
-      .limit(1);
-
-    const nextVer = (existingVersions[0]?.versionNumber || 0) + 1;
-    const versionId = genId("ver");
-
-    await db.insert(noteVersions).values({
-      versionId,
-      noteId,
-      userId,
-      versionNumber: nextVer,
-      title: noteData.title || "",
-      content: noteData.content || "",
-      date: noteData.date || new Date().toISOString(),
-      tags: noteData.tags || [],
-      people: noteData.people || [],
-      customFields: noteData.customFields || noteData.custom_fields || {},
-      changeSummary,
-      isEncrypted: Boolean(noteData.isEncrypted || noteData.is_encrypted),
-      passwordHash: noteData.passwordHash !== undefined ? noteData.passwordHash : (noteData.password_hash || null),
-      createdAt: new Date(),
-    });
-  } catch (e) {
-    console.error("Failed to save note version in db:", e);
-  }
-}
-
-function todayIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function nowDatetimeIso(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
-function normalizeDateToIso(dateStr?: string): string {
-  if (!dateStr || !dateStr.trim()) return nowDatetimeIso();
-  const trimmed = dateStr.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    const d = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${trimmed}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  }
-  return trimmed;
-}
-
-// Week and month notes keep their period's first day (Monday / the 1st) as the date
-function dateForPeriod(dateIso: string, period: NotePeriod): string {
-  if (period === "day") return dateIso;
-  return `${periodStart(dateIso.slice(0, 10), period)}T00:00:00`;
-}
-
-/** Keeps well-formed Drive file references (from the picker) and drops anything else. */
-function sanitizeDriveFiles(raw: unknown): DriveFileRef[] {
-  if (!Array.isArray(raw)) return [];
-  const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
-  const link = (v: unknown) => {
-    const u = str(v, 2000);
-    return /^https:\/\/[^\s]+$/i.test(u) ? u : null;
-  };
-  const seen = new Set<string>();
-  const out: DriveFileRef[] = [];
-  for (const f of raw) {
-    const id = str((f as any)?.id, 200);
-    if (!id || !/^[\w-]+$/.test(id) || seen.has(id)) continue;
-    seen.add(id);
-    out.push({
-      id,
-      name: str((f as any)?.name, 300) || "Adsız dosya",
-      mime_type: str((f as any)?.mime_type, 200),
-      web_view_link: link((f as any)?.web_view_link),
-      icon_link: link((f as any)?.icon_link),
-    });
-    if (out.length >= 30) break;
-  }
-  return out;
-}
-
-function extractNoteDates(note: { date?: string | null; content?: string | null }): string[] {
-  const dates = new Set<string>();
-  if (note.date) {
-    dates.add(note.date.slice(0, 10));
-  }
-  if (note.content) {
-    const matches = note.content.matchAll(/<!--\s*comment:id=[^,]+,(?:author=[^,]+,)?date=([^,>]+)/gi);
-    for (const match of matches) {
-      if (match[1]) {
-        const d = match[1].trim().slice(0, 10);
-        if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
-          dates.add(d);
-        }
-      }
-    }
-  }
-  return Array.from(dates);
-}
-
-function slugify(text: string): string {
-  const trMap: Record<string, string> = {
-    'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g', 'ı': 'i', 'İ': 'i',
-    'ö': 'o', 'Ö': 'o', 'ş': 's', 'Ş': 's', 'ü': 'u', 'Ü': 'u'
-  };
-  return (text || '')
-    .split('')
-    .map((c) => trMap[c] || c)
-    .join('')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-function generateSlugForNote(title: string, date: string, noteId: string, customSlug?: string): string {
-  if (customSlug && customSlug.trim()) {
-    const clean = slugify(customSlug.trim());
-    if (clean) return clean;
-  }
-  const cleanTitle = slugify(title || '');
-  const day = (date || todayIso()).slice(0, 10);
-  const shortId = noteId.replace(/^note_/, '').slice(0, 6);
-  if (cleanTitle) {
-    return `${cleanTitle}-${shortId}`;
-  }
-  return `not-${day}-${shortId}`;
-}
 
 async function backfillSlugs() {
   try {
@@ -597,6 +348,9 @@ async function authMiddleware(req: AuthRequest, res: Response, next: NextFunctio
 // ---------------------------------------------------------------------------
 const api = express.Router();
 
+// Phase 1 modules (capture, inbox, relations, spaces, search, today, templates, home)
+api.use(createWorkspaceRouter(authMiddleware as any));
+
 // Root check & AI dataset export for model training
 api.get("/", (req, res) => {
   res.json({ ok: true, service: "inkwell", storage: "cloudsql-vector" });
@@ -674,6 +428,7 @@ api.get("/backup/export", authMiddleware, async (req: AuthRequest, res: Response
           area_ids: n.areaIds || [],
           period: n.period || "day",
           drive_files: n.driveFiles || [],
+      space_id: n.spaceId || null,
           pinned: n.pinned,
           created_at: n.createdAt.toISOString(),
           updated_at: n.updatedAt.toISOString(),
@@ -1084,6 +839,7 @@ api.post("/auth/register", async (req, res) => {
     const accessToken = createAccessToken(user_id, cleanEmail);
     const refreshToken = createRefreshToken(user_id);
     setAuthCookies(res, accessToken, refreshToken);
+    await recordEvent(user_id, "registered", { provider: "email" }, { once: true });
 
     const userOut = {
       user_id,
@@ -2002,28 +1758,6 @@ api.patch("/groups/assign", authMiddleware, async (req: AuthRequest, res: Respon
 // ---------------------------------------------------------------------------
 // Note Types Endpoints (User-defined custom note types & parameters)
 // ---------------------------------------------------------------------------
-const DEFAULT_NOTE_TYPE = {
-  type_id: "type_plain",
-  user_id: null,
-  name: "Düz Metin",
-  description: "Standart sade metin ve Markdown notları",
-  color: "#64748b",
-  icon: "FileText",
-  is_default: true,
-  fields: [],
-};
-
-const DEFAULT_CARD_NOTE_TYPE = {
-  type_id: "type_card",
-  user_id: null,
-  name: "Kart",
-  description: "Kanban panosu ve kart görünümü için özel not tipi",
-  color: "#8b5cf6",
-  icon: "Kanban",
-  is_default: true,
-  fields: [],
-};
-
 api.get("/note-types", authMiddleware, async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
   try {
@@ -2041,7 +1775,18 @@ api.get("/note-types", authMiddleware, async (req: AuthRequest, res: Response) =
       updated_at: t.updatedAt.toISOString(),
     }));
 
-    res.json([DEFAULT_NOTE_TYPE, DEFAULT_CARD_NOTE_TYPE, ...userTypes]);
+    // Object Types 2.0: built-in types (incl. the legacy plain/card ones) come first
+    const systemTypes = SYSTEM_OBJECT_TYPES.map((t) => ({
+      type_id: t.type_id,
+      user_id: null,
+      name: t.name,
+      description: t.description,
+      color: t.color,
+      icon: t.icon,
+      is_default: true,
+      fields: t.fields,
+    }));
+    res.json([...systemTypes, ...userTypes]);
   } catch (err: any) {
     res.status(500).json({ detail: "Not tipleri alınamadı", error: err.message });
   }
@@ -2108,8 +1853,8 @@ api.put("/note-types/:type_id", authMiddleware, async (req: AuthRequest, res: Re
   const typeId = req.params.type_id;
   const { name, description, color, icon, fields } = req.body || {};
 
-  if (typeId === "type_plain" || typeId === "type_card" || typeId === "default") {
-    return res.status(400).json({ detail: "Varsayılan 'Düz Metin' ve 'Kart' sistem not tipleri değiştirilemez veya silinemez." });
+  if (isSystemTypeId(typeId)) {
+    return res.status(400).json({ detail: "Yerleşik nesne tipleri değiştirilemez veya silinemez. Kendi tipini oluşturabilirsin." });
   }
 
   try {
@@ -2173,8 +1918,8 @@ api.delete("/note-types/:type_id", authMiddleware, async (req: AuthRequest, res:
   const userId = req.user!.userId;
   const typeId = req.params.type_id;
 
-  if (typeId === "type_plain" || typeId === "type_card" || typeId === "default") {
-    return res.status(400).json({ detail: "Varsayılan 'Düz Metin' ve 'Kart' sistem not tipleri silinemez." });
+  if (isSystemTypeId(typeId)) {
+    return res.status(400).json({ detail: "Yerleşik nesne tipleri silinemez." });
   }
 
   try {
@@ -2874,6 +2619,14 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       isEncrypted: Boolean(is_encrypted),
       passwordHash: password_hash || null,
     };
+    try {
+      const target = await resolveTargetSpace(userId, typeof req.body?.space_id === "string" ? req.body.space_id : null);
+      values.workspaceId = target.workspaceId;
+      values.spaceId = target.spaceId;
+    } catch (e) {
+      if (e instanceof AccessError) return res.status(e.status).json({ detail: e.message });
+      throw e;
+    }
     if (embedding) {
       values.embedding = embedding;
     }
@@ -2887,6 +2640,8 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
 
     const inserted = (await db.select().from(notes).where(eq(notes.noteId, noteId)).limit(1))[0];
     await saveNoteVersion(userId, noteId, inserted, "Not oluşturuldu (v1)");
+    await syncWikilinkRelations(userId, noteId);
+    await recordEvent(userId, "first_object", { via: "editor" }, { once: true });
 
     res.json({
       note_id: inserted.noteId,
@@ -2904,6 +2659,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       area_ids: inserted.areaIds || [],
       period: inserted.period || "day",
       drive_files: inserted.driveFiles || [],
+      space_id: inserted.spaceId || null,
       pinned: inserted.pinned,
       archived: inserted.archived || false,
       is_encrypted: Boolean(inserted.isEncrypted),
@@ -2983,6 +2739,7 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       area_ids: n.areaIds || [],
       period: n.period || "day",
       drive_files: n.driveFiles || [],
+      space_id: n.spaceId || null,
       pinned: n.pinned,
       archived: n.archived || false,
       is_encrypted: Boolean(n.isEncrypted),
@@ -3033,9 +2790,30 @@ api.get("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       filtered = filtered.filter((n) => n.category_id === category_id);
     }
 
+    const spaceFilter = req.query.space_id;
+    if (spaceFilter && typeof spaceFilter === "string") {
+      filtered = filtered.filter((n) => n.space_id === spaceFilter);
+    }
+
     const areaFilter = req.query.area_id;
     if (areaFilter && typeof areaFilter === "string") {
-      filtered = filtered.filter((n) => Array.isArray(n.area_ids) && n.area_ids.includes(areaFilter));
+      // A main area also matches notes linked to any of its sub-areas,
+      // unless the caller asks for direct links only (include_sub=false).
+      const wanted = new Set<string>([areaFilter]);
+      if (req.query.include_sub !== "false") {
+        const userAreas = await db.select().from(areas).where(eq(areas.userId, userId));
+        let grew = true;
+        while (grew) {
+          grew = false;
+          for (const a of userAreas) {
+            if (a.parentId && wanted.has(a.parentId) && !wanted.has(a.areaId)) {
+              wanted.add(a.areaId);
+              grew = true;
+            }
+          }
+        }
+      }
+      filtered = filtered.filter((n) => Array.isArray(n.area_ids) && n.area_ids.some((id: string) => wanted.has(id)));
     }
 
     if (note_type_id && typeof note_type_id === "string") {
@@ -3199,6 +2977,7 @@ api.get("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       area_ids: n.areaIds || [],
       period: n.period || "day",
       drive_files: n.driveFiles || [],
+      space_id: n.spaceId || null,
       pinned: n.pinned,
       archived: n.archived || false,
       is_encrypted: Boolean(n.isEncrypted),
@@ -3262,6 +3041,7 @@ api.patch("/notes/:note_id/tasks", authMiddleware, async (req: AuthRequest, res:
       area_ids: n.areaIds || [],
       period: n.period || "day",
       drive_files: n.driveFiles || [],
+      space_id: n.spaceId || null,
       pinned: n.pinned,
       archived: n.archived || false,
       is_encrypted: Boolean(n.isEncrypted),
@@ -3373,6 +3153,7 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     const updated = (await db.select().from(notes).where(eq(notes.noteId, noteId)).limit(1))[0];
     const changeSummary = req.body?.change_summary || "Not içeriği güncellendi";
     await saveNoteVersion(userId, noteId, updated, changeSummary);
+    await syncWikilinkRelations(userId, noteId);
 
     res.json({
       note_id: updated.noteId,
@@ -3390,6 +3171,7 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       area_ids: updated.areaIds || [],
       period: updated.period || "day",
       drive_files: updated.driveFiles || [],
+      space_id: updated.spaceId || null,
       pinned: updated.pinned,
       archived: updated.archived || false,
       is_encrypted: Boolean(updated.isEncrypted),
@@ -3511,6 +3293,7 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
 
     const updated = (await db.select().from(notes).where(eq(notes.noteId, noteId)).limit(1))[0];
     await saveNoteVersion(userId, noteId, updated, `v${targetVer.versionNumber} versiyonuna geri dönüldü`);
+    await syncWikilinkRelations(userId, noteId);
 
     res.json({
       note_id: updated.noteId,
@@ -3528,6 +3311,7 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
       area_ids: updated.areaIds || [],
       period: updated.period || "day",
       drive_files: updated.driveFiles || [],
+      space_id: updated.spaceId || null,
       pinned: updated.pinned,
       archived: updated.archived || false,
       is_encrypted: Boolean(updated.isEncrypted),
@@ -3578,6 +3362,7 @@ api.patch("/notes/:note_id/pin", authMiddleware, async (req: AuthRequest, res: R
       area_ids: updated.areaIds || [],
       period: updated.period || "day",
       drive_files: updated.driveFiles || [],
+      space_id: updated.spaceId || null,
       pinned: updated.pinned,
       archived: updated.archived || false,
       created_at: updated.createdAt.toISOString(),
@@ -3631,6 +3416,7 @@ const handleArchiveToggle = async (req: AuthRequest, res: Response) => {
       area_ids: updated.areaIds || [],
       period: updated.period || "day",
       drive_files: updated.driveFiles || [],
+      space_id: updated.spaceId || null,
       pinned: updated.pinned,
       archived: updated.archived || false,
       created_at: updated.createdAt.toISOString(),
@@ -4617,11 +4403,28 @@ app.use("/api", api);
 async function startServer() {
   try {
     await initDatabaseSchema();
+    // Must run before any Drizzle insert: inserts name every schema column.
+    await runMigrations();
     await seedInitialData();
     await ensureKanbanTable();
     await backfillSlugs();
   } catch (err) {
     console.warn("Database initialization notice:", err);
+  }
+  try {
+    // One-off data backfills (see DATABASE_MIGRATION_PLAN.md); idempotent DDL ran above
+    await runMigrations();
+    await runOnce("2026_11_22_004_backfill_personal_workspaces", backfillPersonalWorkspaces);
+    await runOnce("2026_11_22_005_backfill_wikilink_relations", backfillWikilinkRelations);
+    configureCapture({
+      linkPreview: async (url) => {
+        const p = await getLinkPreview(url);
+        return { title: p.has_title ? p.title : undefined, description: p.description || undefined, site: p.site_name || undefined };
+      },
+    });
+    await recoverCaptures();
+  } catch (err) {
+    console.error("[Migrations] failed:", err);
   }
 
   if (isProduction) {

@@ -414,7 +414,7 @@ export default function SettingsPage() {
             }`}
           >
             <Boxes className="w-4 h-4 shrink-0 text-indigo-400" />
-            <span className="truncate flex-1">Not Tipleri & Parametreler</span>
+            <span className="truncate flex-1">Nesne Tipleri & Özellikler</span>
           </button>
 
           <button

@@ -54,14 +54,14 @@ export default function EncryptNoteDialog({
       const res = await api.put<Note>(`/notes/${note.note_id}`, {
         is_encrypted: true,
         password_hash: hash,
-        change_summary: "Not parola ile şifrelendi",
+        change_summary: "Not parola ile kilitlendi",
       });
 
-      toast.success("Not başarıyla şifrelendi");
+      toast.success("Not parola ile kilitlendi");
       onSuccess(res.data);
       onOpenChange(false);
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Not şifrelenirken hata oluştu");
+      toast.error(err?.response?.data?.detail || "Not kilitlenirken hata oluştu");
     } finally {
       setSaving(false);
     }
@@ -69,7 +69,7 @@ export default function EncryptNoteDialog({
 
   const handleRemoveEncryption = async () => {
     if (!currentPassword.trim()) {
-      toast.error("Şifreyi kaldırmak için geçerli parolayı girin");
+      toast.error("Kilidi kaldırmak için geçerli parolayı girin");
       return;
     }
 
@@ -85,14 +85,14 @@ export default function EncryptNoteDialog({
       const res = await api.put<Note>(`/notes/${note.note_id}`, {
         is_encrypted: false,
         password_hash: null,
-        change_summary: "Not şifresi kaldırıldı",
+        change_summary: "Not kilidi kaldırıldı",
       });
 
-      toast.success("Notun şifre koruması kaldırıldı");
+      toast.success("Notun parola kilidi kaldırıldı");
       onSuccess(res.data);
       onOpenChange(false);
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Şifre kaldırılırken hata oluştu");
+      toast.error(err?.response?.data?.detail || "Kilit kaldırılırken hata oluştu");
     } finally {
       setSaving(false);
     }
@@ -146,12 +146,12 @@ export default function EncryptNoteDialog({
             {isEncrypted ? (
               <>
                 <Key className="w-5 h-5 text-amber-500" />
-                <span>Not Şifresi Yönetimi</span>
+                <span>Parola Kilidi</span>
               </>
             ) : (
               <>
                 <Lock className="w-5 h-5 text-primary" />
-                <span>Notu Şifrele</span>
+                <span>Parola ile Kilitle</span>
               </>
             )}
           </DialogTitle>
@@ -168,7 +168,7 @@ export default function EncryptNoteDialog({
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              Şifreyi Kaldır
+              Kilidi Kaldır
             </button>
             <button
               type="button"
@@ -179,7 +179,7 @@ export default function EncryptNoteDialog({
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              Şifreyi Değiştir
+              Parolayı Değiştir
             </button>
           </div>
         )}
@@ -190,8 +190,8 @@ export default function EncryptNoteDialog({
               <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
                 <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                 <span>
-                  Not içeriği şifrelendiğinde, doğru parola girilmeden içerik görüntülenemez.
-                  Arama motoru ve takvim filtrelerinde not bulunabilir ancak içeriği gizli kalır.
+                  Parola kilidi, not açılırken parola sorar. Bu bir şifreleme değildir: içerik sunucuda
+                  düz metin olarak saklanır ve başlık aramada görünür. Gerçek uçtan uca şifreleme sonraki bir aşamada gelecek.
                 </span>
               </div>
 
@@ -232,7 +232,7 @@ export default function EncryptNoteDialog({
           {isEncrypted && mode === "remove" && (
             <div className="space-y-3">
               <p className="text-xs text-muted-foreground">
-                Şifre korumasını kaldırmak için lütfen mevcut not parolasını girin:
+                Parola kilidini kaldırmak için lütfen mevcut not parolasını girin:
               </p>
               <Input
                 type="password"
@@ -304,7 +304,7 @@ export default function EncryptNoteDialog({
               className="gap-1.5 cursor-pointer bg-primary text-primary-foreground"
             >
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>{saving ? "Şifreleniyor..." : "Notu Şifrele"}</span>
+              <span>{saving ? "Kilitleniyor..." : "Parola ile Kilitle"}</span>
             </Button>
           )}
 
@@ -317,7 +317,7 @@ export default function EncryptNoteDialog({
               className="gap-1.5 cursor-pointer bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               <Unlock className="w-3.5 h-3.5" />
-              <span>{saving ? "Kaldırılıyor..." : "Şifreyi Kaldır"}</span>
+              <span>{saving ? "Kaldırılıyor..." : "Kilidi Kaldır"}</span>
             </Button>
           )}
 

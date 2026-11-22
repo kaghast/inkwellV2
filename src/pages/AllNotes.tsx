@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import api, { formatApiError } from "@/lib/api";
 import type { Note, Category, LocationItem, NoteType, Tag, Person, ItemGroup } from "@/types";
 import AppMenubar from "@/components/AppMenubar";
@@ -7,6 +7,8 @@ import Sidebar from "@/components/Sidebar";
 import NoteCard from "@/components/NoteCard";
 import NoteComposer from "@/components/NoteComposer";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { useAreas } from "@/components/areas/useAreas";
+import { areaColor, areaMap, areaPath, buildAreaTree, flattenTree } from "@/lib/areas";
 import {
   FileText,
   SlidersHorizontal,
@@ -55,6 +57,28 @@ export default function AllNotes() {
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [selectedNoteType, setSelectedNoteType] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+
+  // Area filter lives in the URL (?area=<id>) so area links elsewhere can open this page pre-filtered.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedArea = searchParams.get("area");
+  const setSelectedArea = useCallback(
+    (id: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (id) next.set("area", id);
+          else next.delete("area");
+          return next;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
+  const [areas] = useAreas();
+  const areaById = useMemo(() => areaMap(areas), [areas]);
+  const areaOptions = useMemo(() => flattenTree(buildAreaTree(areas)), [areas]);
+  const activeArea = selectedArea ? areaById[selectedArea] : undefined;
 
   // Debounce search query to reduce unnecessary backend calls
   useEffect(() => {
@@ -132,6 +156,7 @@ export default function AllNotes() {
         if (selectedCategory) params.category_id = selectedCategory;
         if (selectedLocation) params.location_id = selectedLocation;
         if (selectedNoteType) params.note_type_id = selectedNoteType;
+        if (selectedArea) params.area_id = selectedArea;
 
         const { data } = await api.get<NotesResponse>("/notes", { params });
 
@@ -165,6 +190,7 @@ export default function AllNotes() {
       selectedCategory,
       selectedLocation,
       selectedNoteType,
+      selectedArea,
       sortOrder,
     ]
   );
@@ -188,7 +214,8 @@ export default function AllNotes() {
     (selectedPerson ? 1 : 0) +
     (selectedCategory ? 1 : 0) +
     (selectedLocation ? 1 : 0) +
-    (selectedNoteType ? 1 : 0);
+    (selectedNoteType ? 1 : 0) +
+    (selectedArea ? 1 : 0);
 
   const clearFilters = () => {
     setSelectedTag(null);
@@ -196,6 +223,7 @@ export default function AllNotes() {
     setSelectedCategory(null);
     setSelectedLocation(null);
     setSelectedNoteType(null);
+    setSelectedArea(null);
     setSearchQuery("");
   };
 
@@ -337,6 +365,30 @@ export default function AllNotes() {
                 </select>
               )}
 
+              {/* Area Filter (a main area includes its sub-areas) */}
+              {(areaOptions.length > 0 || selectedArea) && (
+                <select
+                  value={selectedArea || ""}
+                  onChange={(e) => setSelectedArea(e.target.value || null)}
+                  className="h-7 px-2 text-[11px] rounded-md border border-border bg-secondary/60 text-foreground cursor-pointer shrink-0 font-medium"
+                  data-testid="all-notes-area-filter"
+                >
+                  <option value="">Tüm Alanlar</option>
+                  {selectedArea && !areaOptions.some((o) => o.area.area_id === selectedArea) && (
+                    <option value={selectedArea}>
+                      {activeArea ? areaPath(activeArea, areaById) : "Seçili alan"}
+                    </option>
+                  )}
+                  {areaOptions.map((o) => (
+                    <option key={o.area.area_id} value={o.area.area_id}>
+                      {"  ".repeat(o.depth)}
+                      {o.depth > 0 ? "└ " : ""}
+                      {o.area.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
               {/* Location Filter */}
               {locations.length > 0 && (
                 <select
@@ -365,6 +417,34 @@ export default function AllNotes() {
               )}
             </div>
           </div>
+
+          {activeArea && (
+            <div
+              className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs"
+              style={{
+                borderColor: `${areaColor(activeArea, areaById)}66`,
+                background: `${areaColor(activeArea, areaById)}14`,
+              }}
+              data-testid="all-notes-active-area"
+            >
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: areaColor(activeArea, areaById) }} />
+              <span className="min-w-0 truncate">
+                <span className="text-muted-foreground">Alan: </span>
+                <span className="font-semibold">{areaPath(activeArea, areaById)}</span>
+                {areas.some((a) => a.parent_id === activeArea.area_id) && (
+                  <span className="text-muted-foreground"> · alt alanlar dahil</span>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedArea(null)}
+                className="ml-auto p-0.5 rounded text-muted-foreground hover:text-foreground cursor-pointer"
+                title="Alan filtresini kaldır"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Notes List Feed */}
           {loading ? (

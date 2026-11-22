@@ -7,7 +7,9 @@
     "dev": "tsx server.ts",
     "build": "vite build",
     "start": "tsx server.ts",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx --test \"tests/unit.test.ts\"",
+    "test:api": "tsx --test \"tests/api.integration.test.ts\""
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.5",
