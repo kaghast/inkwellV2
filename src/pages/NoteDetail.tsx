@@ -1,3 +1,4 @@
+import ObjectRelationsPanel from "@/components/ObjectRelationsPanel";
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
 import api, { formatApiError } from "@/lib/api";
@@ -1066,7 +1067,7 @@ export default function NoteDetail() {
                     size="icon"
                     variant="ghost"
                     onClick={() => setEncryptOpen(true)}
-                    title={isEncrypted ? "Şifreyi Yönet / Kaldır" : "Notu Şifrele"}
+                    title={isEncrypted ? "Parola Kilidini Yönet" : "Parola ile Kilitle"}
                     data-testid="encrypt-note-btn"
                     className={isEncrypted ? "text-amber-500 hover:text-amber-600 hover:bg-amber-500/10" : "text-muted-foreground hover:text-foreground"}
                   >
@@ -1134,7 +1135,7 @@ export default function NoteDetail() {
                             <span>Notu Böl</span>
                             {!canSplitNote(note) && (
                               <span className="text-[10px] text-muted-foreground">
-                                {note.is_encrypted ? "Şifreli notlar bölünemez" : "Bu içerik satırlara bölünemez"}
+                                {note.is_encrypted ? "Kilitli notlar bölünemez" : "Bu içerik satırlara bölünemez"}
                               </span>
                             )}
                           </div>
@@ -1158,7 +1159,7 @@ export default function NoteDetail() {
               <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-300 mb-6">
                 <div className="flex items-center gap-2 font-medium">
                   <Unlock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                  <span>Şifreli Not (Kilit Açık)</span>
+                  <span>Parola Kilitli Not (Açık)</span>
                 </div>
                 <button
                   type="button"
@@ -1177,7 +1178,7 @@ export default function NoteDetail() {
                   <Lock className="w-7 h-7" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-base font-serif font-bold text-foreground">Bu Not Şifrelenmiştir</h3>
+                  <h3 className="text-base font-serif font-bold text-foreground">Bu Not Parola ile Kilitli</h3>
                   <p className="text-xs text-muted-foreground">İçeriği, ekleri ve yorumları görüntülemek için parolayı girin</p>
                 </div>
                 <form onSubmit={handleUnlock} className="flex items-center gap-2 w-full mt-2">
@@ -1406,6 +1407,14 @@ export default function NoteDetail() {
                 }}
               />
             </div>
+
+            {/* Typed relations, backlinks and Space (Phase 1 object model) */}
+            <ObjectRelationsPanel
+              key={note.note_id}
+              noteId={note.note_id}
+              spaceId={note.space_id}
+              onSpaceChange={(space_id) => setNote({ ...note, space_id })}
+            />
 
             {/* Related Notes & Backlinks Section */}
             <div className="mt-10 pt-6 border-t border-border/60 space-y-3.5" data-testid="related-notes-section">

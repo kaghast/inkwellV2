@@ -150,6 +150,7 @@ export interface Note {
   area_ids?: string[];
   period?: "day" | "week" | "month"; // what `date` stands for; missing = day
   drive_files?: DriveFileRef[]; // linked Google Drive files
+  space_id?: string | null; // Space (Bölüm) the object belongs to
   pinned: boolean;
   archived?: boolean;
   is_encrypted?: boolean;

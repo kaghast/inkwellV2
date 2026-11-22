@@ -290,7 +290,7 @@ export default function NewNotePage() {
                 }`}
               >
                 <Lock className="w-3.5 h-3.5 mr-1" />
-                <span>{isEncrypted ? "Şifrelendi" : "Şifrele"}</span>
+                <span>{isEncrypted ? "Kilitli" : "Parola kilidi"}</span>
               </Button>
 
               {/* Full Focus Button */}
@@ -561,7 +561,7 @@ export default function NewNotePage() {
           setIsEncrypted(Boolean(updated.is_encrypted));
           setPasswordHash(updated.password_hash || null);
           setEncryptOpen(false);
-          toast.success(updated.is_encrypted ? "Not şifrelendi" : "Şifre kaldırıldı");
+          toast.success(updated.is_encrypted ? "Not kilitlendi" : "Kilit kaldırıldı");
         }}
       />
     </div>

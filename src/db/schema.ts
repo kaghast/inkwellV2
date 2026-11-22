@@ -157,6 +157,15 @@ export const notes = pgTable(
     // 768-dimensional text embedding vector (text-embedding-004 / Gemini embedding)
     embedding: vector('embedding', { dimensions: 768 }),
     aiSummary: text('ai_summary'),
+    // Object model (Phase 1). Nullable for rows written by legacy paths; the
+    // boot backfill attaches them to the owner's personal workspace/space.
+    workspaceId: text('workspace_id'),
+    spaceId: text('space_id'),
+    visibility: text('visibility').default('private').notNull(),
+    // Where the object came from (capture id, url, author, site, kind)
+    source: jsonb('source').$type<Record<string, any>>().default({}).notNull(),
+    // AI/heuristic extraction metadata (provider, detected type, confidence, entities)
+    aiMeta: jsonb('ai_meta').$type<Record<string, any>>().default({}).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
@@ -326,3 +335,131 @@ export const googleIntegrations = pgTable('google_integrations', {
   connectedAt: timestamp('connected_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1: workspaces, spaces, relations, captures, analytics
+// (DDL lives in src/db/migrations.ts)
+// ---------------------------------------------------------------------------
+export const schemaMigrations = pgTable('schema_migrations', {
+  id: text('id').primaryKey(),
+  appliedAt: timestamp('applied_at').defaultNow().notNull(),
+});
+
+export const workspaces = pgTable('workspaces', {
+  workspaceId: text('workspace_id').primaryKey(),
+  name: text('name').notNull(),
+  kind: text('kind').default('personal').notNull(), // personal | team
+  ownerId: text('owner_id').references(() => users.userId, { onDelete: 'cascade' }).notNull(),
+  plan: text('plan').default('free').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const workspaceMembers = pgTable('workspace_members', {
+  workspaceId: text('workspace_id').references(() => workspaces.workspaceId, { onDelete: 'cascade' }).notNull(),
+  userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }).notNull(),
+  role: text('role').default('owner').notNull(), // owner | admin | editor | commenter | viewer
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const spaces = pgTable('spaces', {
+  spaceId: text('space_id').primaryKey(),
+  workspaceId: text('workspace_id').references(() => workspaces.workspaceId, { onDelete: 'cascade' }).notNull(),
+  createdBy: text('created_by'),
+  name: text('name').notNull(),
+  description: text('description'),
+  color: text('color'),
+  icon: text('icon'),
+  isDefault: boolean('is_default').default(false).notNull(),
+  archived: boolean('archived').default(false).notNull(),
+  orderIndex: doublePrecision('order_index').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const relationTypes = pgTable('relation_types', {
+  typeKey: text('type_key').primaryKey(),
+  userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }), // NULL = system type
+  label: text('label').notNull(),
+  inverseLabel: text('inverse_label').notNull(),
+  symmetric: boolean('is_symmetric').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const objectRelations = pgTable(
+  'object_relations',
+  {
+    relationId: text('relation_id').primaryKey(),
+    userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }).notNull(),
+    workspaceId: text('workspace_id'),
+    sourceId: text('source_id').references(() => notes.noteId, { onDelete: 'cascade' }).notNull(),
+    targetId: text('target_id').references(() => notes.noteId, { onDelete: 'cascade' }).notNull(),
+    relationType: text('relation_type').default('related_to').notNull(),
+    origin: text('origin').default('manual').notNull(), // wikilink | manual | template | capture | ai
+    status: text('status').default('active').notNull(), // active | suggested
+    note: text('note'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('rel_source_idx').on(table.sourceId),
+    index('rel_target_idx').on(table.targetId),
+    index('rel_user_idx').on(table.userId),
+  ]
+);
+
+export interface CaptureSuggestion {
+  provider?: string;
+  type_id?: string;
+  type_confidence?: number;
+  title?: string;
+  summary?: string;
+  tags?: string[];
+  people?: string[];
+  organizations?: string[];
+  locations?: string[];
+  dates?: string[];
+  tasks?: string[];
+  url?: string | null;
+  site?: string | null;
+  author?: string | null;
+  related?: Array<{ object_id: string; title: string; reason: string }>;
+}
+
+export const captures = pgTable(
+  'captures',
+  {
+    captureId: text('capture_id').primaryKey(),
+    userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }).notNull(),
+    workspaceId: text('workspace_id'),
+    spaceId: text('space_id'),
+    status: text('status').default('new').notNull(), // new | processing | ready | processed | failed
+    resolution: text('resolution'), // accepted | saved_raw | rejected
+    source: text('source').default('quick').notNull(),
+    rawText: text('raw_text').default('').notNull(),
+    rawUrl: text('raw_url'),
+    fileId: text('file_id'),
+    suggestion: jsonb('suggestion').$type<CaptureSuggestion>().default({}).notNull(),
+    provider: text('provider'),
+    error: text('error'),
+    attempts: integer('attempts').default(0).notNull(),
+    objectId: text('object_id').references(() => notes.noteId, { onDelete: 'set null' }),
+    capturedOn: text('captured_on').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    processedAt: timestamp('processed_at'),
+  },
+  (table) => [index('capture_user_status_idx').on(table.userId, table.status)]
+);
+
+export const analyticsEvents = pgTable(
+  'analytics_events',
+  {
+    eventId: text('event_id').primaryKey(),
+    userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id'),
+    event: text('event').notNull(),
+    props: jsonb('props').$type<Record<string, any>>().default({}).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('ae_user_event_idx').on(table.userId, table.event)]
+);

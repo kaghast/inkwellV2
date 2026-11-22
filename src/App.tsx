@@ -18,6 +18,14 @@ import NoteDetail from "@/pages/NoteDetail";
 import NewNotePage from "@/pages/NewNotePage";
 import SettingsPage from "@/pages/SettingsPage";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import HomePage from "@/pages/HomePage";
+import InboxPage from "@/pages/InboxPage";
+import TodayPage from "@/pages/TodayPage";
+import SpacesPage from "@/pages/SpacesPage";
+import CommandPalette from "@/components/CommandPalette";
+import TemplateDialog from "@/components/TemplateDialog";
+import { WorkspaceProvider } from "@/contexts/WorkspaceContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 function AppRoutes() {
   const location = useLocation();
@@ -27,7 +35,14 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/" element={<ProtectedRoute><Dashboard mode="day" /></ProtectedRoute>} />
+      <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+      <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+      <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
+      <Route path="/today" element={<ProtectedRoute><TodayPage /></ProtectedRoute>} />
+      <Route path="/today/:date" element={<ProtectedRoute><TodayPage /></ProtectedRoute>} />
+      <Route path="/spaces" element={<ProtectedRoute><SpacesPage /></ProtectedRoute>} />
+      <Route path="/spaces/:spaceId" element={<ProtectedRoute><SpacesPage /></ProtectedRoute>} />
+      <Route path="/feed" element={<ProtectedRoute><Dashboard mode="day" /></ProtectedRoute>} />
       <Route path="/new" element={<ProtectedRoute><NewNotePage /></ProtectedRoute>} />
       <Route path="/notes/new" element={<ProtectedRoute><NewNotePage /></ProtectedRoute>} />
       <Route path="/timeline" element={<ProtectedRoute><TimelinePage /></ProtectedRoute>} />
@@ -53,6 +68,18 @@ function AppRoutes() {
   );
 }
 
+/** Global palette and template dialog, only for signed-in users. */
+function WorkspaceOverlays() {
+  const { user } = useAuth();
+  if (!user) return null;
+  return (
+    <>
+      <CommandPalette />
+      <TemplateDialog />
+    </>
+  );
+}
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -60,7 +87,10 @@ export default function App() {
         <SettingsProvider>
           <BrowserRouter>
             <ReminderProvider>
-              <AppRoutes />
+              <WorkspaceProvider>
+                <AppRoutes />
+                <WorkspaceOverlays />
+              </WorkspaceProvider>
               <Toaster
                 position="bottom-right"
                 toastOptions={{
