@@ -4,6 +4,8 @@ import api, { formatApiError } from "@/lib/api";
 import AppMenubar from "@/components/AppMenubar";
 import MarkdownEditor from "@/components/MarkdownEditor";
 import MarkdownView from "@/components/MarkdownView";
+import { FilterProvider, type FilterCtx } from "@/contexts/FilterContext";
+import { useDrawerTabs } from "@/contexts/DrawerTabsContext";
 import { periodLabel } from "@/lib/period";
 import MiniMap from "@/components/MiniMap";
 import NoteAreasBar from "@/components/areas/NoteAreasBar";
@@ -112,6 +114,20 @@ export default function NoteDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { openTab } = useDrawerTabs();
+  // Inline #tag / @person links in the note body open a drawer tab instead of a filter page
+  const drawerFilter = useMemo<FilterCtx>(
+    () => ({
+      tryAddFilter: (type, value, e) => {
+        if (e.ctrlKey || e.metaKey) return false;
+        if (type === "tag") openTab({ kind: "tag", value, label: `#${value}` });
+        else if (type === "person") openTab({ kind: "person", value, label: `@${value}` });
+        else return false;
+        return true;
+      },
+    }),
+    [openTab]
+  );
   const [note, setNote] = useState<Note | null>(null);
   const [allNotes, setAllNotes] = useState<Note[]>([]);
   const [loc, setLoc] = useState<LocationItem | null>(null);
@@ -1239,12 +1255,15 @@ export default function NoteDetail() {
 
                 {loc && (
                   <div className="mb-6">
-                    <Link
-                      to={`/location/${loc.location_id}`}
+                    <button
+                      type="button"
+                      onClick={() => openTab({ kind: "location", value: loc.location_id, label: loc.name })}
                       className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground mb-2"
+                      title="Bu konumdaki notları panelde aç"
+                      data-testid="note-location-chip"
                     >
                       <MapPin className="w-3 h-3" strokeWidth={1.5} /> {loc.name}
-                    </Link>
+                    </button>
                     <MiniMap lat={loc.lat} lng={loc.lng} height={180} />
                   </div>
                 )}
@@ -1327,6 +1346,7 @@ export default function NoteDetail() {
                   }}
                 />
               ) : (
+                <FilterProvider value={drawerFilter}>
                 <MarkdownView
                   content={note.content}
                   onTaskToggle={
@@ -1353,6 +1373,7 @@ export default function NoteDetail() {
                         }
                   }
                 />
+                </FilterProvider>
               )}
             </div>
             )}
@@ -1361,22 +1382,28 @@ export default function NoteDetail() {
             {(note.tags?.length > 0 || note.people?.length > 0) && (
               <div className="flex flex-wrap items-center gap-1.5 mt-8 pt-4 border-t border-border/40">
                 {note.tags?.map((t) => (
-                  <Link
+                  <button
                     key={t}
-                    to={`/tag/${encodeURIComponent(t)}`}
+                    type="button"
+                    onClick={() => openTab({ kind: "tag", value: t, label: `#${t}` })}
                     className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 hover:bg-sky-500/20 transition-colors"
+                    title="İlişkili notları panelde aç"
+                    data-testid={`note-tag-${t}`}
                   >
                     #{t}
-                  </Link>
+                  </button>
                 ))}
                 {note.people?.map((p) => (
-                  <Link
+                  <button
                     key={p}
-                    to={`/person/${encodeURIComponent(p)}`}
+                    type="button"
+                    onClick={() => openTab({ kind: "person", value: p, label: `@${p}` })}
                     className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                    title="İlişkili notları panelde aç"
+                    data-testid={`note-person-${p}`}
                   >
                     @{p}
-                  </Link>
+                  </button>
                 ))}
               </div>
             )}

@@ -230,3 +230,12 @@ html { transition: background-color 0.2s ease; }
 @media (prefers-reduced-motion: reduce) {
   .area-node, .area-edge { transition: none; animation: none; }
 }
+
+/* Horizontal strips (header drawer tabs) that scroll without a visible bar */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Corner buttons on area circles (edit / notes) */
+.area-btn { cursor: pointer; transition: transform 160ms ease, filter 160ms ease; }
+.area-btn:hover { filter: brightness(1.12); }
+.area-btn:focus-visible circle { stroke: hsl(var(--ring)); stroke-width: 3; }

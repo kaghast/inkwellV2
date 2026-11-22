@@ -1,8 +1,8 @@
 import React, { useMemo } from "react";
-import { Link } from "react-router-dom";
 import { X } from "lucide-react";
 import type { Area } from "@/types";
 import { areaColor, areaMap, areaPath } from "@/lib/areas";
+import { useDrawerTabs } from "@/contexts/DrawerTabsContext";
 
 interface AreaChipsProps {
   areas: Area[];
@@ -13,6 +13,7 @@ interface AreaChipsProps {
 /** Coloured chips showing the full "Ana › Alt" path of each linked area. */
 export function AreaChips({ areas, value, onRemove }: AreaChipsProps) {
   const byId = useMemo(() => areaMap(areas), [areas]);
+  const { openTab } = useDrawerTabs();
   return (
     <>
       {value
@@ -28,9 +29,15 @@ export function AreaChips({ areas, value, onRemove }: AreaChipsProps) {
               title={areaPath(a, byId)}
             >
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
-              <Link to={`/graph?area=${a.area_id}`} className="truncate hover:underline">
+              <button
+                type="button"
+                onClick={() => openTab({ kind: "area", value: a.area_id, label: a.name, color })}
+                className="truncate hover:underline"
+                title={`${areaPath(a, byId)} — ilişkili notları panelde aç`}
+                data-testid={`area-chip-${a.area_id}`}
+              >
                 {areaPath(a, byId)}
-              </Link>
+              </button>
               {a.archived && <span className="text-[9px] uppercase text-muted-foreground">arşiv</span>}
               {onRemove && (
                 <button
