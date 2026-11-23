@@ -1,5 +1,6 @@
 // Gemini provider. Uses the existing @google/genai client from
 // src/lib/embeddings.ts. Requires GEMINI_API_KEY; model via AI_MODEL.
+import { GoogleGenAI } from "@google/genai";
 import { getGenAI } from "../../src/lib/embeddings";
 import type { AiProvider, Extraction, ExtractionContext } from "./types";
 import { AiUnavailableError } from "./types";
@@ -52,28 +53,62 @@ export function parseExtraction(raw: string, ctx: ExtractionContext): Extraction
   };
 }
 
-export const geminiProvider: AiProvider = {
-  id: "gemini",
-  label: "Gemini",
-  isModel: true,
-  available: () => Boolean(process.env.GEMINI_API_KEY),
-  async extract(text, ctx) {
-    const ai = getGenAI();
-    if (!ai) throw new AiUnavailableError("GEMINI_API_KEY is not set");
-    const res: any = await ai.models.generateContent({
-      model: MODEL(),
-      contents: buildExtractionPrompt(text, ctx),
-      config: { responseMimeType: "application/json", temperature: 0.1 },
-    });
-    const out = typeof res?.text === "function" ? res.text() : res?.text;
-    if (!out) throw new Error("Empty model response");
-    return parseExtraction(String(out), ctx);
-  },
-  async embed(text) {
-    const ai = getGenAI();
-    if (!ai || !text.trim()) return null;
-    const response: any = await ai.models.embedContent({ model: EMBED_MODEL(), contents: text.slice(0, 8000) });
-    const e = response?.embedding || response?.embeddings?.[0];
-    return e?.values || null;
-  },
-};
+function textOf(res: any): string {
+  const out = typeof res?.text === "function" ? res.text() : res?.text;
+  return out ? String(out) : "";
+}
+
+/** Gemini provider bound to one client: the server's env key or a user's own key. */
+export function createGeminiProvider(getClient: () => GoogleGenAI | null, model?: string | null): AiProvider {
+  const modelName = () => (model && model.trim()) || MODEL();
+  return {
+    id: "gemini",
+    label: "Gemini",
+    isModel: true,
+    available: () => Boolean(getClient()),
+    async extract(text, ctx) {
+      const ai = getClient();
+      if (!ai) throw new AiUnavailableError("Gemini API key is not set");
+      const res: any = await ai.models.generateContent({
+        model: modelName(),
+        contents: buildExtractionPrompt(text, ctx),
+        config: { responseMimeType: "application/json", temperature: 0.1 },
+      });
+      const out = textOf(res);
+      if (!out) throw new Error("Empty model response");
+      return parseExtraction(out, ctx);
+    },
+    async embed(text) {
+      const ai = getClient();
+      if (!ai || !text.trim()) return null;
+      const response: any = await ai.models.embedContent({ model: EMBED_MODEL(), contents: text.slice(0, 8000) });
+      const e = response?.embedding || response?.embeddings?.[0];
+      return e?.values || null;
+    },
+  };
+}
+
+/** Server-wide provider from GEMINI_API_KEY (optional). */
+export const geminiProvider: AiProvider = createGeminiProvider(() => getGenAI());
+
+/** A provider for a user's own key. */
+export function geminiForKey(apiKey: string, model?: string | null): AiProvider {
+  const client = new GoogleGenAI({ apiKey });
+  return createGeminiProvider(() => client, model);
+}
+
+/**
+ * Cheapest real call that proves the key and model work. Throws with Google's
+ * message on failure (invalid key, unknown model, quota...).
+ */
+export async function pingGemini(apiKey: string, model?: string | null): Promise<void> {
+  const client = new GoogleGenAI({ apiKey });
+  const res: any = await client.models.generateContent({
+    model: (model && model.trim()) || MODEL(),
+    contents: "Reply with the single word: ok",
+    config: { temperature: 0, maxOutputTokens: 16 },
+  });
+  if (!res) throw new Error("Empty model response");
+}
+
+export const DEFAULT_GEMINI_MODEL = () => MODEL();

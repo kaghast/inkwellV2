@@ -149,7 +149,7 @@ export async function processCapture(captureId: string) {
       knownPeople: known.map((k: any) => k.name),
       link: linkCtx,
       file,
-    });
+    }, userId);
     const typeId = types.find((t) => t.key === extraction.type_key)?.type_id || PLAIN_TYPE_ID;
 
     const candidates = await db

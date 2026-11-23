@@ -224,6 +224,10 @@ html { transition: background-color 0.2s ease; }
 }
 .area-node:hover .area-circle { filter: brightness(1.08); }
 .area-node:focus-visible .area-circle { stroke: hsl(var(--ring)); stroke-width: 3.5; }
+/* Corner buttons (edit, note count) appear on hover, selection or keyboard focus */
+.area-btns { opacity: 0; pointer-events: none; transition: opacity 150ms ease; }
+.area-btns[data-revealed="true"], .area-btns:focus-within { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .area-btns { opacity: 1; pointer-events: auto; } }
 @keyframes area-node-in {
   from { opacity: 0; }
 }

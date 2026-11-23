@@ -335,6 +335,7 @@ Tüm not tipleri saf Markdown uyumlu olarak tek bir `content` sütununda saklan�
 - **Ana sayfa (`/`):** Yakalama, gelen kutusu özeti, bugün, son nesneler, bağlantı önerileri, gerçek verilerden "İlk adımlar" listesi. Eski günlük akış `/feed` adresine taşındı.
 - **Arama ve komut paleti:** `Ctrl/⌘+K`, `/`, `g h|i|t|k|s`; `/api/search` başlık, içerik, etiket, kişi, tip ve gelen kutusunda arar; parola kilitli notların yalnızca başlığı aranır.
 - **Şablonlar:** Toplantı (katılımcı Kişi nesneleri + proje), Proje (görev kartları), Araştırma (sorular + makaleler), Günlük — bağlı nesneler oluşturur.
+- **Yapay zeka anahtarı (Ayarlar > Yapay Zeka):** Kullanıcı kendi Google Gemini anahtarını girer; anahtar `ai_settings` tablosunda AES-256-GCM ile şifreli saklanır, tarayıcıya yalnızca son 4 karakteri döner. Yeni anahtar kaydedilirken gerçek bir çağrıyla doğrulanır; doğrulanamayan anahtar etkinleştirilmez. Sıra: kullanıcının anahtarı → sunucunun `GEMINI_API_KEY`'i → kural tabanlı çıkarım.
 - **Parola kilidi:** Eski "şifreleme" bir şifreleme değildir (içerik düz metin saklanır); arayüzde "Parola kilidi" olarak yeniden adlandırıldı.
 - **Testler:** `npm test` (birim), `INKWELL_BASE_URL=… npm run test:api` (çalışan sunucuya karşı uçtan uca).
 

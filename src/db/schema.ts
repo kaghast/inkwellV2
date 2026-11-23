@@ -463,3 +463,18 @@ export const analyticsEvents = pgTable(
   },
   (table) => [index('ae_user_event_idx').on(table.userId, table.event)]
 );
+
+// Per-user AI provider configuration. The API key is stored encrypted
+// (AES-256-GCM, server/lib/secrets.ts) and never returned to the browser.
+export const aiSettings = pgTable('ai_settings', {
+  userId: text('user_id').primaryKey().references(() => users.userId, { onDelete: 'cascade' }),
+  provider: text('provider').default('gemini').notNull(),
+  apiKeyEnc: text('api_key_enc'),
+  keyHint: text('key_hint'),
+  model: text('model'),
+  enabled: boolean('enabled').default(false).notNull(),
+  lastCheckAt: timestamp('last_check_at'),
+  lastCheckOk: boolean('last_check_ok'),
+  lastError: text('last_error'),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});

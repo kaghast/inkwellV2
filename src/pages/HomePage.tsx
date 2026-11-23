@@ -193,7 +193,14 @@ export default function HomePage() {
           {home && (
             <div className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
               <Sparkles className="w-3 h-3" />
-              {home.ai.is_model ? `Yakalamalar ${home.ai.label} ile işleniyor.` : "Yapay zeka anahtarı tanımlı değil; yakalamalar kural tabanlı işleniyor."}
+              {home.ai.is_model ? (
+                `Yakalamalar ${home.ai.label} ile işleniyor.`
+              ) : (
+                <span>
+                  Yakalamalar kural tabanlı işleniyor.{" "}
+                  <Link to="/settings?tab=ai" className="text-primary hover:underline">Yapay zekayı ayarlardan etkinleştir</Link>
+                </span>
+              )}
             </div>
           )}
         </div>

@@ -29,6 +29,7 @@ import {
 } from "./server/services/notesCore";
 import { runMigrations, runOnce } from "./src/db/migrations";
 import { createWorkspaceRouter } from "./server/http/workspaceRoutes";
+import { initSecrets, encryptSecret, decryptSecret } from "./server/lib/secrets";
 import { backfillPersonalWorkspaces, resolveTargetSpace, AccessError } from "./server/services/workspaces";
 import { backfillWikilinkRelations, syncWikilinkRelations } from "./server/services/relations";
 import { configureCapture, recoverCaptures } from "./server/services/capture";
@@ -73,6 +74,7 @@ function resolveJwtSecret(): string {
 }
 
 const JWT_SECRET = resolveJwtSecret();
+initSecrets(JWT_SECRET);
 const ACCESS_TOKEN_MIN = 60 * 24; // 1 day
 const REFRESH_TOKEN_DAYS = 7;
 
@@ -1224,27 +1226,6 @@ function enabledScopes(row: { scopes?: string | null } | undefined): string[] {
   const services = Object.values(GOOGLE_SERVICES).map((sv) => sv.scope);
   const enabled = list.filter((sc) => services.includes(sc));
   return enabled.length > 0 || list.length > 0 ? enabled : [GCAL_READ_SCOPE];
-}
-
-function integrationKey(): Buffer {
-  const material = process.env.INTEGRATION_ENCRYPTION_KEY || `inkwell-integrations:${JWT_SECRET}`;
-  return crypto.createHash("sha256").update(material).digest();
-}
-
-function encryptSecret(plain: string): string {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", integrationKey(), iv);
-  const enc = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return `v1:${iv.toString("base64")}:${tag.toString("base64")}:${enc.toString("base64")}`;
-}
-
-function decryptSecret(payload: string): string {
-  const [v, iv, tag, enc] = payload.split(":");
-  if (v !== "v1" || !iv || !tag || !enc) throw new Error("Unknown secret format");
-  const decipher = crypto.createDecipheriv("aes-256-gcm", integrationKey(), Buffer.from(iv, "base64"));
-  decipher.setAuthTag(Buffer.from(tag, "base64"));
-  return Buffer.concat([decipher.update(Buffer.from(enc, "base64")), decipher.final()]).toString("utf8");
 }
 
 function googleClientConfig() {

@@ -143,39 +143,41 @@ export default function AppMenubar({
         className="fixed top-0 left-0 lg:left-16 right-0 h-14 z-30 bg-background/95 backdrop-blur-md border-b border-border flex items-center justify-between px-3 sm:px-5 select-none"
         data-testid="app-header"
       >
-        {/* Left Area: Mobile Menu Toggle, Universal Capture, Search and open drawer tabs */}
-        <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
+        {/* Left: mobile menu toggle and open drawer tabs */}
+        <div className="flex items-center gap-2 min-w-0 max-w-[40%] md:max-w-none md:flex-1 md:basis-0">
           <Button
             size="icon"
             variant="ghost"
-            className="lg:hidden h-8 w-8 text-muted-foreground hover:text-foreground"
+            className="lg:hidden h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
             onClick={() => setMobileMenuOpen(true)}
             data-testid="mobile-menubar-toggle-btn"
           >
             <Menu className="w-4 h-4" strokeWidth={1.5} />
           </Button>
-          {u && u.user_id && (
-            <>
-              <CaptureBar />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-8 shrink-0 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
-                onClick={() => openPalette("search")}
-                title="Ara ve komutlar (Ctrl/⌘ K)"
-                aria-label="Ara ve komutlar"
-                data-testid="header-search-btn"
-              >
-                <Search className="w-4 h-4" />
-                <kbd className="hidden xl:inline font-mono text-[10px]">Ctrl K</kbd>
-              </Button>
-            </>
-          )}
           <DrawerTabsBar />
         </div>
 
+        {/* Center: universal capture and search */}
+        {u && u.user_id && (
+          <div className="flex items-center justify-center gap-1 flex-1 md:flex-[2] min-w-0 max-w-2xl mx-2" data-testid="header-capture-area">
+            <CaptureBar />
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 shrink-0 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
+              onClick={() => openPalette("search")}
+              title="Ara ve komutlar (Ctrl/⌘ K)"
+              aria-label="Ara ve komutlar"
+              data-testid="header-search-btn"
+            >
+              <Search className="w-4 h-4" />
+              <kbd className="hidden xl:inline font-mono text-[10px]">Ctrl K</kbd>
+            </Button>
+          </div>
+        )}
+
         {/* Right Area: Inkwell Logo + Başlık & Bildirimler & Tema & Kişisel Menü */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        <div className="flex items-center justify-end gap-2 sm:gap-3 shrink-0 md:shrink md:flex-1 md:basis-0 md:min-w-0">
           {/* Inkwell Logo ve Başlık (Header üzerinde sağda) */}
           <Link
             to="/"

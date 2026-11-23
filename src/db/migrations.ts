@@ -135,6 +135,23 @@ const DDL_STEPS: Array<{ id: string; statements: string[] }> = [
       `CREATE INDEX IF NOT EXISTS ae_user_event_idx ON analytics_events(user_id, event)`,
     ],
   },
+  {
+    id: "2026_11_23_006_ai_settings",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS ai_settings (
+        user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+        provider TEXT NOT NULL DEFAULT 'gemini',
+        api_key_enc TEXT,
+        key_hint TEXT,
+        model TEXT,
+        enabled BOOLEAN NOT NULL DEFAULT false,
+        last_check_at TIMESTAMP,
+        last_check_ok BOOLEAN,
+        last_error TEXT,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+    ],
+  },
 ];
 
 function lit(value: string): string {

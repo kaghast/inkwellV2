@@ -5,7 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { toast } from "sonner";
 import {
   Search, Feather, FilePlus2, CheckSquare, Sun, LayoutTemplate, Home, Inbox, FileText, Network, Share2, MapPin,
-  CalendarRange, Calendar, Kanban, Layers, Settings, Boxes, Clock, X, CornerDownLeft,
+  CalendarRange, Calendar, Kanban, Layers, Settings, Boxes, Clock, X, CornerDownLeft, Sparkles,
 } from "lucide-react";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { formatApiError } from "@/lib/api";
@@ -125,6 +125,7 @@ export default function CommandPalette() {
       { id: "g-map", label: "Harita", icon: MapPin, run: go("/map") },
       { id: "g-kanban", label: "Kanban", icon: Kanban, run: go("/kanban") },
       { id: "g-types", label: "Nesne tipleri", icon: Boxes, run: go("/settings?tab=note_types") },
+      { id: "g-ai", label: "Yapay zeka ayarları", icon: Sparkles, run: go("/settings?tab=ai") },
       { id: "g-settings", label: "Ayarlar", icon: Settings, run: go("/settings") },
       ...spaces.filter((s) => !s.archived).map((s) => ({ id: `space-${s.space_id}`, label: `Bölüm: ${s.name}`, icon: Layers, run: go(`/spaces/${s.space_id}`) })),
     ],

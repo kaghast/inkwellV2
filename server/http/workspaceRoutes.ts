@@ -19,6 +19,7 @@ import { today, ensureDailyNote } from "../services/today";
 import { TEMPLATES, applyTemplate } from "../services/templates";
 import { activationSummary, recordActiveDay } from "../services/analytics";
 import { aiStatus } from "../ai";
+import { getAiSettings, saveAiSettings, testAiSettings, deleteAiKey } from "../services/aiSettings";
 import { db, notes } from "../../src/db/index";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { DAILY_TYPE_ID } from "../../src/lib/objectTypes";
@@ -29,7 +30,7 @@ const list = (max = 30, len = 200) => z.array(z.string().trim().min(1).max(len))
 export function createWorkspaceRouter(auth: RequestHandler) {
   const r = express.Router();
   r.use(
-    ["/capture", "/inbox", "/relations", "/relation-types", "/objects", "/spaces", "/workspace", "/search", "/today", "/templates", "/home"],
+    ["/capture", "/inbox", "/relations", "/relation-types", "/objects", "/spaces", "/workspace", "/search", "/today", "/templates", "/home", "/ai/settings"],
     auth
   );
 
@@ -202,6 +203,29 @@ export function createWorkspaceRouter(auth: RequestHandler) {
     })
   );
 
+  // ------------------------------------------------------- AI settings
+  r.get("/ai/settings", handle(async (req) => getAiSettings(uid(req))));
+  r.put(
+    "/ai/settings",
+    rateLimit("ai-settings", 20),
+    handle(async (req) =>
+      saveAiSettings(
+        uid(req),
+        parse(
+          z.object({
+            provider: z.enum(["gemini"]).optional(),
+            api_key: z.string().trim().max(300).optional().nullable(),
+            model: z.string().trim().max(100).regex(/^[\w.\-/]*$/).optional().nullable(),
+            enabled: z.boolean().optional(),
+          }),
+          req.body
+        )
+      )
+    )
+  );
+  r.post("/ai/settings/test", rateLimit("ai-settings", 20), handle(async (req) => testAiSettings(uid(req))));
+  r.delete("/ai/settings", handle(async (req) => deleteAiKey(uid(req))));
+
   // ------------------------------------------------------------------- home
   r.get(
     "/home",
@@ -226,7 +250,7 @@ export function createWorkspaceRouter(auth: RequestHandler) {
           space_id: n.spaceId,
           updated_at: n.updatedAt.toISOString(),
         })),
-        ai: aiStatus(),
+        ai: await aiStatus(userId),
       };
     })
   );

@@ -9,6 +9,9 @@ import { Button } from "@/components/ui/button";
 import api, { formatApiError } from "@/lib/api";
 import { parseTimeSlotBlock, calculateDuration } from "@/lib/timeslot";
 import { INBOX_CHANGED, notifyInboxChanged, objectPath, wsApi, type TodayData } from "@/lib/workspaceApi";
+import CalendarPanel from "@/components/CalendarPanel";
+import PeriodNotesStrip from "@/components/PeriodNotesStrip";
+import type { CalendarCounts } from "@/types";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const localDay = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -42,6 +45,24 @@ export default function TodayPage() {
   const [data, setData] = useState<TodayData | null>(null);
   const [note, setNote] = useState<string>("");
   const [busy, setBusy] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [cal, setCal] = useState(() => ({ year: +date.slice(0, 4), month: +date.slice(5, 7) }));
+  const [counts, setCounts] = useState<CalendarCounts>({});
+
+  // The calendar follows the shown day; its arrows can browse other months.
+  useEffect(() => setCal({ year: +date.slice(0, 4), month: +date.slice(5, 7) }), [date]);
+  const loadCounts = useCallback(() => {
+    api
+      .get<CalendarCounts>("/notes/calendar", { params: { year: cal.year, month: cal.month } })
+      .then((r) => setCounts(r.data || {}))
+      .catch(() => setCounts({}));
+  }, [cal]);
+  useEffect(() => loadCounts(), [loadCounts]);
+  const changeMonth = (delta: number) =>
+    setCal((c) => {
+      const m = c.month + delta;
+      return m > 12 ? { year: c.year + 1, month: 1 } : m < 1 ? { year: c.year - 1, month: 12 } : { year: c.year, month: m };
+    });
 
   const load = useCallback(async () => {
     try {
@@ -176,6 +197,10 @@ export default function TodayPage() {
               </form>
             </Section>
 
+            <Section title="Hafta ve ay">
+              <PeriodNotesStrip date={date} reloadKey={reloadKey} showEmpty />
+            </Section>
+
             <Section title={`Bu günün nesneleri · ${data.objects.length}`}>
               {data.objects.length === 0 ? (
                 <Empty>Bu gün oluşturulan ya da tarihlenen nesne yok.</Empty>
@@ -196,6 +221,22 @@ export default function TodayPage() {
           </div>
 
           <div className="min-w-0 space-y-4">
+            <section className="min-w-0 overflow-hidden rounded-lg border border-border bg-card" data-testid="today-calendar">
+              <CalendarPanel
+                year={cal.year}
+                month={cal.month}
+                counts={counts}
+                selectedDate={date}
+                onSelectDate={(iso) => navigate(iso === todayKey ? "/today" : `/today/${iso}`)}
+                onChangeMonth={changeMonth}
+                onNoteCreated={() => {
+                  load();
+                  loadCounts();
+                  setReloadKey((k) => k + 1);
+                }}
+              />
+            </section>
+
             <Section title="Zaman çizelgesi">
               {slots.length === 0 ? (
                 <Empty>Bu güne ait zaman bloğu yok. Notlara ```timeslot bloğu eklediğinde burada sıralanır.</Empty>

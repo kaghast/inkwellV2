@@ -740,6 +740,7 @@ export default function AreaMapView() {
                       layer={layer}
                       bubble={b}
                       selected={selectedId === b.id}
+                      revealed={hoveredId === b.id || selectedId === b.id}
                       dimmed={Boolean(hoveredId && hoveredId !== b.id && b.role === "related")}
                       onActivate={() => onBubbleActivate(b)}
                       onEdit={() => b.areaId && setSelectedId(b.areaId)}
@@ -860,6 +861,7 @@ function BubbleView({
   layer,
   bubble: b,
   selected,
+  revealed,
   dimmed,
   onActivate,
   onEdit,
@@ -870,6 +872,8 @@ function BubbleView({
   layer: "body" | "buttons";
   bubble: Bubble;
   selected: boolean;
+  /** Corner buttons show only while the circle is hovered or selected (or focused). */
+  revealed: boolean;
   dimmed: boolean;
   onActivate: () => void;
   onEdit: () => void;
@@ -983,7 +987,14 @@ function BubbleView({
   );
 
   return (
-    <g data-node={`${b.id}:buttons`} className="area-node" style={nodeStyle}>
+    <g
+      data-node={`${b.id}:buttons`}
+      className="area-node"
+      style={nodeStyle}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
+    >
+      <g className="area-btns" data-revealed={revealed ? "true" : "false"}>
       {/* edit (top-right) */}
       <g
         role="button"
@@ -1022,6 +1033,7 @@ function BubbleView({
         <text textAnchor="middle" dy="0.35em" fontSize={btn * (b.count > 99 ? 0.7 : 0.95)} fontWeight={700} fill="hsl(var(--background))">
           {b.count > 99 ? "99+" : b.count}
         </text>
+      </g>
       </g>
     </g>
   );

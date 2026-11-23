@@ -10,6 +10,8 @@ interface Props {
   /** Selected day (YYYY-MM-DD); the strip shows that day's week and month notes. */
   date: string;
   reloadKey?: number;
+  /** Keep both groups visible with an empty message (Today page); default hides empty groups. */
+  showEmpty?: boolean;
 }
 
 /** Plain-text preview of a note's markdown, without blocks, comments or markup. */
@@ -54,8 +56,8 @@ function MiniCard({ note }: { note: Note }) {
   );
 }
 
-function Group({ period, date, notes }: { period: NotePeriod; date: string; notes: Note[] }) {
-  if (notes.length === 0) return null;
+function Group({ period, date, notes, showEmpty = false }: { period: NotePeriod; date: string; notes: Note[]; showEmpty?: boolean }) {
+  if (notes.length === 0 && !showEmpty) return null;
   const Icon = period === "week" ? CalendarRange : CalendarDays;
   return (
     <section data-testid={`period-strip-${period}`}>
@@ -64,16 +66,22 @@ function Group({ period, date, notes }: { period: NotePeriod; date: string; note
         <span>{period === "week" ? "Haftanın Notları" : "Ayın Notları"}</span>
         <span className="normal-case tracking-normal opacity-70">· {periodLabel(date, period)}</span>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {notes.map((n) => (
-          <MiniCard key={n.note_id} note={n} />
-        ))}
-      </div>
+      {notes.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {period === "week" ? "Bu hafta için haftalık not yok." : "Bu ay için aylık not yok."} Takvimde hafta numarasına ya da ay adına tıklayıp oradan ekleyebilirsin.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {notes.map((n) => (
+            <MiniCard key={n.note_id} note={n} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
 
-export default function PeriodNotesStrip({ date, reloadKey = 0 }: Props) {
+export default function PeriodNotesStrip({ date, reloadKey = 0, showEmpty = false }: Props) {
   const [week, setWeek] = useState<Note[]>([]);
   const [month, setMonth] = useState<Note[]>([]);
   const weekKey = periodStart(date, "week");
@@ -96,12 +104,12 @@ export default function PeriodNotesStrip({ date, reloadKey = 0 }: Props) {
     };
   }, [weekKey, monthKey, reloadKey]);
 
-  if (week.length === 0 && month.length === 0) return null;
+  if (week.length === 0 && month.length === 0 && !showEmpty) return null;
 
   return (
-    <div className="mb-5 space-y-3" data-testid="period-notes-strip">
-      <Group period="week" date={date} notes={week} />
-      <Group period="month" date={date} notes={month} />
+    <div className={`${showEmpty ? "" : "mb-5 "}space-y-3`} data-testid="period-notes-strip">
+      <Group period="week" date={date} notes={week} showEmpty={showEmpty} />
+      <Group period="month" date={date} notes={month} showEmpty={showEmpty} />
     </div>
   );
 }
