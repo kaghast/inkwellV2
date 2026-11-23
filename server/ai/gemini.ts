@@ -6,7 +6,7 @@ import type { AiProvider, Extraction, ExtractionContext } from "./types";
 import { AiUnavailableError } from "./types";
 
 const MODEL = () => process.env.AI_MODEL || "gemini-2.5-flash";
-const EMBED_MODEL = () => process.env.AI_EMBED_MODEL || "text-embedding-004";
+const EMBED_MODEL = () => process.env.AI_EMBED_MODEL || "gemini-embedding-001";
 
 export function buildExtractionPrompt(text: string, ctx: ExtractionContext): string {
   const types = ctx.types.map((t) => `- ${t.key}: ${t.name}${t.description ? ` (${t.description})` : ""}`).join("\n");
@@ -78,10 +78,32 @@ export function createGeminiProvider(getClient: () => GoogleGenAI | null, model?
       if (!out) throw new Error("Empty model response");
       return parseExtraction(out, ctx);
     },
+    async generate({ system, prompt, maxTokens, json }) {
+      const ai = getClient();
+      if (!ai) throw new AiUnavailableError("Gemini API key is not set");
+      const res: any = await ai.models.generateContent({
+        model: modelName(),
+        contents: prompt,
+        config: {
+          systemInstruction: system,
+          temperature: 0.2,
+          maxOutputTokens: maxTokens || 2048,
+          ...(json ? { responseMimeType: "application/json" } : {}),
+        },
+      });
+      const out = textOf(res);
+      if (!out) throw new Error("Empty model response");
+      return out;
+    },
+    embedModel: EMBED_MODEL(),
     async embed(text) {
       const ai = getClient();
       if (!ai || !text.trim()) return null;
-      const response: any = await ai.models.embedContent({ model: EMBED_MODEL(), contents: text.slice(0, 8000) });
+      const response: any = await ai.models.embedContent({
+        model: EMBED_MODEL(),
+        contents: text.slice(0, 8000),
+        config: { outputDimensionality: 768 },
+      });
       const e = response?.embedding || response?.embeddings?.[0];
       return e?.values || null;
     },

@@ -24,6 +24,7 @@ import HomePage from "@/pages/HomePage";
 import InboxPage from "@/pages/InboxPage";
 import TodayPage from "@/pages/TodayPage";
 import SpacesPage from "@/pages/SpacesPage";
+import AskPage from "@/pages/AskPage";
 import CommandPalette from "@/components/CommandPalette";
 import TemplateDialog from "@/components/TemplateDialog";
 import { WorkspaceProvider } from "@/contexts/WorkspaceContext";
@@ -41,6 +42,7 @@ function AppRoutes() {
       <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
       <Route path="/today" element={<ProtectedRoute><TodayPage /></ProtectedRoute>} />
       <Route path="/today/:date" element={<ProtectedRoute><TodayPage /></ProtectedRoute>} />
+      <Route path="/ask" element={<ProtectedRoute><AskPage /></ProtectedRoute>} />
       <Route path="/spaces" element={<ProtectedRoute><SpacesPage /></ProtectedRoute>} />
       <Route path="/spaces/:spaceId" element={<ProtectedRoute><SpacesPage /></ProtectedRoute>} />
       <Route path="/feed" element={<ProtectedRoute><Dashboard mode="day" /></ProtectedRoute>} />

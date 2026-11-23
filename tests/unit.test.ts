@@ -158,3 +158,90 @@ describe("today tasks", () => {
     assert.match(toggleTaskInMarkdown(md, tasks[1].task_index, true), /- \[x\] open two$/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2
+// ---------------------------------------------------------------------------
+import { rankChunks, chunkDoc, checkCitations, tokenize, type RetrievalDoc } from "../server/services/retrievalRank";
+import { findUnexpectedPairs } from "../server/services/connectionsRank";
+import { buildAskPrompt } from "../server/services/askPrompt";
+
+const rdoc = (id: string, title: string, content: string, extra: Partial<RetrievalDoc> = {}): RetrievalDoc => ({
+  id, title, content, type_name: "Düz Metin", date: "2026-11-01", tags: [], ...extra,
+});
+
+describe("retrieval ranking", () => {
+  test("tokenize drops stop words and folds Turkish letters", () => {
+    assert.deepEqual(tokenize("Proje Atlas için ne KARARLAR aldık?"), ["proje", "atlas", "kararlar", "aldik"]);
+  });
+  test("chunks split on paragraphs and skip code", () => {
+    const c = chunkDoc(rdoc("1", "t", "a".repeat(500) + "\n\n" + "b".repeat(500) + "\n\n```\nsecret\n```"), 700);
+    assert.equal(c.length, 2);
+    assert.ok(!c.some((x) => x.text.includes("secret")));
+  });
+  test("BM25 ranks the matching note first, matches Turkish suffixes by prefix", () => {
+    const out = rankChunks("atlas toplantı kararları", [
+      rdoc("a", "Alışveriş", "Süt, ekmek"),
+      rdoc("b", "Atlas toplantısı", "Kararlar: bütçe onaylandı."),
+      rdoc("c", "Atlas", "Proje kapsamı"),
+    ]);
+    assert.equal(out[0].note_id, "b");
+    assert.ok(!out.some((r) => r.note_id === "a"));
+  });
+  test("semantic-only matches need real similarity; relation boost helps neighbours", () => {
+    const docs = [rdoc("a", "Kahve", "demleme", { vector: [1, 0] }), rdoc("b", "Çay", "bitki", { vector: [0.9, 0.1] }), rdoc("c", "Uzay", "roket", { vector: [0, 1] })];
+    const out = rankChunks("içecek", docs, { queryVector: [1, 0] });
+    assert.deepEqual(out.map((r) => r.note_id), ["a", "b"]);
+    const boosted = rankChunks("demleme", [rdoc("a", "Kahve", "demleme yöntemi"), rdoc("b", "Fincan", "demleme sonrası")], {
+      neighbors: new Map([["a", new Set(["b"])]]),
+    });
+    assert.ok(boosted.find((r) => r.note_id === "b")!.signals.relation > 0);
+  });
+  test("excluded ids are never returned", () => {
+    const out = rankChunks("atlas", [rdoc("a", "Atlas", "x"), rdoc("b", "Atlas 2", "y")], { excludeIds: new Set(["a"]) });
+    assert.deepEqual(out.map((r) => r.note_id), ["b"]);
+  });
+});
+
+describe("citations", () => {
+  test("invalid source numbers are removed and reported", () => {
+    const c = checkCitations("Bütçe onaylandı [1]. Tarih 3 Aralık [4]. İkisi de doğru [1, 9].", 2);
+    assert.equal(c.answer, "Bütçe onaylandı [1]. Tarih 3 Aralık. İkisi de doğru [1].");
+    assert.deepEqual(c.used, [1]);
+    assert.deepEqual(c.removed.sort(), [4, 9]);
+    assert.equal(c.uncitedSentences, 0);
+  });
+  test("uncited factual sentences are counted; 'not found' is not", () => {
+    assert.equal(checkCitations("Toplantı Salı günü yapıldı ve bütçe onaylandı.", 3).uncitedSentences, 1);
+    assert.equal(checkCitations("Notlarında bununla ilgili bir bilgi bulamadım.", 3).uncitedSentences, 0);
+  });
+  test("ask prompt numbers sources and marks them as data", () => {
+    const p = buildAskPrompt("Ne oldu?", [{ title: "A", type_name: "Not", date: "2026-11-01T10:00", text: "metin\nikinci" }]);
+    assert.match(p, /^Sources:\n\n\[1\] A \(Not, 2026-11-01\)\nmetin ikinci\n\nQuestion: Ne oldu\?$/);
+  });
+});
+
+describe("unexpected connection candidates", () => {
+  const long = (s: string) => `${s} `.repeat(8);
+  test("similar notes that are already within two hops are skipped", () => {
+    const docs = [
+      rdoc("a", "Mantar yetiştirme", long("miselyum substrat nem sıcaklık")),
+      rdoc("b", "Ekşi maya", long("miselyum substrat fermantasyon nem")),
+      rdoc("c", "Bisiklet", long("zincir vites lastik pedal")),
+      rdoc("d", "Kamp", long("çadır uyku tulumu ocak fener")),
+    ];
+    const free = findUnexpectedPairs(docs, new Map());
+    assert.deepEqual(free.map((p) => [p.a, p.b]), [["a", "b"]]);
+    assert.equal(free[0].basis, "terms");
+    const linked = findUnexpectedPairs(docs, new Map([["a", new Set(["x"])], ["x", new Set(["a", "b"])], ["b", new Set(["x"])]]));
+    assert.equal(linked.length, 0);
+  });
+});
+
+describe("citations after punctuation", () => {
+  test("a trailing [n] after the period belongs to that sentence", () => {
+    const c = checkCitations("Bütçe 40.000 TL olarak onaylandı. [1] Teslim Mart sonu.[2]", 2);
+    assert.equal(c.answer, "Bütçe 40.000 TL olarak onaylandı [1]. Teslim Mart sonu [2].");
+    assert.equal(c.uncitedSentences, 0);
+  });
+});

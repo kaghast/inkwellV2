@@ -2,6 +2,7 @@
 // no AI key and the pipeline is testable. It only reports what is literally in
 // the text (or in fetched link metadata); it never guesses facts.
 import type { AiProvider, Extraction, ExtractionContext } from "./types";
+import { AiUnavailableError } from "./types";
 
 const TAG_RE = /(?<!\S)#([\p{L}\p{N}_-]+)/gu;
 const MENTION_RE = /(?<!\S)@([\p{L}\p{N}_-]+)/gu;
@@ -184,6 +185,9 @@ export const heuristicProvider: AiProvider = {
   isModel: false,
   available: () => true,
   extract: async (text, ctx) => heuristicExtract(text, ctx),
+  generate: async () => {
+    throw new AiUnavailableError("No language model configured");
+  },
   // Hash vectors carry no meaning, so the heuristic provider offers no embeddings.
   embed: async () => null,
 };

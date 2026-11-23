@@ -15,7 +15,7 @@ interface AiSettingsData {
   last_check_at: string | null;
   last_check_ok: boolean | null;
   last_error: string | null;
-  providers: Array<{ id: string; name: string; key_url: string }>;
+  providers: Array<{ id: string; name: string; key_url: string; default_model: string; semantic: boolean }>;
 }
 
 /**
@@ -27,11 +27,13 @@ export default function AiSettings() {
   const [data, setData] = useState<AiSettingsData | null>(null);
   const [key, setKey] = useState("");
   const [model, setModel] = useState("");
+  const [providerId, setProviderId] = useState("gemini");
   const [busy, setBusy] = useState<"save" | "test" | "toggle" | "delete" | null>(null);
 
   const apply = (d: AiSettingsData) => {
     setData(d);
     setModel(d.model || "");
+    setProviderId(d.provider);
   };
 
   useEffect(() => {
@@ -82,7 +84,8 @@ export default function AiSettings() {
   }
 
   if (!data) return <div className="text-sm text-muted-foreground">Yükleniyor…</div>;
-  const provider = data.providers.find((p) => p.id === data.provider) || data.providers[0];
+  const provider = data.providers.find((p) => p.id === providerId) || data.providers[0];
+  const switching = providerId !== data.provider && data.has_key;
 
   return (
     <div className="space-y-5 max-w-2xl" data-testid="ai-settings">
@@ -91,7 +94,7 @@ export default function AiSettings() {
           <Sparkles className="w-5 h-5 text-primary" /> Yapay Zeka
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Yakaladıklarını tip, başlık, özet, etiket ve görevlerle işlemek için kendi API anahtarını kullan. Anahtar sunucuda şifreli saklanır ve bir daha
+          Yakalamaları işlemek, Ask Inkwell ve yapay zeka eylemleri için kendi API anahtarını kullan. Anahtar sunucuda şifreli saklanır ve bir daha
           gösterilmez. Anahtar yoksa yakalamalar kural tabanlı işlenir.
         </p>
       </div>
@@ -99,9 +102,26 @@ export default function AiSettings() {
       <div className="rounded-lg border border-border bg-card p-4 space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold">{provider.name}</div>
-            <div className="text-xs text-muted-foreground">
-              {data.has_key ? <>Kayıtlı anahtar: ••••{data.key_hint}</> : "Henüz anahtar girilmedi"}
+            <select
+              value={providerId}
+              onChange={(e) => {
+                setProviderId(e.target.value);
+                setModel(e.target.value === data.provider ? data.model || "" : "");
+              }}
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm font-semibold"
+              aria-label="Yapay zeka sağlayıcısı"
+              data-testid="ai-provider-select"
+            >
+              {data.providers.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {switching
+                ? "Sağlayıcıyı değiştirmek için bu sağlayıcının anahtarını gir."
+                : data.has_key
+                  ? <>Kayıtlı anahtar: ••••{data.key_hint}</>
+                  : "Henüz anahtar girilmedi"}
             </div>
           </div>
           <label className="flex items-center gap-2 text-sm">
@@ -137,21 +157,21 @@ export default function AiSettings() {
                 spellCheck={false}
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
-                placeholder="AIza…"
+                placeholder={provider.id === "anthropic" ? "sk-ant-…" : "AIza…"}
                 className="pl-8 font-mono"
                 data-testid="ai-key-input"
               />
             </div>
             <a href={provider.key_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-              Google AI Studio'dan ücretsiz anahtar al <ExternalLink className="w-3 h-3" />
+              {provider.id === "anthropic" ? "Anthropic Console'dan anahtar al" : "Google AI Studio'dan ücretsiz anahtar al"} <ExternalLink className="w-3 h-3" />
             </a>
           </div>
           <div className="space-y-1">
             <label htmlFor="ai-model" className="text-xs font-medium">Model (isteğe bağlı)</label>
-            <Input id="ai-model" value={model} onChange={(e) => setModel(e.target.value)} placeholder={data.default_model} className="font-mono" />
+            <Input id="ai-model" value={model} onChange={(e) => setModel(e.target.value)} placeholder={provider.default_model} className="font-mono" />
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" size="sm" disabled={busy !== null || (!key.trim() && model === (data.model || ""))} data-testid="ai-save">
+            <Button type="submit" size="sm" disabled={busy !== null || (!key.trim() && (switching || model === (data.model || "")))} data-testid="ai-save">
               {busy === "save" && <Loader2 className="w-4 h-4 mr-1 animate-spin" />} {key.trim() ? "Kaydet ve doğrula" : "Kaydet"}
             </Button>
             {data.has_key && (
@@ -179,7 +199,8 @@ export default function AiSettings() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Şimdilik Google Gemini destekleniyor. Not içerikleri yalnızca bir şeyi yakaladığında ve işlenirken Google'a gönderilir; parola kilitli notlar gönderilmez.
+        Not içerikleri yalnızca sen yakaladığında, Ask Inkwell'e sorduğunda ya da bir yapay zeka eylemi çalıştırdığında seçtiğin sağlayıcıya gönderilir; parola kilitli
+        notlar hiç gönderilmez. Claude'un embedding servisi olmadığı için anlamsal arama yalnızca Gemini ile çalışır; Claude ile tam metin ve ilişki araması kullanılır.
       </p>
     </div>
   );

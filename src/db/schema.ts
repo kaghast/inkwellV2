@@ -157,6 +157,8 @@ export const notes = pgTable(
     // 768-dimensional text embedding vector (text-embedding-004 / Gemini embedding)
     embedding: vector('embedding', { dimensions: 768 }),
     aiSummary: text('ai_summary'),
+    // Which model produced `embedding` (e.g. "gemini:gemini-embedding-001"); NULL = legacy hash vector
+    embeddingModel: text('embedding_model'),
     // Object model (Phase 1). Nullable for rows written by legacy paths; the
     // boot backfill attaches them to the owner's personal workspace/space.
     workspaceId: text('workspace_id'),

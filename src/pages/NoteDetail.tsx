@@ -1,3 +1,4 @@
+import NoteAiPanel from "@/components/NoteAiPanel";
 import ObjectRelationsPanel from "@/components/ObjectRelationsPanel";
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
@@ -1436,6 +1437,17 @@ export default function NoteDetail() {
             </div>
 
             {/* Typed relations, backlinks and Space (Phase 1 object model) */}
+            <NoteAiPanel
+              key={`ai-${note.note_id}`}
+              noteId={note.note_id}
+              locked={Boolean(note.is_encrypted)}
+              archived={Boolean(note.archived)}
+              onAppended={(newContent) => {
+                setNote({ ...note, content: newContent });
+                setContent(newContent);
+              }}
+            />
+
             <ObjectRelationsPanel
               key={note.note_id}
               noteId={note.note_id}

@@ -45,6 +45,26 @@ Known limits after Phase 1 (by design, documented in the PR):
 
 ## Phase 2 — AI pipeline, Ask Inkwell, Graph 2.0
 
+### Phase 2a status (shipped)
+
+- **Providers:** Gemini and Anthropic Claude. Anthropic uses the official `@anthropic-ai/sdk`, with server-side refusal fallback enabled. Users pick the provider and key in Settings > Yapay Zeka; keys are encrypted, verified with a real call, and the user's key takes precedence over the server key. OpenAI is not done.
+- **Embeddings:** Generated in a background job after every save (no AI call on the save path). Each vector stores its model in `notes.embedding_model`; legacy hash vectors (model NULL) are never compared. Reindexing is automatic when a provider is enabled, or via `POST /api/ai/embeddings/reindex`. Claude has no embeddings, so semantic search runs only with Gemini.
+- **Hybrid retrieval:** BM25 over ~700-character chunks, plus note-level cosine similarity, plus a boost from relation neighbours. Owner, filter (type, space, tag, date) and password-locked exclusion are applied in SQL; ranking runs in Node.
+- **Ask Inkwell (`/ask`):** Answers use numbered sources. `[n]` citations are checked against the retrieved set: invalid numbers are removed, and uncited sentences are counted and flagged. Without a model the page lists the sources only, and it says "bulamadım" when nothing matches.
+- **AI actions on the note page:** All 15 listed actions. Results are suggestions; "Nota ekle" appends them as a new version. "İlgili notlar" works without a model.
+- **Graph 2.0 (`/network`):** Typed relation edges (amber, labelled on hover) and filters for object type, relation type, date, Bölüm and person. The inspector shows typed relations, "İlgili notları bul" and Ask. "Beklenmedik bağlantılar" finds pairs that are similar (by embeddings, otherwise TF-IDF) but more than two hops apart; a pair is shown only when the model explains it with `[1]`/`[2]` passages, and "NONE" or uncited explanations are dropped.
+- **Tests:** A deterministic mock provider (`AI_PROVIDER=mock`, refused when `NODE_ENV=production`) lets the end-to-end tests cover the model paths. Live Gemini and Claude calls were not exercised because no real key was available; key validation was checked against Google's API with an invalid key.
+
+Remaining in Phase 2:
+- OpenAI provider
+- `vector` column with an HNSW index on Postgres, and `tsvector` full text in SQL (ranking is still in Node)
+- `ai_runs` token accounting
+- Vision/OCR and file text extraction
+- Daily AI review
+- 3D graph
+
+### Original Phase 2 plan
+
 1. Providers: OpenAI and Anthropic implementations of `AiProvider` (REST via `fetch`, no SDKs), per-task model config, timeouts, token accounting into `ai_runs`.
 2. Move embedding generation off the save path into a job; real `vector(768)` column + HNSW index on Postgres.
 3. Chunking (`object_chunks`) and hybrid retrieval: Postgres full text (`tsvector`, `simple` config for Turkish), vector similarity, metadata filters, relation/backlink expansion, permission filter **in SQL**.

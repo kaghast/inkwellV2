@@ -89,6 +89,7 @@ export default function CommandPalette() {
   const actions: Item[] = useMemo(
     () => [
       { id: "capture", label: "Yakala", hint: "C", icon: Feather, keywords: "capture not al düşünce", run: () => { closePalette(); setTimeout(focusCapture, 50); } },
+      { id: "ask", label: "Ask Inkwell", hint: "notlarına sor", icon: Sparkles, keywords: "ask soru sor yapay zeka ai", run: go("/ask") },
       { id: "new", label: "Yeni not", icon: FilePlus2, keywords: "create note oluştur", run: go("/new") },
       { id: "task", label: "Hızlı görev", icon: CheckSquare, keywords: "task görev kart todo", run: () => { setMode("task"); setQ(""); } },
       {
@@ -242,6 +243,13 @@ export default function CommandPalette() {
                     <div className="px-3 py-3 text-sm text-muted-foreground">“{query}” için sonuç yok.</div>
                   )}
                   {loading && !results && <div className="px-3 py-3 text-sm text-muted-foreground">Aranıyor…</div>}
+                  {query.length >= 3 && mode !== "actions" && !actionsOnly && (
+                    <Command.Group heading="Yapay zeka" className={groupCls}>
+                      <Command.Item value="ask-inkwell" onSelect={() => { pushRecent(query); closePalette(); navigate(`/ask?q=${encodeURIComponent(query)}`); }} className={itemCls} data-testid="palette-ask">
+                        <Sparkles className="w-4 h-4 text-primary" /> <span className="truncate">Ask Inkwell'e sor: “{query}”</span>
+                      </Command.Item>
+                    </Command.Group>
+                  )}
                   {mode !== "search" && shownActions.length > 0 && (
                     <Command.Group heading="Eylemler" className={groupCls}>
                       {shownActions.map((a) => (

@@ -4,10 +4,19 @@ import { eq } from "drizzle-orm";
 import { db, aiSettings } from "../../src/db/index";
 import { encryptSecret, decryptSecret } from "../lib/secrets";
 import { geminiForKey, pingGemini, DEFAULT_GEMINI_MODEL } from "../ai/gemini";
+import { anthropicForKey, pingAnthropic, DEFAULT_ANTHROPIC_MODEL } from "../ai/anthropic";
 import type { AiProvider } from "../ai/types";
 import { AccessError } from "./workspaces";
 
-export const AI_PROVIDERS = [{ id: "gemini", name: "Google Gemini", key_url: "https://aistudio.google.com/apikey" }] as const;
+export const AI_PROVIDERS = [
+  { id: "gemini", name: "Google Gemini", key_url: "https://aistudio.google.com/apikey", default_model: DEFAULT_GEMINI_MODEL(), semantic: true },
+  { id: "anthropic", name: "Anthropic Claude", key_url: "https://console.anthropic.com/settings/keys", default_model: DEFAULT_ANTHROPIC_MODEL, semantic: false },
+] as const;
+type ProviderId = (typeof AI_PROVIDERS)[number]["id"];
+
+function ping(provider: string, apiKey: string, model: string | null) {
+  return provider === "anthropic" ? pingAnthropic(apiKey, model) : pingGemini(apiKey, model);
+}
 
 type Row = typeof aiSettings.$inferSelect;
 
@@ -22,7 +31,7 @@ export function serializeAiSettings(r: Row | null) {
     has_key: Boolean(r?.apiKeyEnc),
     key_hint: r?.keyHint || null,
     model: r?.model || null,
-    default_model: DEFAULT_GEMINI_MODEL(),
+    default_model: AI_PROVIDERS.find((p) => p.id === (r?.provider || "gemini"))?.default_model || DEFAULT_GEMINI_MODEL(),
     enabled: Boolean(r?.enabled && r?.apiKeyEnc),
     last_check_at: r?.lastCheckAt ? r.lastCheckAt.toISOString() : null,
     last_check_ok: r?.lastCheckOk ?? null,
@@ -38,7 +47,10 @@ export async function getAiSettings(userId: string) {
 /** Google's errors are long JSON blobs; keep the useful sentence. */
 export function friendlyAiError(e: unknown): string {
   const msg = String((e as any)?.message || e || "");
-  if (/API key not valid|API_KEY_INVALID/i.test(msg)) return "API anahtarı geçersiz. Google AI Studio'dan kopyaladığın anahtarı kontrol et.";
+  const status = Number((e as any)?.status);
+  if (/API key not valid|API_KEY_INVALID|invalid x-api-key|authentication_error/i.test(msg) || status === 401)
+    return "API anahtarı geçersiz. Sağlayıcının panelinden kopyaladığın anahtarı kontrol et.";
+  if (/credit balance|billing/i.test(msg)) return "Sağlayıcı hesabında kredi ya da faturalandırma sorunu var.";
   if (/not found|is not supported|NOT_FOUND/i.test(msg)) return "Model bulunamadı. Model adını kontrol et ya da boş bırak.";
   if (/quota|RESOURCE_EXHAUSTED|429/i.test(msg)) return "Kota aşıldı. Biraz sonra tekrar dene ya da Google AI Studio'da kotanı kontrol et.";
   if (/PERMISSION_DENIED|403/i.test(msg)) return "Bu anahtarın Gemini API'ye erişim izni yok.";
@@ -46,9 +58,9 @@ export function friendlyAiError(e: unknown): string {
   return msg.replace(/\s+/g, " ").slice(0, 240) || "Bilinmeyen hata";
 }
 
-async function check(userId: string, apiKey: string, model: string | null) {
+async function check(userId: string, provider: string, apiKey: string, model: string | null) {
   try {
-    await pingGemini(apiKey, model);
+    await ping(provider, apiKey, model);
     await db.update(aiSettings).set({ lastCheckAt: new Date(), lastCheckOk: true, lastError: null }).where(eq(aiSettings.userId, userId));
     return { ok: true as const };
   } catch (e) {
@@ -70,7 +82,10 @@ export async function saveAiSettings(
   const current = await row(userId);
   const newKey = typeof input.api_key === "string" ? input.api_key.trim() : "";
   const model = input.model === undefined ? current?.model ?? null : (input.model || "").trim() || null;
-  const values: Partial<Row> = { provider: input.provider || current?.provider || "gemini", model, updatedAt: new Date() };
+  const provider = (input.provider || current?.provider || "gemini") as ProviderId;
+  const providerChanged = Boolean(current && current.provider !== provider);
+  if (providerChanged && !newKey) throw new AccessError(400, "Sağlayıcıyı değiştirirken o sağlayıcının API anahtarını da gir");
+  const values: Partial<Row> = { provider, model: providerChanged && input.model === undefined ? null : model, updatedAt: new Date() };
   if (newKey) {
     values.apiKeyEnc = encryptSecret(newKey);
     values.keyHint = newKey.slice(-4);
@@ -86,7 +101,7 @@ export async function saveAiSettings(
   let enabled = input.enabled ?? (keyChanged ? true : saved.enabled);
   let testError: string | null = null;
   if (saved.apiKeyEnc && (keyChanged || modelChanged || (enabled && !saved.enabled))) {
-    const res = await check(userId, decryptSecret(saved.apiKeyEnc), model);
+    const res = await check(userId, saved.provider, decryptSecret(saved.apiKeyEnc), saved.model);
     if (!res.ok) {
       testError = res.error;
       enabled = false;
@@ -100,7 +115,7 @@ export async function saveAiSettings(
 export async function testAiSettings(userId: string) {
   const r = await row(userId);
   if (!r?.apiKeyEnc) throw new AccessError(400, "Kayıtlı bir API anahtarı yok");
-  const res = await check(userId, decryptSecret(r.apiKeyEnc), r.model);
+  const res = await check(userId, r.provider, decryptSecret(r.apiKeyEnc), r.model);
   return { ...res, settings: await getAiSettings(userId) };
 }
 
@@ -114,7 +129,8 @@ export async function userAiProvider(userId: string): Promise<AiProvider | null>
   const r = await row(userId);
   if (!r?.enabled || !r.apiKeyEnc) return null;
   try {
-    return geminiForKey(decryptSecret(r.apiKeyEnc), r.model);
+    const key = decryptSecret(r.apiKeyEnc);
+    return r.provider === "anthropic" ? anthropicForKey(key, r.model) : geminiForKey(key, r.model);
   } catch (e) {
     console.warn("[AI] could not load user key", (e as Error).message);
     return null;

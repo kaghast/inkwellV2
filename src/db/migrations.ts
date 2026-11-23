@@ -136,6 +136,10 @@ const DDL_STEPS: Array<{ id: string; statements: string[] }> = [
     ],
   },
   {
+    id: "2026_11_23_007_embedding_model",
+    statements: [`ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding_model TEXT`],
+  },
+  {
     id: "2026_11_23_006_ai_settings",
     statements: [
       `CREATE TABLE IF NOT EXISTS ai_settings (

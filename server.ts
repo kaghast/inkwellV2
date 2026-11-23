@@ -34,6 +34,7 @@ import { backfillPersonalWorkspaces, resolveTargetSpace, AccessError } from "./s
 import { backfillWikilinkRelations, syncWikilinkRelations } from "./server/services/relations";
 import { configureCapture, recoverCaptures } from "./server/services/capture";
 import { recordEvent } from "./server/services/analytics";
+import { scheduleEmbedding } from "./server/services/embeddings";
 import { SYSTEM_OBJECT_TYPES, isSystemTypeId } from "./src/lib/objectTypes";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -2605,7 +2606,6 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
   const notePeriod = normalizePeriod(req.body?.period);
   const finalDate = dateForPeriod(normalizeDateToIso(date), notePeriod);
   const finalSlug = generateSlugForNote(noteTitle, finalDate, noteId, slug);
-  const embedding = await generateTextEmbedding(`${noteTitle}\n${noteContent}`);
 
   try {
     const effectiveNoteTypeId = (note_type_id && note_type_id !== "type_plain" && note_type_id !== "default") ? note_type_id : null;
@@ -2643,9 +2643,6 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       if (e instanceof AccessError) return res.status(e.status).json({ detail: e.message });
       throw e;
     }
-    if (embedding) {
-      values.embedding = embedding;
-    }
     if (created_at) {
       const parsed = new Date(created_at);
       if (!isNaN(parsed.getTime())) values.createdAt = parsed;
@@ -2657,6 +2654,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
     const inserted = (await db.select().from(notes).where(eq(notes.noteId, noteId)).limit(1))[0];
     await saveNoteVersion(userId, noteId, inserted, "Not oluşturuldu (v1)");
     await syncWikilinkRelations(userId, noteId);
+    scheduleEmbedding(userId, noteId);
     await recordEvent(userId, "first_object", { via: "editor" }, { once: true });
 
     res.json({
@@ -3102,7 +3100,6 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     await ensureTags(userId, tagsArr);
     await ensurePeople(userId, peopleArr);
 
-    const embedding = await generateTextEmbedding(`${noteTitle}\n${noteContent}`);
 
     const effectiveNoteTypeId = note_type_id !== undefined
       ? (note_type_id && note_type_id !== "type_plain" && note_type_id !== "default" ? note_type_id : null)
@@ -3155,9 +3152,6 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     if (password_hash !== undefined) {
       updateData.passwordHash = password_hash;
     }
-    if (embedding) {
-      updateData.embedding = embedding;
-    }
     if (created_at) {
       const parsed = new Date(created_at);
       if (!isNaN(parsed.getTime())) updateData.createdAt = parsed;
@@ -3170,6 +3164,7 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     const changeSummary = req.body?.change_summary || "Not içeriği güncellendi";
     await saveNoteVersion(userId, noteId, updated, changeSummary);
     await syncWikilinkRelations(userId, noteId);
+    scheduleEmbedding(userId, noteId);
 
     res.json({
       note_id: updated.noteId,
@@ -3287,7 +3282,6 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
 
     const tagsArr = targetVer.tags || extractTags(targetVer.content);
     const peopleArr = targetVer.people || extractPeople(targetVer.content);
-    const embedding = await generateTextEmbedding(`${targetVer.title}\n${targetVer.content}`);
 
     const updateData: any = {
       title: targetVer.title,
@@ -3300,9 +3294,6 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
       passwordHash: targetVer.passwordHash || null,
       updatedAt: new Date(),
     };
-    if (embedding) {
-      updateData.embedding = embedding;
-    }
 
     await db.update(notes).set(updateData).where(eq(notes.noteId, noteId));
     await syncReminders(userId, noteId, targetVer.content);
@@ -3310,6 +3301,7 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
     const updated = (await db.select().from(notes).where(eq(notes.noteId, noteId)).limit(1))[0];
     await saveNoteVersion(userId, noteId, updated, `v${targetVer.versionNumber} versiyonuna geri dönüldü`);
     await syncWikilinkRelations(userId, noteId);
+    scheduleEmbedding(userId, noteId);
 
     res.json({
       note_id: updated.noteId,

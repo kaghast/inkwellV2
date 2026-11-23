@@ -20,6 +20,11 @@ import { TEMPLATES, applyTemplate } from "../services/templates";
 import { activationSummary, recordActiveDay } from "../services/analytics";
 import { aiStatus } from "../ai";
 import { getAiSettings, saveAiSettings, testAiSettings, deleteAiKey } from "../services/aiSettings";
+import { embeddingCoverage, reindexUser } from "../services/embeddings";
+import { ask } from "../services/ask";
+import { AI_ACTIONS, runAiAction, type AiActionKey } from "../services/aiActions";
+import { appendToObject } from "../services/objects";
+import { graphRelations, unexpectedConnections } from "../services/connections";
 import { db, notes } from "../../src/db/index";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { DAILY_TYPE_ID } from "../../src/lib/objectTypes";
@@ -30,7 +35,7 @@ const list = (max = 30, len = 200) => z.array(z.string().trim().min(1).max(len))
 export function createWorkspaceRouter(auth: RequestHandler) {
   const r = express.Router();
   r.use(
-    ["/capture", "/inbox", "/relations", "/relation-types", "/objects", "/spaces", "/workspace", "/search", "/today", "/templates", "/home", "/ai/settings"],
+    ["/capture", "/inbox", "/relations", "/relation-types", "/objects", "/spaces", "/workspace", "/search", "/today", "/templates", "/home", "/ai/settings", "/ai/embeddings", "/ai/actions", "/ask", "/graph"],
     auth
   );
 
@@ -208,23 +213,77 @@ export function createWorkspaceRouter(auth: RequestHandler) {
   r.put(
     "/ai/settings",
     rateLimit("ai-settings", 20),
-    handle(async (req) =>
-      saveAiSettings(
+    handle(async (req) => {
+      const out = await saveAiSettings(
         uid(req),
         parse(
           z.object({
-            provider: z.enum(["gemini"]).optional(),
+            provider: z.enum(["gemini", "anthropic"]).optional(),
             api_key: z.string().trim().max(300).optional().nullable(),
             model: z.string().trim().max(100).regex(/^[\w.\-/]*$/).optional().nullable(),
             enabled: z.boolean().optional(),
           }),
           req.body
         )
-      )
-    )
+      );
+      // A newly enabled provider re-embeds notes whose vectors came from another model
+      if (out.settings.enabled) void reindexUser(uid(req)).catch(() => undefined);
+      return out;
+    })
   );
   r.post("/ai/settings/test", rateLimit("ai-settings", 20), handle(async (req) => testAiSettings(uid(req))));
+  r.get("/ai/embeddings", handle(async (req) => embeddingCoverage(uid(req))));
+  r.post("/ai/embeddings/reindex", rateLimit("ai-reindex", 5), handle(async (req) => ({ queued: await reindexUser(uid(req)) })));
   r.delete("/ai/settings", handle(async (req) => deleteAiKey(uid(req))));
+
+  // ----------------------------------------------------------- Ask Inkwell
+  const filtersSchema = z
+    .object({
+      type_id: id.optional(),
+      space_id: id.optional(),
+      tag: z.string().max(60).optional(),
+      date_from: isoDay.optional(),
+      date_to: isoDay.optional(),
+    })
+    .optional();
+  r.post(
+    "/ask",
+    rateLimit("ask", 30),
+    handle(async (req) => {
+      const body = parse(z.object({ question: z.string().trim().min(2).max(1000), filters: filtersSchema }), req.body);
+      return ask(uid(req), body.question, (body.filters || {}) as any);
+    })
+  );
+
+  // ------------------------------------------------------------ AI actions
+  r.get("/ai/actions", handle(async () => Object.entries(AI_ACTIONS).map(([key, v]) => ({ key, label: v.label, output: v.output }))));
+  r.post(
+    "/objects/:id/ai",
+    rateLimit("ai-action", 30),
+    handle(async (req) => {
+      const body = parse(
+        z.object({
+          action: z.enum(Object.keys(AI_ACTIONS) as [AiActionKey, ...AiActionKey[]]),
+          language: z.string().trim().max(40).optional(),
+          other_id: id.optional(),
+        }),
+        req.body
+      );
+      return runAiAction(uid(req), req.params.id, body.action, body);
+    })
+  );
+  r.post(
+    "/objects/:id/append",
+    rateLimit("append", 60),
+    handle(async (req) => {
+      const body = parse(z.object({ text: z.string().min(1).max(50_000), summary: z.string().max(200).optional() }), req.body);
+      return appendToObject(uid(req), req.params.id, body.text, body.summary || "Yapay zeka çıktısı eklendi");
+    })
+  );
+
+  // -------------------------------------------------------------- Graph 2.0
+  r.get("/graph/relations", handle(async (req) => graphRelations(uid(req))));
+  r.post("/graph/unexpected", rateLimit("unexpected", 6), handle(async (req) => unexpectedConnections(uid(req))));
 
   // ------------------------------------------------------------------- home
   r.get(

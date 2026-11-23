@@ -36,14 +36,26 @@ export interface Extraction {
 }
 
 export interface AiProvider {
-  id: "gemini" | "openai" | "anthropic" | "heuristic";
+  id: "gemini" | "openai" | "anthropic" | "heuristic" | "mock";
   /** Shown to users next to results, e.g. "Kural tabanlı" or "Gemini". */
   label: string;
   /** true when the provider uses a real language model. */
   isModel: boolean;
   available(): boolean;
   extract(text: string, ctx: ExtractionContext): Promise<Extraction>;
+  /** Free-form generation (Ask Inkwell, AI actions). Throws AiUnavailableError without a model. */
+  generate(req: GenerateRequest): Promise<string>;
   embed(text: string): Promise<number[] | null>;
+  /** Name of the embedding model, so stored vectors from another model are never compared. */
+  embedModel?: string;
+}
+
+export interface GenerateRequest {
+  system: string;
+  prompt: string;
+  maxTokens?: number;
+  /** Ask for a JSON reply (the caller still parses defensively). */
+  json?: boolean;
 }
 
 export class AiUnavailableError extends Error {}

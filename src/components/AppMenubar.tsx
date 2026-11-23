@@ -25,6 +25,7 @@ import {
   Share2,
   Layers,
   Search,
+  Sparkles,
 } from "lucide-react";
 import CaptureBar from "@/components/capture/CaptureBar";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
@@ -93,6 +94,16 @@ export default function AppMenubar({
         { label: "Harita", path: "/map", icon: MapPin, testId: "nav-map" },
         { label: "Zaman çizelgesi", path: "/timeline", icon: CalendarRange, testId: "nav-timeline" },
         { label: "Günlük akış", path: "/feed", icon: Calendar, testId: "nav-daily", match: (p) => p === "/feed" || /^\/(day|week|month)\//.test(p) },
+      ],
+    },
+    {
+      label: "Yapay Zeka",
+      icon: Sparkles,
+      testId: "nav-ai",
+      items: [
+        { label: "Ask Inkwell", path: "/ask", icon: Sparkles, testId: "nav-ask" },
+        { label: "Beklenmedik bağlantılar", path: "/network?panel=unexpected", icon: Share2, testId: "nav-unexpected", match: () => false },
+        { label: "Yapay zeka ayarları", path: "/settings?tab=ai", icon: Settings, testId: "nav-ai-settings", match: () => false },
       ],
     },
     {

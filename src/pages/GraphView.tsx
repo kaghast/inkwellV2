@@ -3,6 +3,10 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "@/lib/api";
 import type { Note, Category, ItemGroup, Tag, Person, LocationItem, NoteType, KanbanColumn } from "@/types";
 import AppMenubar from "@/components/AppMenubar";
+import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { aiApi, wsApi, type GraphRelation, type RelationType, type UnexpectedPair, type AiActionResult } from "@/lib/workspaceApi";
+import { formatApiError } from "@/lib/api";
+import { toast } from "sonner";
 import Sidebar from "@/components/Sidebar";
 import MarkdownView from "@/components/MarkdownView";
 import { Button } from "@/components/ui/button";
@@ -29,6 +33,9 @@ import {
   RefreshCw,
   Eye,
   SlidersHorizontal,
+  Lightbulb,
+  Link2,
+  Loader2,
 } from "lucide-react";
 
 interface GraphNode {
@@ -52,13 +59,16 @@ interface GraphNode {
   kanbanColumnId?: string;
   tags?: string[];
   people?: string[];
+  noteTypeId?: string;
+  spaceId?: string | null;
 }
 
 interface GraphLink {
   source: string;
   target: string;
-  type: "wikilink" | "tag" | "person" | "category";
+  type: "wikilink" | "tag" | "person" | "category" | "relation";
   label?: string;
+  relationType?: string;
 }
 
 const WIKI_RE = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/gu;
@@ -92,6 +102,21 @@ export default function GraphView() {
   const [showOrphans, setShowOrphans] = useState(true);
   const [colorByKanban, setColorByKanban] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
+  // Graph 2.0: typed relations and filters
+  const { noteTypes, spaces, typeById } = useWorkspace();
+  const [relations, setRelations] = useState<GraphRelation[]>([]);
+  const [relationTypes, setRelationTypes] = useState<RelationType[]>([]);
+  const [showRelations, setShowRelations] = useState(true);
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [spaceFilter, setSpaceFilter] = useState("all");
+  const [relTypeFilter, setRelTypeFilter] = useState("all");
+  const [sinceFilter, setSinceFilter] = useState("all");
+  const [personFilter, setPersonFilter] = useState("");
+  const [unexpectedOpen, setUnexpectedOpen] = useState(searchParams.get("panel") === "unexpected");
+  const [unexpected, setUnexpected] = useState<{ available: boolean; reason: string | null; pairs: UnexpectedPair[]; provider?: string } | null>(null);
+  const [unexpectedBusy, setUnexpectedBusy] = useState(false);
+  const [related, setRelated] = useState<AiActionResult | null>(null);
+  const [relatedBusy, setRelatedBusy] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const transformRef = useRef({ x: 0, y: 0, scale: 1 });
@@ -122,6 +147,13 @@ export default function GraphView() {
       setPeople(Array.isArray(pplRes.data) ? pplRes.data : []);
       setColumns(Array.isArray(colRes.data) ? colRes.data : []);
       setLocations(Array.isArray(locRes.data) ? locRes.data : []);
+      try {
+        const g = await aiApi.graphRelations();
+        setRelations(g.relations);
+        setRelationTypes(g.relation_types);
+      } catch {
+        setRelations([]);
+      }
     } catch (err) {
       console.warn("Failed loading graph view data:", err);
     } finally {
@@ -201,6 +233,8 @@ export default function GraphView() {
         kanbanColumnId: customCol,
         tags: n.tags || [],
         people: n.people || [],
+        noteTypeId: n.note_type_id || "type_plain",
+        spaceId: n.space_id || null,
         color: nodeColor,
         radius: 8,
         x: Math.cos(angle) * dist,
@@ -236,6 +270,13 @@ export default function GraphView() {
         }
       }
     });
+
+    // 2b. Typed relations (person works on project, meeting attended by...)
+    for (const rel of relations) {
+      if (rel.origin === "wikilink") continue;
+      if (!nodesMap.has(rel.source_id) || !nodesMap.has(rel.target_id)) continue;
+      links.push({ source: rel.source_id, target: rel.target_id, type: "relation", label: rel.label, relationType: rel.relation_type });
+    }
 
     // 3. Add Tag Nodes & Links
     if (showTags) {
@@ -325,7 +366,7 @@ export default function GraphView() {
       rawNodes: Array.from(nodesMap.values()),
       rawLinks: links,
     };
-  }, [notes, showTags, showPeople, colorByKanban, categoryMap, columnMap, isDark]);
+  }, [notes, relations, showTags, showPeople, colorByKanban, categoryMap, columnMap, isDark]);
 
   // Filter nodes & links based on user controls
   const { filteredNodes, filteredLinks } = useMemo(() => {
@@ -338,6 +379,18 @@ export default function GraphView() {
       );
     }
 
+    // Graph 2.0 filters (type, space, date, person) apply to note nodes
+    const cutoff = sinceFilter === "all" ? null : new Date(Date.now() - Number(sinceFilter) * 86400000).toISOString().slice(0, 10);
+    const person = personFilter.trim().toLowerCase().replace(/^@/, "");
+    nodes = nodes.filter((n) => {
+      if (n.type !== "note") return true;
+      if (typeFilter !== "all" && (n.noteTypeId || "type_plain") !== typeFilter) return false;
+      if (spaceFilter !== "all" && n.spaceId !== spaceFilter) return false;
+      if (cutoff && (n.date || "").slice(0, 10) < cutoff) return false;
+      if (person && !(n.people || []).some((p) => p.includes(person))) return false;
+      return true;
+    });
+
     // Orphan filter (hide notes with 0 connections)
     if (!showOrphans) {
       nodes = nodes.filter((n) => (n.degree || 0) > 0);
@@ -345,11 +398,14 @@ export default function GraphView() {
 
     const nodeIds = new Set(nodes.map((n) => n.id));
     const links = rawLinks.filter(
-      (l) => nodeIds.has(l.source) && nodeIds.has(l.target)
+      (l) =>
+        nodeIds.has(l.source) &&
+        nodeIds.has(l.target) &&
+        (l.type !== "relation" || (showRelations && (relTypeFilter === "all" || l.relationType === relTypeFilter)))
     );
 
     return { filteredNodes: nodes, filteredLinks: links };
-  }, [rawNodes, rawLinks, selectedCategoryId, showOrphans]);
+  }, [rawNodes, rawLinks, selectedCategoryId, showOrphans, typeFilter, spaceFilter, sinceFilter, personFilter, showRelations, relTypeFilter]);
 
   // Initialize and sync physics simulation nodes
   useEffect(() => {
@@ -368,6 +424,31 @@ export default function GraphView() {
       return { ...n };
     });
   }, [filteredNodes]);
+
+  useEffect(() => setRelated(null), [selectedNodeId]);
+
+  async function findUnexpected() {
+    setUnexpectedBusy(true);
+    try {
+      setUnexpected(await aiApi.unexpected());
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setUnexpectedBusy(false);
+    }
+  }
+
+  async function connectPair(pair: UnexpectedPair) {
+    try {
+      await wsApi.addRelation({ source_id: pair.a.note_id, target_id: pair.b.note_id, relation_type: "related_to", note: pair.explanation.slice(0, 480) });
+      toast.success("İlişki kuruldu");
+      const g = await aiApi.graphRelations();
+      setRelations(g.relations);
+      setUnexpected((u) => (u ? { ...u, pairs: u.pairs.filter((p) => p !== pair) } : u));
+    } catch (e) {
+      toast.error(formatApiError(e));
+    }
+  }
 
   // Find selected note object if a note is selected
   const selectedNote = useMemo(() => {
@@ -551,6 +632,10 @@ export default function GraphView() {
             : "rgba(100, 116, 139, 0.35)";
           ctx.lineWidth = isHighlighted ? 2.5 : 1.2;
           ctx.setLineDash([]);
+        } else if (link.type === "relation") {
+          ctx.strokeStyle = isHighlighted ? "#f59e0b" : isDimmed ? "rgba(245, 158, 11, 0.12)" : isDark ? "rgba(245, 158, 11, 0.55)" : "rgba(217, 119, 6, 0.5)";
+          ctx.lineWidth = isHighlighted ? 2.5 : 1.6;
+          ctx.setLineDash([]);
         } else if (link.type === "tag") {
           ctx.strokeStyle = isHighlighted
             ? "#10b981"
@@ -578,6 +663,15 @@ export default function GraphView() {
         }
 
         ctx.stroke();
+        if (link.type === "relation" && isHighlighted && link.label) {
+          ctx.save();
+          ctx.setLineDash([]);
+          ctx.font = "11px Manrope, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillStyle = isDark ? "#fbbf24" : "#b45309";
+          ctx.fillText(link.label, (source.x + target.x) / 2, (source.y + target.y) / 2 - 4);
+          ctx.restore();
+        }
         ctx.setLineDash([]);
       }
 
@@ -810,6 +904,16 @@ export default function GraphView() {
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => setUnexpectedOpen((o) => !o)}
+                className="bg-card/90 backdrop-blur-md h-9 gap-1.5 text-xs font-medium shadow-sm border-border"
+                data-testid="graph-unexpected-btn"
+              >
+                <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+                <span className="hidden sm:inline">Beklenmedik bağlantılar</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setFilterPanelOpen(!filterPanelOpen)}
                 className="bg-card/90 backdrop-blur-md h-9 gap-1.5 text-xs font-medium shadow-sm border-border"
               >
@@ -963,6 +1067,68 @@ export default function GraphView() {
                   />
                 </label>
 
+                {/* Typed relations */}
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div className="flex items-center gap-2">
+                    <Link2 className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Tipli ilişkileri göster</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={showRelations}
+                    onChange={(e) => setShowRelations(e.target.checked)}
+                    className="rounded border-border text-primary focus:ring-primary h-4 w-4"
+                  />
+                </label>
+
+                <div className="pt-2 border-t border-border grid grid-cols-2 gap-2">
+                  <label className="space-y-1">
+                    <span className="block text-muted-foreground font-medium">Nesne tipi</span>
+                    <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs" data-testid="graph-type-filter">
+                      <option value="all">Tümü</option>
+                      {noteTypes.map((t) => (
+                        <option key={t.type_id} value={t.type_id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1">
+                    <span className="block text-muted-foreground font-medium">İlişki tipi</span>
+                    <select value={relTypeFilter} onChange={(e) => setRelTypeFilter(e.target.value)} className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs">
+                      <option value="all">Tümü</option>
+                      {relationTypes.filter((t) => t.type_key !== "links_to").map((t) => (
+                        <option key={t.type_key} value={t.type_key}>{t.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1">
+                    <span className="block text-muted-foreground font-medium">Tarih</span>
+                    <select value={sinceFilter} onChange={(e) => setSinceFilter(e.target.value)} className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs">
+                      <option value="all">Tüm zamanlar</option>
+                      <option value="7">Son 7 gün</option>
+                      <option value="30">Son 30 gün</option>
+                      <option value="90">Son 3 ay</option>
+                      <option value="365">Son 1 yıl</option>
+                    </select>
+                  </label>
+                  {spaces.length > 1 ? (
+                    <label className="space-y-1">
+                      <span className="block text-muted-foreground font-medium">Bölüm</span>
+                      <select value={spaceFilter} onChange={(e) => setSpaceFilter(e.target.value)} className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs">
+                        <option value="all">Tümü</option>
+                        {spaces.map((sp) => (
+                          <option key={sp.space_id} value={sp.space_id}>{sp.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <span />
+                  )}
+                  <label className="space-y-1 col-span-2">
+                    <span className="block text-muted-foreground font-medium">Kişi</span>
+                    <Input value={personFilter} onChange={(e) => setPersonFilter(e.target.value)} placeholder="@kişi" className="h-8 text-xs" />
+                  </label>
+                </div>
+
                 {/* Category Filter */}
                 <div className="pt-2 border-t border-border">
                   <span className="block text-muted-foreground font-medium mb-1.5">Kategori Filtresi</span>
@@ -980,6 +1146,44 @@ export default function GraphView() {
                   </select>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Unexpected connections */}
+          {unexpectedOpen && (
+            <div className="absolute top-16 left-4 z-30 w-[min(26rem,calc(100%-2rem))] max-h-[calc(100vh-160px)] overflow-y-auto bg-card/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl p-4 space-y-3" data-testid="graph-unexpected-panel">
+              <div className="flex items-center gap-2">
+                <Lightbulb className="w-4 h-4 text-amber-500" />
+                <span className="font-semibold text-sm">Beklenmedik bağlantılar</span>
+                <button onClick={() => setUnexpectedOpen(false)} className="ml-auto p-1 hover:bg-accent rounded-full text-muted-foreground" aria-label="Kapat">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Birbirine benzeyen ama henüz bağlı olmayan notları bulur. Yalnızca yapay zekanın iki nottan alıntıyla açıklayabildiği somut bağlantılar gösterilir; sırf benzerlik bağlantı sayılmaz.
+              </p>
+              <Button size="sm" onClick={findUnexpected} disabled={unexpectedBusy} className="h-8 text-xs" data-testid="graph-unexpected-run">
+                {unexpectedBusy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1" />} Bağlantıları bul
+              </Button>
+              {unexpected?.reason && <p className="text-xs text-muted-foreground">{unexpected.reason}</p>}
+              {unexpected?.pairs.map((pair) => (
+                <div key={`${pair.a.note_id}-${pair.b.note_id}`} className="rounded-lg border border-border p-3 text-xs space-y-2">
+                  <div className="flex flex-wrap items-center gap-1 font-medium">
+                    <button onClick={() => setSelectedNodeId(pair.a.note_id)} className="hover:underline">[1] {pair.a.title}</button>
+                    <span className="text-muted-foreground">↔</span>
+                    <button onClick={() => setSelectedNodeId(pair.b.note_id)} className="hover:underline">[2] {pair.b.title}</button>
+                  </div>
+                  <p className="text-sm leading-snug">{pair.explanation}</p>
+                  <details className="text-muted-foreground">
+                    <summary className="cursor-pointer">Alıntılar · {pair.basis === "semantic" ? "anlam benzerliği" : `ortak terimler: ${pair.shared_terms.join(", ")}`}</summary>
+                    <p className="mt-1"><b>[1]</b> {pair.a.passage}</p>
+                    <p className="mt-1"><b>[2]</b> {pair.b.passage}</p>
+                  </details>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => connectPair(pair)}>
+                    <Link2 className="w-3.5 h-3.5 mr-1" /> İlişki kur
+                  </Button>
+                </div>
+              ))}
             </div>
           )}
 
@@ -1026,6 +1230,69 @@ export default function GraphView() {
 
               {/* Card Body */}
               <div className="p-4 overflow-y-auto space-y-4 flex-1 text-sm">
+                {/* Object type + typed relations */}
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <Badge variant="secondary" className="text-[10px]">{typeById(selectedNote.note_type_id)?.name || "Düz Metin"}</Badge>
+                  {selectedNote.updated_at && <span className="text-muted-foreground">güncellendi {selectedNote.updated_at.slice(0, 10)}</span>}
+                </div>
+                {(() => {
+                  const mine = relations.filter((r) => r.origin !== "wikilink" && (r.source_id === selectedNote.note_id || r.target_id === selectedNote.note_id));
+                  if (mine.length === 0) return null;
+                  const titleOf = (id: string) => notes.find((n) => n.note_id === id)?.title || "Adsız";
+                  return (
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-muted-foreground">Tipli ilişkiler ({mine.length})</span>
+                      {mine.map((r) => {
+                        const out = r.source_id === selectedNote.note_id;
+                        const other = out ? r.target_id : r.source_id;
+                        const t = relationTypes.find((x) => x.type_key === r.relation_type);
+                        const label = out || t?.symmetric ? r.label : t?.inverse_label || r.label;
+                        return (
+                          <button key={r.relation_id} onClick={() => setSelectedNodeId(other)} className="w-full text-left p-2 rounded-md hover:bg-accent flex items-center gap-2 text-xs border border-border/40">
+                            <span className="text-amber-600 dark:text-amber-400 shrink-0">{label}</span>
+                            <span className="font-medium truncate">{titleOf(other)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    disabled={relatedBusy}
+                    onClick={async () => {
+                      setRelatedBusy(true);
+                      try {
+                        setRelated(await aiApi.action(selectedNote.note_id, "find_related"));
+                      } catch (e) {
+                        toast.error(formatApiError(e));
+                      } finally {
+                        setRelatedBusy(false);
+                      }
+                    }}
+                  >
+                    {relatedBusy ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />} İlgili notları bul
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => navigate(`/ask?q=${encodeURIComponent(`${selectedNote.title} hakkında neler biliyorum?`)}`)}>
+                    Ask Inkwell
+                  </Button>
+                </div>
+                {related && related.related && (
+                  <div className="space-y-1">
+                    {related.warning && <p className="text-[11px] text-muted-foreground">{related.warning}</p>}
+                    {related.related.map((rn) => (
+                      <button key={rn.note_id} onClick={() => setSelectedNodeId(rn.note_id)} className="w-full text-left p-2 rounded-md hover:bg-accent text-xs border border-border/40">
+                        <span className="font-medium">{rn.title}</span>
+                        {rn.why && <span className="ml-1 text-[10px] text-muted-foreground">· {rn.why}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {/* Note Content Preview */}
                 <div className="max-h-48 overflow-y-auto p-3 rounded-lg bg-background/60 border border-border/60 text-xs leading-relaxed">
                   <MarkdownView content={selectedNote.content} />

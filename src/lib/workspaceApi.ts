@@ -206,3 +206,85 @@ export const wsApi = {
     api.post(`/templates/${key}/apply`, body).then((r) => r.data as { primary_id: string; slug: string; created: string[]; reused: string[]; relations: number }),
   home: () => api.get("/home").then((r) => r.data as HomeData),
 };
+
+// ---------------------------------------------------------------------------
+// Phase 2: Ask Inkwell, AI actions, Graph 2.0
+// ---------------------------------------------------------------------------
+export interface AskFilters {
+  type_id?: string;
+  space_id?: string;
+  tag?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface AskSource {
+  n: number;
+  note_id: string;
+  slug?: string | null;
+  title: string;
+  type_name: string;
+  date: string;
+  snippet: string;
+  signals: { text: number; semantic: number; relation: number };
+}
+
+export interface AskResult {
+  question: string;
+  answer: string | null;
+  mode: "answer" | "sources_only" | "no_sources";
+  provider: string | null;
+  semantic: boolean;
+  citations: Array<{ n: number; note_id: string; slug?: string | null; title: string; snippet: string }>;
+  sources: AskSource[];
+  warning: string | null;
+}
+
+export type AiActionKey =
+  | "summarize" | "rewrite" | "translate" | "explain" | "extract_tasks" | "generate_tags" | "outline"
+  | "meeting_notes" | "project_summary" | "research_questions" | "research_insights"
+  | "find_related" | "find_connections" | "compare" | "contradictions";
+
+export interface AiActionResult {
+  action: AiActionKey;
+  label: string;
+  output: "text" | "tasks" | "tags" | "related";
+  text?: string;
+  items?: string[];
+  related?: Array<{ note_id: string; slug?: string | null; title: string; type_name: string; snippet: string; why: string }>;
+  citations?: Array<{ n: number; note_id: string; slug?: string | null; title: string }>;
+  provider: string | null;
+  warning?: string | null;
+}
+
+export interface GraphRelation {
+  relation_id: string;
+  source_id: string;
+  target_id: string;
+  relation_type: string;
+  label: string;
+  origin: string;
+}
+
+export interface UnexpectedPair {
+  a: { note_id: string; slug?: string | null; title: string; passage: string };
+  b: { note_id: string; slug?: string | null; title: string; passage: string };
+  basis: "semantic" | "terms";
+  similarity: number;
+  shared_terms: string[];
+  explanation: string;
+}
+
+export const aiApi = {
+  ask: (question: string, filters: AskFilters = {}) => api.post("/ask", { question, filters }).then((r) => r.data as AskResult),
+  action: (noteId: string, action: AiActionKey, opts: { language?: string; other_id?: string } = {}) =>
+    api.post(`/objects/${encodeURIComponent(noteId)}/ai`, { action, ...opts }).then((r) => r.data as AiActionResult),
+  append: (noteId: string, text: string, summary?: string) =>
+    api.post(`/objects/${encodeURIComponent(noteId)}/append`, { text, summary }).then((r) => r.data as { note_id: string; content: string }),
+  status: () => api.get("/home").then((r) => (r.data as HomeData).ai),
+  graphRelations: () => api.get("/graph/relations").then((r) => r.data as { relations: GraphRelation[]; relation_types: RelationType[] }),
+  unexpected: () =>
+    api.post("/graph/unexpected").then((r) => r.data as { available: boolean; reason: string | null; pairs: UnexpectedPair[]; provider?: string; semantic?: boolean }),
+  embeddings: () => api.get("/ai/embeddings").then((r) => r.data as { model: string | null; total: number; embedded: number }),
+  reindex: () => api.post("/ai/embeddings/reindex").then((r) => r.data as { queued: number }),
+};

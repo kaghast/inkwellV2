@@ -6,6 +6,7 @@
 import type { AiProvider, Extraction, ExtractionContext } from "./types";
 import { heuristicProvider, heuristicExtract } from "./heuristic";
 import { geminiProvider } from "./gemini";
+import { mockProvider, mockEnabled } from "./mock";
 import { userAiProvider } from "../services/aiSettings";
 
 const PROVIDERS: Record<string, AiProvider> = {
@@ -15,13 +16,14 @@ const PROVIDERS: Record<string, AiProvider> = {
 
 /** Server-wide provider from environment configuration. */
 export function serverProvider(): AiProvider {
+  if (mockEnabled()) return mockProvider;
   const wanted = (process.env.AI_PROVIDER || (process.env.GEMINI_API_KEY ? "gemini" : "heuristic")).toLowerCase();
   const p = PROVIDERS[wanted];
   return p && p.available() ? p : heuristicProvider;
 }
 
 export async function activeProvider(userId?: string): Promise<{ provider: AiProvider; source: "user" | "server" | "none" }> {
-  if (userId) {
+  if (userId && !mockEnabled()) {
     const own = await userAiProvider(userId);
     if (own) return { provider: own, source: "user" };
   }
