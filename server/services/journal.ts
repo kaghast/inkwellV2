@@ -6,12 +6,17 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, notes, objectRelations } from "../../src/db/index";
 import { COLLECTION_TYPE_ID, DAILY_TYPE_ID, MONTHLY_TYPE_ID } from "../../src/lib/objectTypes";
 import {
-  closeTaskInMarkdown, countTasks, formatLogEntry, insertLogLine, listBullets, parseLogEntry, removeLastLine, type BulletKind,
+  closeTaskInMarkdown, countTasks, ensureSection, formatLogEntry, insertLogLine, listBullets, parseLogEntry, removeLastLine, type BulletKind,
 } from "../../src/lib/tasks";
-import { addMonths, collectionContent, dailyTitle, monthDays, monthOf, monthlyContent, monthlyTitle } from "../../src/lib/journal";
+import { addMonths, collectionContent, dailyTitle, monthDays, monthLabel, monthOf, monthlyContent, monthlyTitle } from "../../src/lib/journal";
 import { createObject, rewriteObjectContent } from "./objects";
 import { ensureDailyNote } from "./today";
 import { AccessError } from "./workspaces";
+import { activeProvider } from "../ai";
+import { checkCitations } from "./retrievalRank";
+import { friendlyAiError } from "./aiSettings";
+import { habitMonth } from "./habits";
+import { REVIEW_SYSTEM, buildReviewPrompt, reviewFacts, reviewSources, type ReviewPage } from "./reviewFacts";
 
 type NoteRow = typeof notes.$inferSelect;
 
@@ -235,7 +240,8 @@ export async function logToPage(userId: string, noteId: string, input: { text: s
   if (!entry.text) throw new AccessError(400, "Boş kayıt eklenemez");
   const line = formatLogEntry(entry);
   const sections = input.section ? [input.section] : ["Görevler", "Liste", "Kayıt"];
-  const r = await rewriteObjectContent(userId, noteId, (old) => insertLogLine(old, line, sections), null);
+  // A named section that the page does not have yet (e.g. an older month page) is added first
+  const r = await rewriteObjectContent(userId, noteId, (old) => insertLogLine(input.section ? ensureSection(old, input.section) : old, line, sections), null);
   return { note_id: r.note_id, line, content: r.content };
 }
 
@@ -355,4 +361,62 @@ export async function journalIndex(userId: string) {
     collections: await listCollections(userId),
     tags: [...tagCount.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 40).map(([tag, count]) => ({ tag, count })),
   };
+}
+
+// ------------------------------------------------------------ monthly review
+
+/**
+ * AI monthly review (Phase 2.5e). The counts are computed from the month's
+ * daily notes, monthly log, habits and mood; the model only writes the
+ * narrative from numbered sources, and its [n] citations are validated.
+ * Without a model the counts are returned on their own. Locked notes are
+ * never read or sent.
+ */
+export async function monthlyReview(userId: string, month: string, today: string) {
+  const dailies = await pages(userId, DAILY_TYPE_ID, sql`substr(${notes.date}, 1, 7) = ${month}`);
+  const monthly = (await pages(userId, MONTHLY_TYPE_ID, sql`substr(${notes.date}, 1, 7) = ${month}`))[0];
+  const all = [...dailies, ...(monthly ? [monthly] : [])].filter((p) => !p.isEncrypted);
+  const reviewPages: ReviewPage[] = all.map((p) => ({
+    note_id: p.noteId,
+    title: p.title,
+    date: p.noteTypeId === MONTHLY_TYPE_ID ? p.date.slice(0, 7) : p.date.slice(0, 10),
+    content: p.content || "",
+  }));
+  const hm = await habitMonth(userId, month, today);
+  const elapsed = month < today.slice(0, 7) ? hm.days.length : month === today.slice(0, 7) ? Number(today.slice(8, 10)) : 0;
+  const habitStats = hm.habits.map((h) => ({ name: h.name, done: h.month_count, days: elapsed }));
+  const facts = reviewFacts(reviewPages, habitStats, hm.ratings);
+  const sources = reviewSources(reviewPages);
+  const base = {
+    month,
+    facts,
+    sources: sources.map((s) => ({ n: s.n, note_id: s.note_id, title: s.title, date: s.date })),
+    monthly_id: monthly?.noteId || null,
+  };
+  if (sources.length === 0) {
+    return { ...base, mode: "empty" as const, review: null, citations: [], provider: null, warning: "Bu ay için değerlendirilecek kayıt yok." };
+  }
+  const { provider } = await activeProvider(userId);
+  if (!provider.isModel) {
+    return {
+      ...base,
+      mode: "facts_only" as const,
+      review: null,
+      citations: [],
+      provider: null,
+      warning: "Yapay zeka etkin değil; yalnızca sayılar gösteriliyor. Ayarlar > Yapay Zeka'dan etkinleştirebilirsin.",
+    };
+  }
+  let raw: string;
+  try {
+    raw = await provider.generate({ system: REVIEW_SYSTEM, prompt: buildReviewPrompt(monthLabel(month), facts, sources), maxTokens: 1200 });
+  } catch (e) {
+    return { ...base, mode: "facts_only" as const, review: null, citations: [], provider: provider.label, warning: `Yapay zeka yanıt veremedi: ${friendlyAiError(e)}` };
+  }
+  const check = checkCitations(raw, sources.length);
+  const citations = check.used.map((n) => ({ n, note_id: sources[n - 1].note_id, title: sources[n - 1].title, date: sources[n - 1].date }));
+  let warning: string | null = null;
+  if (check.removed.length) warning = "Değerlendirmede kayıtlarına dayanmayan kaynak numaraları vardı; bunlar kaldırıldı.";
+  else if (citations.length === 0) warning = "Bu değerlendirme hiçbir kayda dayandırılmadı; dikkatle değerlendir.";
+  return { ...base, mode: "review" as const, review: check.answer, citations, provider: provider.label, warning };
 }

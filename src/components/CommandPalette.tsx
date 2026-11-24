@@ -129,6 +129,7 @@ export default function CommandPalette() {
       { id: "g-notes", label: "Bilgi · Bütün notlar", hint: "G K", icon: FileText, run: go("/all-notes") },
       { id: "g-month", label: "Aylık kayıt", hint: "G M", icon: Calendar, keywords: "defter bullet journal ay monthly", run: go("/journal/month") },
       { id: "g-future", label: "Gelecek kaydı", icon: CalendarRange, keywords: "defter future log gelecek planla", run: go("/journal/future") },
+      { id: "g-habits", label: "Alışkanlıklar", icon: CalendarRange, keywords: "defter alışkanlık habit tracker ruh hali mood enerji", run: go("/journal/habits") },
       { id: "g-collections", label: "Koleksiyonlar", icon: Layers, keywords: "defter liste collection", run: go("/journal/collections") },
       { id: "g-journal", label: "Dizin (defter)", icon: FileText, keywords: "defter index içindekiler", run: go("/journal") },
       { id: "g-spaces", label: "Bölümler", hint: "G S", icon: Layers, run: go("/spaces") },

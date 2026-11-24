@@ -5,6 +5,9 @@ import { ChevronLeft, ChevronRight, Clock, Bell, ExternalLink, LayoutTemplate, C
 import { taskPatchBody, type TaskState } from "@/lib/tasks";
 import QuickLog, { type QuickKind } from "@/components/journal/QuickLog";
 import MigrationPanel from "@/components/journal/MigrationPanel";
+import DayTracker from "@/components/journal/DayTracker";
+import ReflectionCard from "@/components/journal/ReflectionCard";
+import { DAILY_PROMPTS, WEEKLY_PROMPTS, weekdayOf } from "@/lib/journal";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import PageShell, { Empty, Section } from "@/components/PageShell";
@@ -210,6 +213,18 @@ export default function TodayPage() {
               </div>
             </Section>
 
+            <Section
+              title="Yansıma"
+              action={weekdayOf(date) === 0 ? <span className="text-[11px] text-muted-foreground">Haftalık soru</span> : undefined}
+            >
+              <ReflectionCard
+                day={date}
+                pool={weekdayOf(date) === 0 ? WEEKLY_PROMPTS : DAILY_PROMPTS}
+                resolveNoteId={async () => data.daily_note?.note_id || (await wsApi.ensureDailyNote(date)).note_id}
+                onSaved={load}
+              />
+            </Section>
+
             <Section title="Taşınacaklar">
               <MigrationPanel date={date} onChanged={load} />
             </Section>
@@ -245,6 +260,17 @@ export default function TodayPage() {
           </div>
 
           <div className="min-w-0 space-y-4">
+            <Section
+              title="Alışkanlıklar ve ruh hali"
+              action={
+                <Link to={`/journal/habits/${date.slice(0, 7)}`} className="text-xs text-primary hover:underline">
+                  Aylık tablo
+                </Link>
+              }
+            >
+              <DayTracker date={date} />
+            </Section>
+
             <section className="min-w-0 overflow-hidden rounded-lg border border-border bg-card" data-testid="today-calendar">
               <CalendarPanel
                 year={cal.year}

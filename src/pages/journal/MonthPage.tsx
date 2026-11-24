@@ -6,9 +6,11 @@ import PageShell, { Empty, Section } from "@/components/PageShell";
 import MarkdownView from "@/components/MarkdownView";
 import QuickLog from "@/components/journal/QuickLog";
 import MigrationPanel from "@/components/journal/MigrationPanel";
+import ReflectionCard from "@/components/journal/ReflectionCard";
+import MonthReview from "@/components/journal/MonthReview";
 import { Button } from "@/components/ui/button";
 import api, { formatApiError } from "@/lib/api";
-import { addMonths, isMonthKey, monthLabel, WEEKDAY_SHORT, weekdayOf } from "@/lib/journal";
+import { addMonths, isMonthKey, monthLabel, MONTHLY_PROMPTS, WEEKDAY_SHORT, weekdayOf } from "@/lib/journal";
 import { taskPatchBody, type TaskState } from "@/lib/tasks";
 import { JOURNAL_CHANGED, journalApi, notifyJournalChanged, objectPath, type MonthViewData } from "@/lib/workspaceApi";
 
@@ -156,6 +158,23 @@ export default function MonthPage() {
                 </div>
               )}
             </Section>
+
+            {month <= current && (
+              <Section title="Ayın değerlendirmesi">
+                <MonthReview key={month} month={month} onSaved={load} />
+              </Section>
+            )}
+
+            {month <= current && !data.monthly?.locked && (
+              <Section title="Aylık yansıma">
+                <ReflectionCard
+                  day={`${month}-01`}
+                  pool={MONTHLY_PROMPTS}
+                  resolveNoteId={async () => data.monthly?.note_id || (await journalApi.ensureMonth(month)).note_id}
+                  onSaved={load}
+                />
+              </Section>
+            )}
 
             {month === current && (
               <Section title="Taşınacaklar">

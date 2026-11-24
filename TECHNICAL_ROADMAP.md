@@ -127,6 +127,14 @@ Out of scope: handwriting/stylus (Phase 6), shared journals (Phases 3–4), deco
 - Pages: `/journal/month/:month`, `/journal/future`, `/journal/collections/:id`, `/journal` (index); "Defter" group in the rail, palette entries, `g m` / `g j` shortcuts; Today shows "Taşınacaklar" and links to the month.
 - The derived `bullets` table is **deferred**: all journal reads parse note content directly, which is fast enough at personal scale. It comes back when cross-workspace queries (Phase 3) need SQL filtering.
 
+### Phase 2.5d/e status
+
+- Migration `2026_11_25_009_habits` adds three tables (no existing table changes): `habits` (name, colour, position, archived), `habit_logs` (one row per done day, primary key `(habit_id, day)`), `day_ratings` (mood and energy 1–5 per user and day).
+- `server/services/habits.ts`, routes `GET/POST /journal/habits`, `PUT/DELETE /journal/habits/:id`, `PUT /journal/habits/:id/days/:day`, `PUT /journal/ratings/:day`. Streaks (`habitStreaks` in `src/lib/journal.ts`) count back from today, or from yesterday while today is not ticked. Archiving keeps history; deleting asks first and removes the habit's log rows.
+- Pages: `/journal/habits/:month` (habit × day grid with streaks, mood and energy rows), Today shows a "Alışkanlıklar ve ruh hali" card.
+- Reflection: rotating questions (`DAILY_PROMPTS`, `WEEKLY_PROMPTS` on Sundays, `MONTHLY_PROMPTS`) on Today and the month page; answers go into the page's `## Yansıma` section as `- **Soru** cevap` (the section is added to older pages that lack it). New monthly logs include `## Yansıma`.
+- Monthly review `POST /journal/review` (rate limited): counts from the month's daily notes, monthly log, habits and mood (`server/services/reviewFacts.ts`, pure and unit tested: task states, events, tasks postponed at least twice, top tags, averages). With a model it adds a short narrative citing numbered pages, validated with `checkCitations`; without one it returns the counts only. Locked notes are never read. "Ayın sayfasına ekle" appends it under `## Değerlendirme` with citations turned into `[[links]]` (a version is saved). This also covers Phase 2's "daily AI review" item at month granularity.
+
 ## Phase 3 — SaaS: workspaces, roles, tenancy, billing, storage, jobs
 
 1. Team workspaces, workspace switcher, invitations (hashed tokens, expiry), roles Owner/Admin/Editor/Commenter/Viewer.

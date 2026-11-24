@@ -394,3 +394,56 @@ export const journalApi = {
   collection: (id: string) => api.get(`/journal/collections/${encodeURIComponent(id)}`).then((r) => r.data as CollectionDetail),
   index: () => api.get("/journal/index").then((r) => r.data as JournalIndexData),
 };
+
+// ---------------------------------------------------------------- habits & review (Phase 2.5d/e)
+
+export interface HabitRow {
+  habit_id: string;
+  name: string;
+  color: string | null;
+  archived: boolean;
+  done_days: string[];
+  month_count: number;
+  current: number;
+  longest: number;
+}
+
+export interface HabitMonthData {
+  month: string;
+  days: string[];
+  habits: HabitRow[];
+  ratings: Array<{ day: string; mood: number | null; energy: number | null }>;
+}
+
+export interface ReviewData {
+  month: string;
+  mode: "review" | "facts_only" | "empty";
+  review: string | null;
+  provider: string | null;
+  warning: string | null;
+  monthly_id: string | null;
+  facts: {
+    days_logged: number;
+    entries: number;
+    tasks: { done: number; open: number; migrated: number; scheduled: number; cancelled: number };
+    events: number;
+    postponed: Array<{ text: string; times: number }>;
+    top_tags: Array<{ tag: string; count: number }>;
+    habits: Array<{ name: string; done: number; days: number }>;
+    mood_avg: number | null;
+    energy_avg: number | null;
+  };
+  sources: Array<{ n: number; note_id: string; title: string; date: string }>;
+  citations: Array<{ n: number; note_id: string; title: string; date: string }>;
+}
+
+export const habitApi = {
+  month: (month: string, today: string, all = false) =>
+    api.get("/journal/habits", { params: { month, today, ...(all ? { all: "1" } : {}) } }).then((r) => r.data as HabitMonthData),
+  create: (name: string) => api.post("/journal/habits", { name }).then((r) => r.data as { habit_id: string; name: string }),
+  update: (id: string, body: { name?: string; archived?: boolean; color?: string | null }) => api.put(`/journal/habits/${id}`, body).then((r) => r.data),
+  remove: (id: string) => api.delete(`/journal/habits/${id}`).then((r) => r.data),
+  setDay: (id: string, day: string, done: boolean) => api.put(`/journal/habits/${id}/days/${day}`, { done }).then((r) => r.data),
+  rate: (day: string, body: { mood?: number | null; energy?: number | null }) => api.put(`/journal/ratings/${day}`, body).then((r) => r.data),
+  review: (month: string, today: string) => api.post("/journal/review", { month, today }).then((r) => r.data as ReviewData),
+};

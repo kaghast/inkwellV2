@@ -124,3 +124,87 @@ describe("Journal API", { skip: !BASE }, () => {
     assert.equal((await b("GET", "/journal/index")).body.collections.length, 0);
   });
 });
+
+describe("Habits, mood and monthly review API", { skip: !BASE }, () => {
+  let a: Awaited<ReturnType<typeof client>>;
+  let b: Awaited<ReturnType<typeof client>>;
+  let mock = false;
+  before(async () => {
+    a = await client();
+    b = await client();
+    mock = (await a("GET", "/home")).body.ai.provider === "mock";
+  });
+
+  test("habits: create, tick days, streaks, archive, delete, isolation", async () => {
+    const h = await a("POST", "/journal/habits", { name: "Okuma" });
+    assert.equal(h.status, 200, JSON.stringify(h.body));
+    assert.equal((await a("POST", "/journal/habits", { name: "  " })).status, 400);
+    for (const d of ["2031-07-08", "2031-07-09", "2031-07-10"]) {
+      assert.equal((await a("PUT", `/journal/habits/${h.body.habit_id}/days/${d}`, { done: true })).status, 200);
+    }
+    await a("PUT", `/journal/habits/${h.body.habit_id}/days/2031-07-10`, { done: true }); // idempotent
+    let m = (await a("GET", "/journal/habits?month=2031-07&today=2031-07-10")).body;
+    let row = m.habits.find((x: any) => x.habit_id === h.body.habit_id);
+    assert.deepEqual(row.done_days, ["2031-07-08", "2031-07-09", "2031-07-10"]);
+    assert.equal(row.current, 3);
+    assert.equal(m.days.length, 31);
+    await a("PUT", `/journal/habits/${h.body.habit_id}/days/2031-07-09`, { done: false });
+    row = (await a("GET", "/journal/habits?month=2031-07&today=2031-07-10")).body.habits[0];
+    assert.equal(row.current, 1);
+    assert.equal(row.longest, 1);
+    assert.equal((await a("PUT", `/journal/habits/${h.body.habit_id}/days/2031-7-1`, { done: true })).status, 400);
+
+    assert.equal((await b("PUT", `/journal/habits/${h.body.habit_id}/days/2031-07-11`, { done: true })).status, 404);
+    assert.equal((await b("GET", "/journal/habits?month=2031-07")).body.habits.length, 0);
+    assert.equal((await b("DELETE", `/journal/habits/${h.body.habit_id}`)).status, 404);
+
+    await a("PUT", `/journal/habits/${h.body.habit_id}`, { archived: true });
+    assert.equal((await a("GET", "/journal/habits?month=2031-07")).body.habits.length, 0, "archived habits are hidden");
+    assert.equal((await a("GET", "/journal/habits?month=2031-07&all=1")).body.habits[0].done_days.length, 2, "history kept");
+    assert.equal((await a("DELETE", `/journal/habits/${h.body.habit_id}`)).status, 200);
+    assert.equal((await a("GET", "/journal/habits?month=2031-07&all=1")).body.habits.length, 0);
+  });
+
+  test("mood and energy: 1–5, partial updates, clearing", async () => {
+    assert.equal((await a("PUT", "/journal/ratings/2031-07-10", { mood: 4 })).status, 200);
+    await a("PUT", "/journal/ratings/2031-07-10", { energy: 2 });
+    let r = (await a("GET", "/journal/habits?month=2031-07")).body.ratings;
+    assert.deepEqual(r, [{ day: "2031-07-10", mood: 4, energy: 2 }]);
+    await a("PUT", "/journal/ratings/2031-07-10", { mood: null });
+    r = (await a("GET", "/journal/habits?month=2031-07")).body.ratings;
+    assert.deepEqual(r, [{ day: "2031-07-10", mood: null, energy: 2 }]);
+    assert.equal((await a("PUT", "/journal/ratings/2031-07-10", { mood: 6 })).status, 400);
+    assert.equal((await b("GET", "/journal/habits?month=2031-07")).body.ratings.length, 0);
+  });
+
+  test("monthly review: counts from the month, cited narrative only with a model, locked notes left out", async () => {
+    await a("POST", "/today/log", { date: "2031-08-02", text: ". vergi beyannamesi" });
+    await a("POST", "/today/log", { date: "2031-08-02", text: "o Kardeşimin düğünü" });
+    const t = (await a("GET", "/journal/migration?date=2031-08-03")).body.tasks.find((x: any) => x.text === "vergi beyannamesi");
+    await a("POST", "/journal/migrate", { note_id: t.note_id, task_index: t.task_index, action: "today", date: "2031-08-03" });
+    const t2 = (await a("GET", "/journal/migration?date=2031-08-04")).body.tasks.find((x: any) => x.text === "vergi beyannamesi");
+    await a("POST", "/journal/migrate", { note_id: t2.note_id, task_index: t2.task_index, action: "today", date: "2031-08-04" });
+    await a("POST", "/notes", { title: "Gizli günlük", content: "- [ ] gizli görev", note_type_id: "type_daily", date: "2031-08-05T09:00:00", is_encrypted: true, password_hash: "x" });
+
+    const r = await a("POST", "/journal/review", { month: "2031-08", today: "2031-08-31" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const f = r.body.facts;
+    assert.equal(f.days_logged, 3);
+    assert.equal(f.tasks.migrated, 2);
+    assert.equal(f.tasks.open, 1, "the locked note's task is not counted");
+    assert.equal(f.events, 1);
+    assert.deepEqual(f.postponed, [{ text: "vergi beyannamesi", times: 2 }]);
+    assert.ok(!r.body.sources.some((s: any) => s.title === "Gizli günlük"));
+    if (mock) {
+      assert.equal(r.body.mode, "review");
+      assert.match(r.body.review, /\[\d+\]/);
+      assert.ok(r.body.citations.length >= 1);
+    } else {
+      assert.equal(r.body.mode, "facts_only");
+      assert.equal(r.body.review, null);
+    }
+    const empty = await b("POST", "/journal/review", { month: "2031-08" });
+    assert.equal(empty.body.mode, "empty");
+    assert.equal((await a("POST", "/journal/review", { month: "2031-8" })).status, 400);
+  });
+});

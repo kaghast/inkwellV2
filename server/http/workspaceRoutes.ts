@@ -18,8 +18,9 @@ import { search } from "../services/search";
 import { today, ensureDailyNote, logToDay } from "../services/today";
 import {
   monthView, ensureMonthlyNote, futureLog, migrationCandidates, migrateTask, logToPage,
-  listCollections, createCollection, collectionDetail, journalIndex,
+  listCollections, createCollection, collectionDetail, journalIndex, monthlyReview,
 } from "../services/journal";
+import { habitMonth, createHabit, updateHabit, deleteHabit, setHabitDay, setDayRating } from "../services/habits";
 import { MONTH_RE } from "../../src/lib/journal";
 import { applyTemplate } from "../services/templates";
 import { listTemplates, createTemplate, updateTemplate, deleteTemplate } from "../services/userTemplates";
@@ -268,6 +269,59 @@ export function createWorkspaceRouter(auth: RequestHandler) {
   );
   r.get("/journal/collections/:id", handle(async (req) => collectionDetail(uid(req), req.params.id)));
   r.get("/journal/index", handle(async (req) => journalIndex(uid(req))));
+
+  // Habits and mood (2.5d). `today` is the client's local day, for streaks.
+  r.get(
+    "/journal/habits",
+    handle(async (req) => {
+      const q = parse(z.object({ month: monthKey.optional(), today: isoDay.optional(), all: z.string().optional() }), req.query);
+      const today = (q.today as string) || todayIso();
+      return habitMonth(uid(req), (q.month as string) || today.slice(0, 7), today, q.all === "1");
+    })
+  );
+  const habitColor = z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional();
+  r.post(
+    "/journal/habits",
+    handle(async (req) => {
+      const b = parse(z.object({ name: z.string().min(1).max(80), color: habitColor }), req.body);
+      return createHabit(uid(req), { name: b.name as string, color: b.color });
+    })
+  );
+  r.put(
+    "/journal/habits/:id",
+    handle(async (req) => {
+      const b = parse(z.object({ name: z.string().max(80).optional(), color: habitColor, archived: z.boolean().optional(), position: z.number().int().min(0).max(1000).optional() }), req.body);
+      return updateHabit(uid(req), req.params.id, b as any);
+    })
+  );
+  r.delete("/journal/habits/:id", handle(async (req) => deleteHabit(uid(req), req.params.id)));
+  r.put(
+    "/journal/habits/:id/days/:day",
+    handle(async (req) => {
+      const day = parse(isoDay, req.params.day) as string;
+      const b = parse(z.object({ done: z.boolean() }), req.body);
+      return setHabitDay(uid(req), req.params.id, day, b.done as boolean);
+    })
+  );
+  r.put(
+    "/journal/ratings/:day",
+    handle(async (req) => {
+      const day = parse(isoDay, req.params.day) as string;
+      const scale = z.number().int().min(1).max(5).nullable().optional();
+      const b = parse(z.object({ mood: scale, energy: scale }), req.body);
+      return setDayRating(uid(req), day, { mood: b.mood, energy: b.energy });
+    })
+  );
+
+  // Monthly review (2.5e); rate limited because it may call a model
+  r.post(
+    "/journal/review",
+    rateLimit("review", 6),
+    handle(async (req) => {
+      const b = parse(z.object({ month: monthKey, today: isoDay.optional() }), req.body);
+      return monthlyReview(uid(req), b.month as string, (b.today as string) || todayIso());
+    })
+  );
 
   // -------------------------------------------------------------- templates
   r.get("/templates", handle(async (req) => listTemplates(uid(req), { includeHidden: req.query.all === "1" })));

@@ -500,3 +500,38 @@ export const userTemplates = pgTable(
   },
   (table) => [index('utpl_user_idx').on(table.userId)]
 );
+
+// Phase 2.5d — habit tracker (one row per habit, one log row per done day)
+export const habits = pgTable(
+  'habits',
+  {
+    habitId: text('habit_id').primaryKey(),
+    userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }).notNull(),
+    name: text('name').notNull(),
+    color: text('color'),
+    position: integer('position').default(0).notNull(),
+    archived: boolean('archived').default(false).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('habits_user_idx').on(table.userId)]
+);
+
+export const habitLogs = pgTable(
+  'habit_logs',
+  {
+    habitId: text('habit_id').references(() => habits.habitId, { onDelete: 'cascade' }).notNull(),
+    userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }).notNull(),
+    day: text('day').notNull(), // YYYY-MM-DD
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('habit_logs_user_day_idx').on(table.userId, table.day)]
+);
+
+// Daily mood and energy, 1..5 each (null = not recorded)
+export const dayRatings = pgTable('day_ratings', {
+  userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }).notNull(),
+  day: text('day').notNull(),
+  mood: integer('mood'),
+  energy: integer('energy'),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});

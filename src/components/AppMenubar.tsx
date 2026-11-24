@@ -31,6 +31,7 @@ import {
   Telescope,
   Library,
   ListTree,
+  Flame,
 } from "lucide-react";
 import CaptureBar from "@/components/capture/CaptureBar";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
@@ -95,6 +96,7 @@ export default function AppMenubar({
       items: [
         { label: "Aylık kayıt", path: "/journal/month", icon: CalendarDays, testId: "nav-journal-month", match: (p) => p.startsWith("/journal/month") },
         { label: "Gelecek kaydı", path: "/journal/future", icon: Telescope, testId: "nav-journal-future" },
+        { label: "Alışkanlıklar", path: "/journal/habits", icon: Flame, testId: "nav-journal-habits", match: (p) => p.startsWith("/journal/habits") },
         { label: "Koleksiyonlar", path: "/journal/collections", icon: Library, testId: "nav-journal-collections", match: (p) => p.startsWith("/journal/collections") },
         { label: "Dizin", path: "/journal", icon: ListTree, testId: "nav-journal-index" },
       ],

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { CalendarDays, Library, Sun, Telescope } from "lucide-react";
+import { CalendarDays, Flame, Library, Sun, Telescope } from "lucide-react";
 import PageShell, { Empty, Section } from "@/components/PageShell";
 import { formatApiError } from "@/lib/api";
 import { monthLabel } from "@/lib/journal";
@@ -25,13 +25,14 @@ export default function JournalIndexPage() {
     { to: "/", label: "Bugün", hint: "Günlük kayıt", icon: Sun },
     { to: `/journal/month/${current}`, label: monthLabel(current), hint: "Aylık kayıt", icon: CalendarDays },
     { to: "/journal/future", label: "Gelecek kaydı", hint: "Önümüzdeki 12 ay", icon: Telescope },
+    { to: "/journal/habits", label: "Alışkanlıklar", hint: "Takip ve ruh hali", icon: Flame },
     { to: "/journal/collections", label: "Koleksiyonlar", hint: "Konu listeleri", icon: Library },
   ];
 
   return (
     <PageShell title="Dizin" subtitle="Defterin içindekiler: aylar, koleksiyonlar ve konular" wide>
       <div className="space-y-4" data-testid="journal-index">
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           {pages.map((p) => {
             const Icon = p.icon;
             return (

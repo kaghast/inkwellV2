@@ -342,8 +342,72 @@ describe("journal migration", () => {
 
   test("monthly log sections and undo", () => {
     const m = insertLogLine(monthlyContent(), "- [ ] vergi", ["Görevler"]);
-    assert.equal(m, "## Hedefler\n\n## Görevler\n\n- [ ] vergi\n\n## Notlar\n");
-    assert.equal(removeLastLine(m, "- [ ] vergi"), "## Hedefler\n\n## Görevler\n\n\n## Notlar\n");
+    assert.equal(m, "## Hedefler\n\n## Görevler\n\n- [ ] vergi\n\n## Notlar\n\n## Yansıma\n");
+    assert.equal(removeLastLine(m, "- [ ] vergi"), "## Hedefler\n\n## Görevler\n\n\n## Notlar\n\n## Yansıma\n");
     assert.equal(removeLastLine(m, "- [ ] yok"), m);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2.5d/e — habits, reflection prompts, monthly review facts
+// ---------------------------------------------------------------------------
+import { habitStreaks, shiftDay, promptFor, DAILY_PROMPTS } from "../src/lib/journal";
+import { reviewFacts, reviewSources, buildReviewPrompt, taskKey } from "../server/services/reviewFacts";
+
+describe("habits and prompts", () => {
+  test("streaks count back from today, or from yesterday while today is open", () => {
+    assert.equal(shiftDay("2026-03-01", -1), "2026-02-28");
+    const days = ["2026-11-20", "2026-11-21", "2026-11-22", "2026-11-23", "2026-11-10", "2026-11-11"];
+    assert.deepEqual(habitStreaks(days, "2026-11-24"), { current: 4, longest: 4 });
+    assert.deepEqual(habitStreaks([...days, "2026-11-24"], "2026-11-24"), { current: 5, longest: 5 });
+    assert.deepEqual(habitStreaks(["2026-11-20"], "2026-11-24"), { current: 0, longest: 1 });
+    assert.deepEqual(habitStreaks([], "2026-11-24"), { current: 0, longest: 0 });
+  });
+
+  test("a reflection question is stable for the day and rotates", () => {
+    assert.equal(promptFor("2026-11-24", DAILY_PROMPTS), promptFor("2026-11-24", DAILY_PROMPTS));
+    const week = new Set(["2026-11-24", "2026-11-25", "2026-11-26", "2026-11-27", "2026-11-28"].map((d) => promptFor(d, DAILY_PROMPTS)));
+    assert.ok(week.size > 1);
+  });
+});
+
+describe("monthly review facts", () => {
+  const pages = [
+    { note_id: "d1", title: "Günlük not · 2026-11-02", date: "2026-11-02", content: "## Kayıt\n- [x] sunum #iş\n- [>] vergi → [[Günlük not · 2026-11-03]]\n- [o] doktor" },
+    { note_id: "d2", title: "Günlük not · 2026-11-03", date: "2026-11-03", content: "## Kayıt\n- [>] Vergi → [[Günlük not · 2026-11-04]]\n- [-] eski iş\n- fikir #iş" },
+    { note_id: "d3", title: "Günlük not · 2026-11-04", date: "2026-11-04", content: "## Kayıt\n- [ ] vergi\n" },
+    { note_id: "d4", title: "Günlük not · 2026-11-05", date: "2026-11-05", content: "## Kayıt\n\n## Yansıma\n" },
+    { note_id: "m", title: "Aylık kayıt · 2026-11", date: "2026-11", content: "## Görevler\n- [<] tatil planı → [[Aylık kayıt · 2026-12]]" },
+  ];
+
+  test("counts tasks by state and finds tasks postponed twice", () => {
+    assert.equal(taskKey("Vergi → [[x]]"), "vergi");
+    const f = reviewFacts(pages, [{ name: "Okuma", done: 3, days: 5 }], [{ mood: 4, energy: 2 }, { mood: 3, energy: null }]);
+    assert.equal(f.days_logged, 3, "an empty day is not counted");
+    assert.deepEqual(f.tasks, { done: 1, open: 1, migrated: 2, scheduled: 1, cancelled: 1 });
+    assert.equal(f.events, 1);
+    assert.deepEqual(f.postponed, [{ text: "vergi", times: 2 }]);
+    assert.deepEqual(f.top_tags[0], { tag: "iş", count: 2 });
+    assert.equal(f.mood_avg, 3.5);
+    assert.equal(f.energy_avg, 2);
+  });
+
+  test("sources skip empty pages and the prompt carries counts and sources", () => {
+    const src = reviewSources(pages);
+    assert.deepEqual(src.map((s) => s.note_id), ["m", "d1", "d2", "d3"], "sorted by date; the month key sorts before its days");
+    assert.match(src.find((s) => s.note_id === "d1")!.text, /\(görev: yapıldı\) sunum #iş · \(görev: taşındı\) vergi · \(etkinlik\) doktor/);
+    const prompt = buildReviewPrompt("Kasım 2026", reviewFacts(pages), src);
+    assert.match(prompt, /En az iki kez ertelenenler: "vergi" \(2 kez\)/);
+    assert.match(prompt, /^\[1\] /m);
+  });
+});
+
+describe("journal sections", () => {
+  test("a missing section is added before the comments block, an existing one is kept", async () => {
+    const { ensureSection } = await import("../src/lib/tasks");
+    assert.equal(ensureSection("## Görevler\n- [ ] a\n", "Yansıma"), "## Görevler\n- [ ] a\n\n## Yansıma\n");
+    assert.equal(ensureSection("## Yansıma\n", "Yansıma"), "## Yansıma\n");
+    assert.equal(ensureSection("x\n<!-- inkwell:comments:start -->\nc", "Yansıma"), "x\n\n## Yansıma\n\n<!-- inkwell:comments:start -->\nc");
+    assert.equal(insertLogLine(ensureSection("## Notlar\n- n", "Yansıma"), "- cevap", ["Yansıma"]), "## Notlar\n- n\n\n## Yansıma\n\n- cevap\n");
   });
 });

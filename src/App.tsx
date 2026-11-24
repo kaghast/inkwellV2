@@ -28,6 +28,7 @@ import MonthPage from "@/pages/journal/MonthPage";
 import FutureLogPage from "@/pages/journal/FutureLogPage";
 import CollectionsPage from "@/pages/journal/CollectionsPage";
 import JournalIndexPage from "@/pages/journal/JournalIndexPage";
+import HabitsPage from "@/pages/journal/HabitsPage";
 import CommandPalette from "@/components/CommandPalette";
 import TemplateDialog from "@/components/TemplateDialog";
 import { WorkspaceProvider } from "@/contexts/WorkspaceContext";
@@ -51,6 +52,8 @@ function AppRoutes() {
       <Route path="/journal/month" element={<ProtectedRoute><MonthPage /></ProtectedRoute>} />
       <Route path="/journal/month/:month" element={<ProtectedRoute><MonthPage /></ProtectedRoute>} />
       <Route path="/journal/future" element={<ProtectedRoute><FutureLogPage /></ProtectedRoute>} />
+      <Route path="/journal/habits" element={<ProtectedRoute><HabitsPage /></ProtectedRoute>} />
+      <Route path="/journal/habits/:month" element={<ProtectedRoute><HabitsPage /></ProtectedRoute>} />
       <Route path="/journal/collections" element={<ProtectedRoute><CollectionsPage /></ProtectedRoute>} />
       <Route path="/journal/collections/:id" element={<ProtectedRoute><CollectionsPage /></ProtectedRoute>} />
       <Route path="/spaces" element={<ProtectedRoute><SpacesPage /></ProtectedRoute>} />

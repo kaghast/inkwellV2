@@ -156,6 +156,38 @@ const DDL_STEPS: Array<{ id: string; statements: string[] }> = [
     ],
   },
   {
+    // Phase 2.5d: habit tracker and daily mood/energy. New tables only.
+    id: "2026_11_25_009_habits",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS habits (
+        habit_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        color TEXT,
+        position INTEGER NOT NULL DEFAULT 0,
+        archived BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE INDEX IF NOT EXISTS habits_user_idx ON habits(user_id)`,
+      `CREATE TABLE IF NOT EXISTS habit_logs (
+        habit_id TEXT NOT NULL REFERENCES habits(habit_id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        day TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (habit_id, day)
+      )`,
+      `CREATE INDEX IF NOT EXISTS habit_logs_user_day_idx ON habit_logs(user_id, day)`,
+      `CREATE TABLE IF NOT EXISTS day_ratings (
+        user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        day TEXT NOT NULL,
+        mood INTEGER,
+        energy INTEGER,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, day)
+      )`,
+    ],
+  },
+  {
     id: "2026_11_23_007_embedding_model",
     statements: [`ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding_model TEXT`],
   },

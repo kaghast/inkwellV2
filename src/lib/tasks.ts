@@ -297,3 +297,13 @@ export function removeLastLine(content: string, line: string): string {
   }
   return content;
 }
+
+/** Adds an empty "## name" section at the end (before the comments block) when the content has none. */
+export function ensureSection(content: string, name: string): string {
+  const src = content || "";
+  if (new RegExp(`^##\\s+${name}\\s*$`, "im").test(src)) return src;
+  const marker = src.search(/<!--\s*inkwell:comments:start\s*-->/i);
+  const body = (marker >= 0 ? src.slice(0, marker) : src).replace(/\s+$/, "");
+  const tail = marker >= 0 ? `\n\n${src.slice(marker)}` : "\n";
+  return `${body}${body ? "\n\n" : ""}## ${name}${tail}`;
+}

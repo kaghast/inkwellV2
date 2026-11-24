@@ -54,10 +54,70 @@ export function dailyTitle(day: string): string {
 }
 
 export function monthlyContent(): string {
-  return `## Hedefler\n\n## Görevler\n\n## Notlar\n`;
+  return `## Hedefler\n\n## Görevler\n\n## Notlar\n\n## Yansıma\n`;
 }
 
 export function collectionContent(description?: string): string {
   const d = (description || "").trim();
   return `${d ? `${d}\n\n` : ""}## Liste\n`;
+}
+
+/** The day before / after "YYYY-MM-DD" (UTC arithmetic, no time zone drift). */
+export function shiftDay(day: string, delta: number): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Current streak: consecutive done days ending today, or ending yesterday
+ * when today is not ticked yet (the day is not over). Longest streak too.
+ */
+export function habitStreaks(doneDays: Iterable<string>, today: string): { current: number; longest: number } {
+  const set = new Set(doneDays);
+  let start = set.has(today) ? today : shiftDay(today, -1);
+  let current = 0;
+  while (set.has(start)) {
+    current++;
+    start = shiftDay(start, -1);
+  }
+  let longest = 0;
+  for (const d of set) {
+    if (set.has(shiftDay(d, -1))) continue; // not the first day of a run
+    let n = 0;
+    let x = d;
+    while (set.has(x)) {
+      n++;
+      x = shiftDay(x, 1);
+    }
+    longest = Math.max(longest, n);
+  }
+  return { current, longest };
+}
+
+/** Rotating reflection questions; Sundays ask weekly ones, the month page monthly ones. */
+export const DAILY_PROMPTS = [
+  "Bugün ne iyi gitti?",
+  "Bugün neyi farklı yapardım?",
+  "Bugün neye minnettarım?",
+  "Bugün enerjimi en çok ne aldı, ne verdi?",
+  "Bugün kimden ya da neden bir şey öğrendim?",
+  "Yarın için en önemli tek şey ne?",
+  "Bugün kendime nasıl iyi davrandım?",
+];
+export const WEEKLY_PROMPTS = [
+  "Bu haftanın en anlamlı anı neydi?",
+  "Bu hafta neyi ertelemeye devam ettim, neden?",
+  "Gelecek hafta neye hayır diyeceğim?",
+];
+export const MONTHLY_PROMPTS = [
+  "Bu ay neler iyi gitti?",
+  "Bu ay neyi bırakmalıyım?",
+  "Gelecek ay neye odaklanacağım?",
+];
+
+/** Same question all day, a different one tomorrow. */
+export function promptFor(day: string, pool: string[]): string {
+  const n = day.split("-").reduce((a, p) => a * 31 + Number(p), 7);
+  return pool[Math.abs(n) % pool.length];
 }
