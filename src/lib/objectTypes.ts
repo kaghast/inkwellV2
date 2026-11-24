@@ -28,11 +28,20 @@ const rating = (id = "rating", name = "Puan"): NoteTypeField => status(id, name,
 export const PLAIN_TYPE_ID = "type_plain";
 export const CARD_TYPE_ID = "type_card";
 export const DAILY_TYPE_ID = "type_daily";
+export const MONTHLY_TYPE_ID = "type_monthly";
+export const COLLECTION_TYPE_ID = "type_collection";
+/** Journal pages the app creates itself (one per day / month); never picked by capture or templates. */
+export const JOURNAL_PAGE_TYPE_IDS = [DAILY_TYPE_ID, MONTHLY_TYPE_ID];
+export function isJournalPageType(typeId: string | null | undefined): boolean {
+  return !!typeId && JOURNAL_PAGE_TYPE_IDS.includes(typeId);
+}
 
 export const SYSTEM_OBJECT_TYPES: SystemObjectType[] = [
   { type_id: PLAIN_TYPE_ID, key: "note", name: "Düz Metin", description: "Standart sade metin ve Markdown notları", color: "#64748b", icon: "FileText", fields: [] },
   { type_id: CARD_TYPE_ID, key: "task", name: "Kart", description: "Kanban panosu ve görevler için kart", color: "#8b5cf6", icon: "Kanban", fields: [] },
   { type_id: DAILY_TYPE_ID, key: "daily", name: "Günlük Not", description: "Her gün için otomatik günlük not", color: "#f59e0b", icon: "Sun", fields: [] },
+  { type_id: MONTHLY_TYPE_ID, key: "monthly", name: "Aylık Kayıt", description: "Her ay için bir sayfa: hedefler, görevler, notlar", color: "#d97706", icon: "CalendarDays", fields: [] },
+  { type_id: COLLECTION_TYPE_ID, key: "collection", name: "Koleksiyon", description: "Bir konu etrafındaki liste: okunacaklar, fikirler, alışveriş…", color: "#0d9488", icon: "Library", fields: [] },
   {
     type_id: "type_idea", key: "idea", name: "Fikir", description: "Ham fikirler ve ilhamlar", color: "#eab308", icon: "Lightbulb",
     fields: [status("stage", "Aşama", ["Ham", "Geliştiriliyor", "Hazır", "Bırakıldı"])],

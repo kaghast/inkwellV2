@@ -4,7 +4,7 @@
 // - Own templates create one object of a chosen type from title/content text.
 import { and, eq, isNull } from "drizzle-orm";
 import { db, userTemplates } from "../../src/db/index";
-import { DAILY_TYPE_ID } from "../../src/lib/objectTypes";
+import { isJournalPageType } from "../../src/lib/objectTypes";
 import { genId } from "./notesCore";
 import { assignableTypeIds, createObject } from "./objects";
 import { AccessError } from "./workspaces";
@@ -90,7 +90,7 @@ export interface TemplateInputBody {
 
 async function checkType(userId: string, typeId?: string | null) {
   if (!typeId || typeId === "type_plain") return null;
-  if (typeId === DAILY_TYPE_ID) throw new AccessError(400, "Günlük not tipi şablonla oluşturulamaz");
+  if (isJournalPageType(typeId)) throw new AccessError(400, "Günlük ve aylık kayıt tipleri şablonla oluşturulamaz");
   if (!(await assignableTypeIds(userId)).has(typeId)) throw new AccessError(400, "Geçersiz nesne tipi");
   return typeId;
 }

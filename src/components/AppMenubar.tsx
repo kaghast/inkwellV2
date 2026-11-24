@@ -26,6 +26,11 @@ import {
   Layers,
   Search,
   Sparkles,
+  BookOpen,
+  CalendarDays,
+  Telescope,
+  Library,
+  ListTree,
 } from "lucide-react";
 import CaptureBar from "@/components/capture/CaptureBar";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
@@ -83,6 +88,17 @@ export default function AppMenubar({
     { label: "Bilgi · Bütün notlar", path: "/all-notes", icon: FileText, testId: "nav-all-notes", match: (p) => p === "/all-notes" || p === "/notes" },
   ];
   const groups: Array<{ label: string; icon: any; testId: string; items: NavItem[] }> = [
+    {
+      label: "Defter",
+      icon: BookOpen,
+      testId: "nav-journal",
+      items: [
+        { label: "Aylık kayıt", path: "/journal/month", icon: CalendarDays, testId: "nav-journal-month", match: (p) => p.startsWith("/journal/month") },
+        { label: "Gelecek kaydı", path: "/journal/future", icon: Telescope, testId: "nav-journal-future" },
+        { label: "Koleksiyonlar", path: "/journal/collections", icon: Library, testId: "nav-journal-collections", match: (p) => p.startsWith("/journal/collections") },
+        { label: "Dizin", path: "/journal", icon: ListTree, testId: "nav-journal-index" },
+      ],
+    },
     {
       label: "Keşfet",
       icon: Compass,

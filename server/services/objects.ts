@@ -25,6 +25,8 @@ export interface NewObjectInput {
   ai_meta?: Record<string, any>;
   ai_summary?: string | null;
   version_summary?: string;
+  /** "day" (default), "week" or "month": which period strip the note belongs to. */
+  period?: "day" | "week" | "month";
 }
 
 /** The type ids the user may assign: system types and the user's own. */
@@ -65,7 +67,7 @@ export async function createObject(userId: string, input: NewObjectInput) {
     noteTypeId: typeId,
     customFields,
     areaIds: Array.isArray(input.area_ids) ? input.area_ids : [],
-    period: "day",
+    period: input.period || "day",
     workspaceId: target.workspaceId,
     spaceId: target.spaceId,
     source: input.source || {},

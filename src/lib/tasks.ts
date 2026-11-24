@@ -201,15 +201,18 @@ export function formatLogEntry(e: LogEntry): string {
  * older "## Plan") section, else at the end of the content. The comments
  * block always stays last. Consecutive entries form one tight list.
  */
-export function insertLogLine(content: string, line: string): string {
+export function insertLogLine(content: string, line: string, sections: string[] = ["Kayıt", "Plan"]): string {
   const src = content || "";
   const marker = src.search(/<!--\s*inkwell:comments:start\s*-->/i);
   const body = marker >= 0 ? src.slice(0, marker).replace(/\s+$/, "") : src.replace(/\s+$/, "");
   const tail = marker >= 0 ? `\n\n${src.slice(marker)}` : "\n";
   const lines = body ? body.split("\n") : [];
   const find = (name: string) => lines.findIndex((l) => new RegExp(`^##\\s+${name}\\s*$`, "i").test(l.trim()));
-  let head = find("Kayıt");
-  if (head < 0) head = find("Plan");
+  let head = -1;
+  for (const name of sections) {
+    head = find(name);
+    if (head >= 0) break;
+  }
   if (head >= 0) {
     let end = lines.length;
     for (let i = head + 1; i < lines.length; i++) {
@@ -231,4 +234,66 @@ export function insertLogLine(content: string, line: string): string {
   const lastLine = lines.length ? lines[lines.length - 1] : "";
   const sep = !body ? "" : LIST_LINE.test(lastLine) ? "\n" : "\n\n";
   return `${body}${sep}${line}${tail}`;
+}
+
+// ---------------------------------------------------------------- journal reads
+
+export interface BulletEntry extends BulletInfo {
+  /** 1-based source line. */
+  line: number;
+  /** Text after the bullet box and signifier. */
+  text: string;
+}
+
+/** Every bullet with its text, in document order (code and comments excluded). */
+export function listBullets(md: string): BulletEntry[] {
+  const lines = (md || "").split("\n");
+  const out: BulletEntry[] = [];
+  for (const [line, info] of bulletLineMap(md)) {
+    let rest = lines[line - 1].replace(LIST_LINE, "");
+    if (info.kind !== "note") rest = rest.replace(/^\[[^\]]\]\s*/, "");
+    rest = rest.replace(SIGNIFIER, "").trim();
+    if (rest) out.push({ ...info, line, text: rest });
+  }
+  return out;
+}
+
+/**
+ * Migration: closes the `index`-th task with a journal state and, when a
+ * target is given, records where it went (" → [[Target]]", which also
+ * becomes a wikilink relation). Returns the entry as written after the box
+ * (signifier included) so it can be copied to the target, or null when the
+ * index is not an open task.
+ */
+export function closeTaskInMarkdown(
+  md: string,
+  index: number,
+  state: "migrated" | "scheduled" | "cancelled",
+  linkTitle?: string
+): { content: string; entry: string } | null {
+  const lines = (md || "").split("\n");
+  let count = 0;
+  let result: { content: string; entry: string } | null = null;
+  forEachTaskLine(lines, (i, m) => {
+    if (count++ !== index) return;
+    if (stateFromChar(m[2]) !== "open") return false;
+    const entry = lines[i].slice(m[0].length).trim();
+    const suffix = linkTitle ? ` → [[${linkTitle}]]` : "";
+    lines[i] = `${m[1]}[${STATE_CHAR[state]}] ${entry}${suffix}`;
+    result = { content: lines.join("\n"), entry };
+    return false;
+  });
+  return result;
+}
+
+/** Removes the last line equal to `line` (used to undo a half-done migration). */
+export function removeLastLine(content: string, line: string): string {
+  const lines = (content || "").split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i] === line) {
+      lines.splice(i, 1);
+      return lines.join("\n");
+    }
+  }
+  return content;
 }

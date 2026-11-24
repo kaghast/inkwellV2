@@ -114,6 +114,19 @@ Out of scope: handwriting/stylus (Phase 6), shared journals (Phases 3–4), deco
 - Today: quick-entry line (`POST /today/log`) — prefixes `.`/`t` task, `o` event, `-` note, `!` priority, `?` explore; creates the daily note when missing.
 - Daily template uses the rapid-log format (`## Kayıt`, `## Yansıma`); customised daily templates are kept.
 
+### Phase 2.5b/c status
+
+- System types `type_monthly` ("Aylık Kayıt") and `type_collection` ("Koleksiyon"). Monthly logs are unique per user and month the same way daily notes are unique per day (type + date prefix), so **no `period_key` column was needed**; monthly notes use `period = "month"` and appear in the existing month strip. Journal page types (daily, monthly) are never offered to capture or user templates.
+- `server/services/journal.ts`, routes under `/api/journal/*`:
+  - `GET /journal/month?month=` — monthly log + calendar list built from that month's daily notes (events, done/open counts); `POST /journal/month` creates the month page (idempotent).
+  - `GET /journal/future?from=&months=` — future log from the next months' monthly logs.
+  - `GET /journal/migration?date=` — open tasks in daily notes of the last 92 days before `date` and in earlier monthly logs.
+  - `POST /journal/migrate` — `today` (copy to the day's log, original becomes `[>] … → [[target]]`), `month` (copy to the month's "Görevler", original `[<] … → [[target]]`), `cancel` (`[-]`). The copy is written first and removed again if the source update fails; nothing is deleted. A task that is no longer open returns 409.
+  - `POST /journal/log` — add an entry to a section of any own page (month, collection).
+  - `GET/POST /journal/collections`, `GET /journal/collections/:id` (entries + notes linked with `part_of`), `GET /journal/index` (months, collections, top tags).
+- Pages: `/journal/month/:month`, `/journal/future`, `/journal/collections/:id`, `/journal` (index); "Defter" group in the rail, palette entries, `g m` / `g j` shortcuts; Today shows "Taşınacaklar" and links to the month.
+- The derived `bullets` table is **deferred**: all journal reads parse note content directly, which is fast enough at personal scale. It comes back when cross-workspace queries (Phase 3) need SQL filtering.
+
 ## Phase 3 — SaaS: workspaces, roles, tenancy, billing, storage, jobs
 
 1. Team workspaces, workspace switcher, invitations (hashed tokens, expiry), roles Owner/Admin/Editor/Commenter/Viewer.

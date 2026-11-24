@@ -1,14 +1,14 @@
 import React from "react";
 import {
   FileText, Kanban, Sun, Lightbulb, FolderKanban, User, Users, CalendarDays, BookOpen, GraduationCap,
-  Newspaper, Quote, Bookmark, MapPin, Paperclip, Boxes, Home, type LucideIcon,
+  Newspaper, Quote, Bookmark, MapPin, Paperclip, Boxes, Home, Library, type LucideIcon,
 } from "lucide-react";
 
 // Icons for object types. Only the icons used by built-in types are bundled;
 // user-defined types fall back to a neutral icon.
 const ICONS: Record<string, LucideIcon> = {
   FileText, Kanban, Sun, Lightbulb, FolderKanban, User, Users, CalendarDays, BookOpen, GraduationCap,
-  Newspaper, Quote, Bookmark, MapPin, Paperclip, Home,
+  Newspaper, Quote, Bookmark, MapPin, Paperclip, Home, Library,
 };
 
 export function iconFor(name?: string | null): LucideIcon {

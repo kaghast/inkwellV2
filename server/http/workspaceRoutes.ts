@@ -16,6 +16,11 @@ import {
 import { listSpaces, createSpace, updateSpace, moveObjectToSpace, ensurePersonalWorkspace } from "../services/workspaces";
 import { search } from "../services/search";
 import { today, ensureDailyNote, logToDay } from "../services/today";
+import {
+  monthView, ensureMonthlyNote, futureLog, migrationCandidates, migrateTask, logToPage,
+  listCollections, createCollection, collectionDetail, journalIndex,
+} from "../services/journal";
+import { MONTH_RE } from "../../src/lib/journal";
 import { applyTemplate } from "../services/templates";
 import { listTemplates, createTemplate, updateTemplate, deleteTemplate } from "../services/userTemplates";
 import { activationSummary, recordActiveDay } from "../services/analytics";
@@ -36,7 +41,7 @@ const list = (max = 30, len = 200) => z.array(z.string().trim().min(1).max(len))
 export function createWorkspaceRouter(auth: RequestHandler) {
   const r = express.Router();
   r.use(
-    ["/capture", "/inbox", "/relations", "/relation-types", "/objects", "/spaces", "/workspace", "/search", "/today", "/templates", "/home", "/ai/settings", "/ai/embeddings", "/ai/actions", "/ask", "/graph"],
+    ["/capture", "/inbox", "/relations", "/relation-types", "/objects", "/spaces", "/workspace", "/search", "/today", "/templates", "/home", "/ai/settings", "/ai/embeddings", "/ai/actions", "/ask", "/graph", "/journal"],
     auth
   );
 
@@ -194,6 +199,75 @@ export function createWorkspaceRouter(auth: RequestHandler) {
       return logToDay(uid(req), body.date || todayIso(), todayIso(), { text: body.text as string, kind: body.kind });
     })
   );
+
+  // --------------------------------------------------------------- journal
+  const monthKey = z.string().regex(MONTH_RE, "Ay YYYY-MM biçiminde olmalı");
+  r.get(
+    "/journal/month",
+    handle(async (req) => monthView(uid(req), parse(monthKey.default(todayIso().slice(0, 7)), req.query.month)))
+  );
+  r.post(
+    "/journal/month",
+    handle(async (req) => ensureMonthlyNote(uid(req), parse(z.object({ month: monthKey }), req.body).month as string))
+  );
+  r.get(
+    "/journal/future",
+    handle(async (req) => {
+      const q = parse(z.object({ from: monthKey.optional(), months: z.coerce.number().int().min(1).max(24).optional() }), req.query);
+      return futureLog(uid(req), (q.from as string) || todayIso().slice(0, 7), q.months || 12);
+    })
+  );
+  r.get(
+    "/journal/migration",
+    handle(async (req) => ({ tasks: await migrationCandidates(uid(req), parse(isoDay.default(todayIso()), req.query.date) as string) }))
+  );
+  r.post(
+    "/journal/migrate",
+    handle(async (req) => {
+      const b = parse(
+        z.object({
+          note_id: z.string().min(1),
+          task_index: z.number().int().min(0),
+          action: z.enum(["today", "month", "cancel"]),
+          date: isoDay.optional(),
+          month: monthKey.optional(),
+        }),
+        req.body
+      );
+      return migrateTask(uid(req), {
+        note_id: b.note_id as string,
+        task_index: b.task_index as number,
+        action: b.action as "today" | "month" | "cancel",
+        date: (b.date as string) || todayIso(),
+        month: b.month as string | undefined,
+      });
+    })
+  );
+  r.post(
+    "/journal/log",
+    handle(async (req) => {
+      const b = parse(
+        z.object({
+          note_id: z.string().min(1),
+          text: z.string().min(1).max(2000),
+          kind: z.enum(["task", "event", "note"]).optional(),
+          section: z.string().max(60).optional(),
+        }),
+        req.body
+      );
+      return logToPage(uid(req), b.note_id as string, { text: b.text as string, kind: b.kind, section: b.section });
+    })
+  );
+  r.get("/journal/collections", handle(async (req) => listCollections(uid(req))));
+  r.post(
+    "/journal/collections",
+    handle(async (req) => {
+      const b = parse(z.object({ title: z.string().min(1).max(200), description: z.string().max(2000).optional() }), req.body);
+      return createCollection(uid(req), { title: b.title as string, description: b.description });
+    })
+  );
+  r.get("/journal/collections/:id", handle(async (req) => collectionDetail(uid(req), req.params.id)));
+  r.get("/journal/index", handle(async (req) => journalIndex(uid(req))));
 
   // -------------------------------------------------------------- templates
   r.get("/templates", handle(async (req) => listTemplates(uid(req), { includeHidden: req.query.all === "1" })));

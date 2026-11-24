@@ -24,6 +24,10 @@ import InboxPage from "@/pages/InboxPage";
 import TodayPage from "@/pages/TodayPage";
 import SpacesPage from "@/pages/SpacesPage";
 import AskPage from "@/pages/AskPage";
+import MonthPage from "@/pages/journal/MonthPage";
+import FutureLogPage from "@/pages/journal/FutureLogPage";
+import CollectionsPage from "@/pages/journal/CollectionsPage";
+import JournalIndexPage from "@/pages/journal/JournalIndexPage";
 import CommandPalette from "@/components/CommandPalette";
 import TemplateDialog from "@/components/TemplateDialog";
 import { WorkspaceProvider } from "@/contexts/WorkspaceContext";
@@ -43,6 +47,12 @@ function AppRoutes() {
       <Route path="/today" element={<Navigate to="/" replace />} />
       <Route path="/today/:date" element={<ProtectedRoute><TodayPage /></ProtectedRoute>} />
       <Route path="/ask" element={<ProtectedRoute><AskPage /></ProtectedRoute>} />
+      <Route path="/journal" element={<ProtectedRoute><JournalIndexPage /></ProtectedRoute>} />
+      <Route path="/journal/month" element={<ProtectedRoute><MonthPage /></ProtectedRoute>} />
+      <Route path="/journal/month/:month" element={<ProtectedRoute><MonthPage /></ProtectedRoute>} />
+      <Route path="/journal/future" element={<ProtectedRoute><FutureLogPage /></ProtectedRoute>} />
+      <Route path="/journal/collections" element={<ProtectedRoute><CollectionsPage /></ProtectedRoute>} />
+      <Route path="/journal/collections/:id" element={<ProtectedRoute><CollectionsPage /></ProtectedRoute>} />
       <Route path="/spaces" element={<ProtectedRoute><SpacesPage /></ProtectedRoute>} />
       <Route path="/spaces/:spaceId" element={<ProtectedRoute><SpacesPage /></ProtectedRoute>} />
       <Route path="/feed" element={<ProtectedRoute><Dashboard mode="day" /></ProtectedRoute>} />

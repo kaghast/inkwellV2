@@ -5,7 +5,7 @@
 // is down, and "save without AI" is always possible.
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, captures, files, noteTypes, notes, people as peopleTable, type CaptureSuggestion } from "../../src/db/index";
-import { DAILY_TYPE_ID, PLAIN_TYPE_ID, SYSTEM_OBJECT_TYPES, SYSTEM_TYPE_BY_ID } from "../../src/lib/objectTypes";
+import { DAILY_TYPE_ID, PLAIN_TYPE_ID, SYSTEM_OBJECT_TYPES, SYSTEM_TYPE_BY_ID, isJournalPageType } from "../../src/lib/objectTypes";
 import { extractWithFallback } from "../ai";
 import type { TypeOption } from "../ai/types";
 import { enqueue, registerQueue } from "../jobs/queue";
@@ -112,7 +112,7 @@ async function typeOptions(userId: string): Promise<TypeOption[]> {
     .from(noteTypes)
     .where(eq(noteTypes.userId, userId));
   return [
-    ...SYSTEM_OBJECT_TYPES.filter((t) => t.type_id !== DAILY_TYPE_ID).map((t) => ({ type_id: t.type_id, key: t.key, name: t.name, description: t.description })),
+    ...SYSTEM_OBJECT_TYPES.filter((t) => !isJournalPageType(t.type_id)).map((t) => ({ type_id: t.type_id, key: t.key, name: t.name, description: t.description })),
     ...userTypes.map((t: any) => ({ type_id: t.id, key: t.id, name: t.name, description: t.description || undefined })),
   ];
 }

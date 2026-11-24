@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { formatApiError } from "@/lib/api";
 import { INBOX_CHANGED, notifyInboxChanged, objectPath, wsApi, type Capture } from "@/lib/workspaceApi";
+import { isJournalPageType } from "@/lib/objectTypes";
 
 const STATUS: Record<Capture["status"], { label: string; cls: string }> = {
   new: { label: "Yeni", cls: "bg-muted text-muted-foreground" },
@@ -282,7 +283,7 @@ export default function InboxPage() {
                         className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
                         aria-label="Nesne tipi"
                       >
-                        {noteTypes.filter((t) => t.type_id !== "type_daily").map((t) => (
+                        {noteTypes.filter((t) => !isJournalPageType(t.type_id)).map((t) => (
                           <option key={t.type_id} value={t.type_id}>{t.name}</option>
                         ))}
                       </select>

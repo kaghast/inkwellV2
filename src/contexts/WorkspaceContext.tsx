@@ -111,7 +111,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const now = Date.now();
       if (pendingG && now - pendingG < 1200) {
         pendingG = 0;
-        const dest = { h: "/", i: "/inbox", t: "/", k: "/all-notes", s: "/spaces" }[e.key.toLowerCase()];
+        const dest = { h: "/", i: "/inbox", t: "/", k: "/all-notes", s: "/spaces", m: "/journal/month", j: "/journal" }[e.key.toLowerCase()];
         if (dest) {
           e.preventDefault();
           navigate(dest);

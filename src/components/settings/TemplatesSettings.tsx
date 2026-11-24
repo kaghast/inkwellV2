@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { formatApiError } from "@/lib/api";
 import { wsApi, type TemplateBody, type TemplateInfo } from "@/lib/workspaceApi";
+import { isJournalPageType } from "@/lib/objectTypes";
 
 const EMPTY: TemplateBody = { name: "", description: "", note_type_id: null, title_template: "", content_template: "" };
 
@@ -105,7 +106,7 @@ export default function TemplatesSettings() {
               onChange={(e) => setDraft({ ...draft, note_type_id: e.target.value })}
               className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
             >
-              {noteTypes.filter((t) => t.type_id !== "type_daily").map((t) => (
+              {noteTypes.filter((t) => !isJournalPageType(t.type_id)).map((t) => (
                 <option key={t.type_id} value={t.type_id}>{t.name}</option>
               ))}
             </select>

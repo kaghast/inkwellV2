@@ -299,3 +299,51 @@ describe("journal bullets", () => {
     assert.equal(insertLogLine("", "- z"), "- z\n");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2.5b/c — monthly log, migration, collections helpers
+// ---------------------------------------------------------------------------
+import { listBullets, closeTaskInMarkdown, removeLastLine } from "../src/lib/tasks";
+import { addMonths, daysInMonth, monthDays, monthLabel, weekdayOf, isMonthKey, monthlyContent } from "../src/lib/journal";
+
+describe("journal months", () => {
+  test("month arithmetic and labels", () => {
+    assert.equal(addMonths("2026-11", 1), "2026-12");
+    assert.equal(addMonths("2026-12", 1), "2027-01");
+    assert.equal(addMonths("2026-01", -1), "2025-12");
+    assert.equal(addMonths("2026-05", -17), "2024-12");
+    assert.equal(daysInMonth("2028-02"), 29);
+    assert.equal(monthDays("2026-11").length, 30);
+    assert.equal(weekdayOf("2026-11-24"), 2, "24 Nov 2026 is a Tuesday");
+    assert.equal(monthLabel("2026-08"), "Ağustos 2026");
+    assert.ok(isMonthKey("2026-11") && !isMonthKey("2026-13") && !isMonthKey("2026-1"));
+  });
+});
+
+describe("journal migration", () => {
+  const md = "## Kayıt\n- [x] done\n- [ ] ! rapor yaz #iş\n- [o] toplantı\n- not satırı";
+
+  test("listBullets returns text without box and signifier", () => {
+    assert.deepEqual(
+      listBullets(md).map((b) => [b.kind, b.state || null, b.signifier || null, b.text]),
+      [["task", "done", null, "done"], ["task", "open", "priority", "rapor yaz #iş"], ["event", null, null, "toplantı"], ["note", null, null, "not satırı"]]
+    );
+  });
+
+  test("closing a task keeps the entry and records where it went", () => {
+    const r = closeTaskInMarkdown(md, 1, "migrated", "Günlük not · 2026-11-25");
+    assert.ok(r);
+    assert.equal(r!.entry, "! rapor yaz #iş");
+    assert.match(r!.content, /^- \[>\] ! rapor yaz #iş → \[\[Günlük not · 2026-11-25\]\]$/m);
+    assert.equal(closeTaskInMarkdown(md, 0, "cancelled"), null, "a done task is not migrated");
+    assert.equal(closeTaskInMarkdown(md, 9, "cancelled"), null);
+    assert.match(closeTaskInMarkdown(md, 1, "cancelled")!.content, /^- \[-\] ! rapor yaz #iş$/m);
+  });
+
+  test("monthly log sections and undo", () => {
+    const m = insertLogLine(monthlyContent(), "- [ ] vergi", ["Görevler"]);
+    assert.equal(m, "## Hedefler\n\n## Görevler\n\n- [ ] vergi\n\n## Notlar\n");
+    assert.equal(removeLastLine(m, "- [ ] vergi"), "## Hedefler\n\n## Görevler\n\n\n## Notlar\n");
+    assert.equal(removeLastLine(m, "- [ ] yok"), m);
+  });
+});

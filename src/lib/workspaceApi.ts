@@ -309,3 +309,88 @@ export const aiApi = {
   embeddings: () => api.get("/ai/embeddings").then((r) => r.data as { model: string | null; total: number; embedded: number }),
   reindex: () => api.post("/ai/embeddings/reindex").then((r) => r.data as { queued: number }),
 };
+
+// ---------------------------------------------------------------- journal (Phase 2.5)
+
+export type EntryKind = "task" | "event" | "note";
+
+export interface MonthDay {
+  date: string;
+  note_id: string | null;
+  slug: string | null;
+  events: string[];
+  open: number;
+  done: number;
+  entries: number;
+  locked: boolean;
+}
+
+export interface MonthViewData {
+  month: string;
+  monthly: { note_id: string; slug: string | null; title: string; content: string; locked: boolean } | null;
+  days: MonthDay[];
+}
+
+export interface FutureMonth {
+  month: string;
+  note_id: string | null;
+  slug: string | null;
+  items: Array<{ kind: EntryKind; state: string | null; signifier: string | null; text: string; task_index: number | null }>;
+}
+
+export interface MigrationTask {
+  note_id: string;
+  note_title: string;
+  page: "daily" | "monthly";
+  date: string;
+  task_index: number;
+  text: string;
+  signifier: string | null;
+}
+
+export interface CollectionSummary {
+  note_id: string;
+  slug: string | null;
+  title: string;
+  items: number;
+  open: number;
+  done: number;
+  linked: number;
+  locked: boolean;
+  updated_at: string;
+}
+
+export interface CollectionDetail {
+  note_id: string;
+  slug: string | null;
+  title: string;
+  content: string;
+  locked: boolean;
+  archived: boolean;
+  linked: Array<{ note_id: string; slug: string | null; title: string; note_type_id: string }>;
+}
+
+export interface JournalIndexData {
+  months: Array<{ month: string; monthly_id: string | null; monthly_slug: string | null; days: number; open: number; entries: number }>;
+  collections: CollectionSummary[];
+  tags: Array<{ tag: string; count: number }>;
+}
+
+export const JOURNAL_CHANGED = "inkwell:journal-changed";
+export const notifyJournalChanged = () => window.dispatchEvent(new Event(JOURNAL_CHANGED));
+
+export const journalApi = {
+  month: (month: string) => api.get("/journal/month", { params: { month } }).then((r) => r.data as MonthViewData),
+  ensureMonth: (month: string) => api.post("/journal/month", { month }).then((r) => r.data as { note_id: string; slug: string; title: string; created: boolean }),
+  future: (from: string, months = 12) => api.get("/journal/future", { params: { from, months } }).then((r) => r.data as { from: string; months: FutureMonth[] }),
+  migration: (date: string) => api.get("/journal/migration", { params: { date } }).then((r) => r.data as { tasks: MigrationTask[] }),
+  migrate: (body: { note_id: string; task_index: number; action: "today" | "month" | "cancel"; date?: string; month?: string }) =>
+    api.post("/journal/migrate", body).then((r) => r.data as { action: string; target_id?: string; target_title?: string }),
+  log: (body: { note_id: string; text: string; kind?: EntryKind; section?: string }) =>
+    api.post("/journal/log", body).then((r) => r.data as { note_id: string; line: string; content: string }),
+  collections: () => api.get("/journal/collections").then((r) => r.data as CollectionSummary[]),
+  createCollection: (body: { title: string; description?: string }) =>
+    api.post("/journal/collections", body).then((r) => r.data as { note_id: string; slug: string; title: string }),
+  collection: (id: string) => api.get(`/journal/collections/${encodeURIComponent(id)}`).then((r) => r.data as CollectionDetail),
+  index: () => api.get("/journal/index").then((r) => r.data as JournalIndexData),
+};
