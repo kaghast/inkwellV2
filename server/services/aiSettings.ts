@@ -116,7 +116,14 @@ export async function testAiSettings(userId: string) {
   const r = await row(userId);
   if (!r?.apiKeyEnc) throw new AccessError(400, "Kayıtlı bir API anahtarı yok");
   const res = await check(userId, r.provider, decryptSecret(r.apiKeyEnc), r.model);
-  return { ...res, settings: await getAiSettings(userId) };
+  // A failed check switches AI off. When the key works again, switch it back
+  // on; a user who turned it off deliberately (last check was fine) keeps it off.
+  let enabled_now = false;
+  if (res.ok && !r.enabled && r.lastCheckOk !== true) {
+    await db.update(aiSettings).set({ enabled: true }).where(eq(aiSettings.userId, userId));
+    enabled_now = true;
+  }
+  return { ...res, enabled_now, settings: await getAiSettings(userId) };
 }
 
 export async function deleteAiKey(userId: string) {

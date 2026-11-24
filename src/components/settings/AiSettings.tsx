@@ -59,9 +59,12 @@ export default function AiSettings() {
   async function test() {
     setBusy("test");
     try {
-      const { data: r } = await api.post<{ ok: boolean; error?: string; settings: AiSettingsData }>("/ai/settings/test");
+      const { data: r } = await api.post<{ ok: boolean; error?: string; enabled_now?: boolean; settings: AiSettingsData }>("/ai/settings/test");
       apply(r.settings);
-      r.ok ? toast.success("Bağlantı çalışıyor") : toast.error(r.error || "Bağlantı başarısız");
+      if (!r.ok) toast.error(r.error || "Bağlantı başarısız");
+      else if (r.enabled_now) toast.success("Bağlantı çalışıyor, yapay zeka etkinleştirildi");
+      else if (!r.settings.enabled) toast.success("Bağlantı çalışıyor. Yapay zeka şu an kapalı; kullanmak için etkinleştir.");
+      else toast.success("Bağlantı çalışıyor");
     } catch (e) {
       toast.error(formatApiError(e));
     } finally {
@@ -186,6 +189,17 @@ export default function AiSettings() {
             )}
           </div>
         </form>
+
+        {data.has_key && !data.enabled && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200" data-testid="ai-disabled-notice">
+            <span className="flex-1 min-w-0">
+              Anahtar kayıtlı ama yapay zeka kapalı. Kapalıyken yakalamalar kural tabanlı işlenir, Ask Inkwell yalnızca ilgili notları listeler.
+            </span>
+            <Button size="sm" className="h-7 text-xs" onClick={() => save({ enabled: true }, "toggle")} disabled={busy !== null} data-testid="ai-enable-btn">
+              {busy === "toggle" && <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />} Etkinleştir
+            </Button>
+          </div>
+        )}
 
         {data.last_check_at && (
           <div className={`flex items-start gap-2 rounded-md px-3 py-2 text-xs ${data.last_check_ok ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-destructive/10 text-destructive"}`}>
