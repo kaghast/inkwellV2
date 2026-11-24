@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Clock, Bell, Feather, ExternalLink, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, Bell, Feather, ExternalLink, Loader2, LayoutTemplate } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useWorkspace } from "@/contexts/WorkspaceContext";
 import PageShell, { Empty, Section } from "@/components/PageShell";
 import MarkdownView from "@/components/MarkdownView";
 import TypeIcon from "@/components/TypeIcon";
@@ -45,6 +47,7 @@ export default function TodayPage() {
   const [data, setData] = useState<TodayData | null>(null);
   const [note, setNote] = useState<string>("");
   const [busy, setBusy] = useState(false);
+  const { templates, openTemplate } = useWorkspace();
   const [reloadKey, setReloadKey] = useState(0);
   const [cal, setCal] = useState(() => ({ year: +date.slice(0, 4), month: +date.slice(5, 7) }));
   const [counts, setCounts] = useState<CalendarCounts>({});
@@ -152,8 +155,26 @@ export default function TodayPage() {
       wide
       actions={
         <div className="flex items-center gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="mr-2 h-8 gap-1.5" data-testid="today-template-btn">
+                <LayoutTemplate className="w-4 h-4" /> <span className="hidden sm:inline">Şablondan oluştur</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {templates.filter((t) => t.id !== "daily").map((t) => (
+                <DropdownMenuItem key={t.id} onClick={() => openTemplate(t.id)} className="cursor-pointer">
+                  {t.name}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate("/settings?tab=templates")} className="cursor-pointer text-muted-foreground">
+                Şablonları yönet…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button size="icon" variant="ghost" aria-label="Önceki gün" onClick={() => navigate(`/today/${shift(date, -1)}`)}><ChevronLeft className="w-4 h-4" /></Button>
-          {!isToday && <Button size="sm" variant="outline" onClick={() => navigate("/today")}>Bugün</Button>}
+          {!isToday && <Button size="sm" variant="outline" onClick={() => navigate("/")}>Bugün</Button>}
           <Button size="icon" variant="ghost" aria-label="Sonraki gün" onClick={() => navigate(`/today/${shift(date, 1)}`)}><ChevronRight className="w-4 h-4" /></Button>
         </div>
       }
@@ -227,7 +248,7 @@ export default function TodayPage() {
                 month={cal.month}
                 counts={counts}
                 selectedDate={date}
-                onSelectDate={(iso) => navigate(iso === todayKey ? "/today" : `/today/${iso}`)}
+                onSelectDate={(iso) => navigate(iso === todayKey ? "/" : `/today/${iso}`)}
                 onChangeMonth={changeMonth}
                 onNoteCreated={() => {
                   load();

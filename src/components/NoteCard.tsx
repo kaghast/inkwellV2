@@ -670,7 +670,10 @@ export default function NoteCard({
               {/* Delete Action - Disabled when archived */}
               {!isArchived && (
                 <DropdownMenuItem
-                  onClick={() => onDelete(note.note_id)}
+                  onClick={() => {
+                    // Deleting is permanent (versions and relations go with it), so ask first
+                    if (window.confirm(`"${note.title || "Başlıksız not"}" kalıcı olarak silinsin mi? Bu işlem geri alınamaz.`)) onDelete(note.note_id);
+                  }}
                   className="text-xs text-destructive hover:text-destructive cursor-pointer"
                   data-testid={`note-delete-btn-${note.note_id}`}
                 >

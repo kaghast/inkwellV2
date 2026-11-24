@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Feather, Link2, Loader2, Paperclip, CornerDownLeft, X } from "lucide-react";
@@ -24,7 +25,6 @@ export default function CaptureBar() {
   const [file, setFile] = useState<File | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     registerCaptureFocus(() => {
@@ -33,16 +33,6 @@ export default function CaptureBar() {
     });
     return () => registerCaptureFocus(null);
   }, [registerCaptureFocus]);
-
-  // Close when clicking outside an empty capture
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node) && !text.trim() && !file) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open, text, file]);
 
   const url = text.match(URL_RE)?.[0];
   const hint = file
@@ -99,8 +89,6 @@ export default function CaptureBar() {
       submit(e.ctrlKey || e.metaKey);
     } else if (e.key === "Escape") {
       e.preventDefault();
-      if (!text.trim() && !file) reset();
-      else inputRef.current?.blur();
       setOpen(false);
     }
   };
@@ -114,96 +102,122 @@ export default function CaptureBar() {
     }
   };
 
-  return (
-    <div ref={wrapRef} className="relative min-w-0 flex-1 max-w-xl" data-testid="capture-bar">
-      <div
-        className={`flex items-start gap-2 rounded-lg border bg-card px-2.5 transition-shadow ${
-          open ? "border-primary/40 shadow-md ring-2 ring-primary/10" : "border-border hover:border-primary/30"
-        }`}
-      >
-        <Feather className="w-4 h-4 mt-2 text-primary shrink-0" strokeWidth={1.75} aria-hidden />
-        <textarea
-          ref={inputRef}
-          value={text}
-          rows={open ? Math.min(8, Math.max(2, text.split("\n").length)) : 1}
-          onChange={(e) => setText(e.target.value)}
-          onFocus={() => setOpen(true)}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          placeholder="Aklında ne var? Yaz, bağlantı ya da dosya yapıştır…"
-          aria-label="Hızlı yakalama"
-          aria-keyshortcuts="c"
-          className={`w-0 flex-1 min-w-0 resize-none ${open ? "overflow-y-auto" : "overflow-hidden"} bg-transparent py-1.5 text-sm outline-none placeholder:text-muted-foreground/80 leading-6`}
-          data-testid="capture-input"
-        />
-        {!open && (
-          <kbd className="hidden md:inline-flex mt-1.5 h-5 items-center rounded border border-border px-1.5 font-mono text-[10px] text-muted-foreground">
-            C
-          </kbd>
-        )}
-      </div>
+  const preview = text.trim().split("\n")[0];
 
-      {open && (
-        <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-border bg-popover p-2 shadow-lg z-50 text-xs">
-          {file && (
-            <div className="mb-2 flex items-center gap-2 rounded-md bg-muted/60 px-2 py-1">
-              <Paperclip className="w-3.5 h-3.5" aria-hidden />
-              <span className="truncate flex-1">{file.name}</span>
-              <button type="button" onClick={() => setFile(null)} className="text-muted-foreground hover:text-foreground" aria-label="Dosyayı kaldır">
-                <X className="w-3.5 h-3.5" />
+  return (
+    <>
+      {/* Header trigger: looks like a field, opens the centered capture dialog */}
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(true);
+          requestAnimationFrame(() => inputRef.current?.focus());
+        }}
+        className="flex min-w-0 flex-1 max-w-xl items-center gap-2 rounded-lg border border-border bg-card px-2.5 h-9 text-left text-sm text-muted-foreground hover:border-primary/40 transition-colors"
+        aria-haspopup="dialog"
+        aria-keyshortcuts="c"
+        data-testid="capture-bar"
+      >
+        <Feather className="w-4 h-4 shrink-0 text-primary" strokeWidth={1.75} aria-hidden />
+        <span className={`min-w-0 flex-1 truncate ${preview || file ? "text-foreground" : ""}`}>
+          {preview || (file ? file.name : "Aklında ne var? Yaz, bağlantı ya da dosya yapıştır…")}
+        </span>
+        <kbd className="hidden md:inline-flex h-5 items-center rounded border border-border px-1.5 font-mono text-[10px]">C</kbd>
+      </button>
+
+      {open && createPortal(
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px] animate-in fade-in duration-100"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setOpen(false); // backdrop click keeps the draft
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Hızlı yakalama"
+            className="w-full max-w-2xl rounded-xl border border-border bg-popover p-3 shadow-2xl"
+            data-testid="capture-dialog"
+          >
+            <div className="flex items-start gap-2">
+              <Feather className="mt-2 w-5 h-5 shrink-0 text-primary" strokeWidth={1.75} aria-hidden />
+              <textarea
+                ref={inputRef}
+                autoFocus
+                value={text}
+                rows={Math.min(12, Math.max(4, text.split("\n").length + 1))}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={onKeyDown}
+                onPaste={onPaste}
+                placeholder="Aklında ne var? Yaz, bağlantı ya da dosya yapıştır…"
+                aria-label="Hızlı yakalama"
+                className="w-0 flex-1 min-w-0 resize-none bg-transparent py-1.5 text-base leading-6 outline-none placeholder:text-muted-foreground/80"
+                data-testid="capture-input"
+              />
+            </div>
+
+            {file && (
+              <div className="mt-2 flex items-center gap-2 rounded-md bg-muted/60 px-2 py-1 text-xs">
+                <Paperclip className="w-3.5 h-3.5" aria-hidden />
+                <span className="flex-1 truncate">{file.name}</span>
+                <button type="button" onClick={() => setFile(null)} className="text-muted-foreground hover:text-foreground" aria-label="Dosyayı kaldır">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+            {hint && (
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Link2 className="w-3.5 h-3.5" aria-hidden /> {hint}
+              </div>
+            )}
+
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/70 pt-3 text-xs">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                data-testid="capture-attach-btn"
+              >
+                <Paperclip className="w-3.5 h-3.5" aria-hidden /> Dosya
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) setFile(f);
+                  e.target.value = "";
+                  inputRef.current?.focus();
+                }}
+              />
+              <span className="flex-1 text-muted-foreground hidden sm:block">
+                <kbd className="font-mono">Enter</kbd> gelen kutusu · <kbd className="font-mono">Ctrl+Enter</kbd> doğrudan not · <kbd className="font-mono">Esc</kbd> kapat
+              </span>
+              <button
+                type="button"
+                onClick={() => submit(true)}
+                disabled={busy || (!text.trim() && !file)}
+                className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+                data-testid="capture-direct-btn"
+              >
+                Not olarak kaydet
+              </button>
+              <button
+                type="button"
+                onClick={() => submit(false)}
+                disabled={busy || (!text.trim() && !file)}
+                className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 font-semibold text-primary-foreground disabled:opacity-40"
+                data-testid="capture-submit-btn"
+              >
+                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CornerDownLeft className="w-3.5 h-3.5" />} Yakala
               </button>
             </div>
-          )}
-          {hint && (
-            <div className="mb-2 flex items-center gap-1.5 text-muted-foreground">
-              <Link2 className="w-3.5 h-3.5" aria-hidden /> {hint}
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              data-testid="capture-attach-btn"
-            >
-              <Paperclip className="w-3.5 h-3.5" aria-hidden /> Dosya
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) setFile(f);
-                e.target.value = "";
-                inputRef.current?.focus();
-              }}
-            />
-            <span className="flex-1 text-muted-foreground hidden sm:block">
-              <kbd className="font-mono">Enter</kbd> gelen kutusu · <kbd className="font-mono">Ctrl+Enter</kbd> doğrudan not ·{" "}
-              <kbd className="font-mono">Shift+Enter</kbd> satır
-            </span>
-            <button
-              type="button"
-              onClick={() => submit(true)}
-              disabled={busy || (!text.trim() && !file)}
-              className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-              data-testid="capture-direct-btn"
-            >
-              Not olarak kaydet
-            </button>
-            <button
-              type="button"
-              onClick={() => submit(false)}
-              disabled={busy || (!text.trim() && !file)}
-              className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 font-semibold text-primary-foreground disabled:opacity-40"
-              data-testid="capture-submit-btn"
-            >
-              {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CornerDownLeft className="w-3.5 h-3.5" />} Yakala
-            </button>
           </div>
-        </div>
+        </div>,
+        // Portal: the header's backdrop-filter would otherwise trap a fixed overlay inside it
+        document.body
       )}
-    </div>
+    </>
   );
 }

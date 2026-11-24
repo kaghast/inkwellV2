@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { INBOX_CHANGED, wsApi, type InboxCounts, type Space } from "@/lib/workspaceApi";
+import { INBOX_CHANGED, wsApi, type InboxCounts, type Space, type TemplateInfo } from "@/lib/workspaceApi";
 import type { NoteType } from "@/types";
 
 type PaletteMode = "all" | "search" | "actions" | "task" | "template";
@@ -19,6 +19,8 @@ interface WorkspaceCtx {
   openPalette: (mode?: PaletteMode) => void;
   closePalette: () => void;
   templateKey: string | null;
+  templates: TemplateInfo[];
+  refreshTemplates: () => void;
   openTemplate: (key: string | null) => void;
   registerCaptureFocus: (fn: (() => void) | null) => void;
   focusCapture: () => void;
@@ -42,6 +44,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("all");
   const [templateKey, setTemplateKey] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<TemplateInfo[]>([]);
+  const refreshTemplates = useCallback(() => {
+    wsApi.templates().then(setTemplates).catch(() => undefined);
+  }, []);
   const captureFocus = useRef<(() => void) | null>(null);
 
   const refreshInbox = useCallback(() => {
@@ -60,6 +66,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
     refreshInbox();
     refreshSpaces();
+    refreshTemplates();
     api.get("/note-types").then((r) => setNoteTypes(r.data || [])).catch(() => undefined);
     const onChange = () => refreshInbox();
     window.addEventListener(INBOX_CHANGED, onChange);
@@ -70,7 +77,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       window.removeEventListener(INBOX_CHANGED, onChange);
       window.clearInterval(timer);
     };
-  }, [user, refreshInbox, refreshSpaces]);
+  }, [user, refreshInbox, refreshSpaces, refreshTemplates]);
 
   // While captures are being processed, poll faster so the badge updates.
   useEffect(() => {
@@ -104,7 +111,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const now = Date.now();
       if (pendingG && now - pendingG < 1200) {
         pendingG = 0;
-        const dest = { h: "/", i: "/inbox", t: "/today", k: "/all-notes", s: "/spaces" }[e.key.toLowerCase()];
+        const dest = { h: "/", i: "/inbox", t: "/", k: "/all-notes", s: "/spaces" }[e.key.toLowerCase()];
         if (dest) {
           e.preventDefault();
           navigate(dest);
@@ -140,13 +147,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       openPalette,
       closePalette,
       templateKey,
+      templates,
+      refreshTemplates,
       openTemplate: setTemplateKey,
       registerCaptureFocus: (fn) => {
         captureFocus.current = fn;
       },
       focusCapture,
     }),
-    [inbox, refreshInbox, spaces, refreshSpaces, noteTypes, paletteOpen, paletteMode, openPalette, closePalette, templateKey, focusCapture]
+    [inbox, refreshInbox, spaces, refreshSpaces, noteTypes, paletteOpen, paletteMode, openPalette, closePalette, templateKey, templates, refreshTemplates, focusCapture]
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

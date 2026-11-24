@@ -16,7 +16,8 @@ import {
 import { listSpaces, createSpace, updateSpace, moveObjectToSpace, ensurePersonalWorkspace } from "../services/workspaces";
 import { search } from "../services/search";
 import { today, ensureDailyNote } from "../services/today";
-import { TEMPLATES, applyTemplate } from "../services/templates";
+import { applyTemplate } from "../services/templates";
+import { listTemplates, createTemplate, updateTemplate, deleteTemplate } from "../services/userTemplates";
 import { activationSummary, recordActiveDay } from "../services/analytics";
 import { aiStatus } from "../ai";
 import { getAiSettings, saveAiSettings, testAiSettings, deleteAiKey } from "../services/aiSettings";
@@ -185,7 +186,18 @@ export function createWorkspaceRouter(auth: RequestHandler) {
   );
 
   // -------------------------------------------------------------- templates
-  r.get("/templates", handle(async () => TEMPLATES));
+  r.get("/templates", handle(async (req) => listTemplates(uid(req), { includeHidden: req.query.all === "1" })));
+  const templateBody = z.object({
+    name: z.string().trim().max(80).optional(),
+    description: z.string().max(300).optional(),
+    note_type_id: id.optional().nullable(),
+    title_template: z.string().max(300).optional(),
+    content_template: z.string().max(50_000).optional(),
+    hidden: z.boolean().optional(),
+  });
+  r.post("/templates", rateLimit("templates-edit", 60), handle(async (req) => createTemplate(uid(req), parse(templateBody, req.body))));
+  r.put("/templates/:key", rateLimit("templates-edit", 60), handle(async (req) => updateTemplate(uid(req), req.params.key, parse(templateBody, req.body))));
+  r.delete("/templates/:key", handle(async (req) => deleteTemplate(uid(req), req.params.key)));
   r.post(
     "/templates/:key/apply",
     rateLimit("templates", 30),

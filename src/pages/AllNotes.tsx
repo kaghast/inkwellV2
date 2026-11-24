@@ -227,6 +227,17 @@ export default function AllNotes() {
     setSearchQuery("");
   };
 
+  // The card only asks; the page performs the delete (previously it just reloaded)
+  async function deleteNote(id: string) {
+    try {
+      await api.delete(`/notes/${id}`);
+      toast.success("Not silindi");
+      fetchNotes(0, false);
+    } catch (err) {
+      toast.error(formatApiError(err) || "Not silinemedi");
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col antialiased">
       <AppMenubar />
@@ -486,7 +497,7 @@ export default function AllNotes() {
                   noteTypeMap={noteTypeMap}
                   noteTypes={noteTypes}
                   onChanged={() => fetchNotes(0, false)}
-                  onDelete={() => fetchNotes(0, false)}
+                  onDelete={deleteNote}
                 />
               ))}
 

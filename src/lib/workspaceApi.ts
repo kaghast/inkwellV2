@@ -157,10 +157,26 @@ export interface HomeData {
 }
 
 export interface TemplateInfo {
-  key: "daily" | "meeting" | "project" | "research";
+  /** Built-in key (daily/meeting/project/research) or own template id */
+  id: string;
+  kind: "builtin" | "custom";
   name: string;
   description: string;
   fields: string[];
+  note_type_id: string | null;
+  title_template: string;
+  content_template: string;
+  hidden: boolean;
+  customized: boolean;
+}
+
+export interface TemplateBody {
+  name?: string;
+  description?: string;
+  note_type_id?: string | null;
+  title_template?: string;
+  content_template?: string;
+  hidden?: boolean;
 }
 
 export const INBOX_CHANGED = "inkwell:inbox-changed";
@@ -201,7 +217,10 @@ export const wsApi = {
     api.get("/search", { params: { q, ...params } }).then((r) => r.data as SearchResult),
   today: (date?: string) => api.get("/today", { params: date ? { date } : {} }).then((r) => r.data as TodayData),
   ensureDailyNote: (date?: string) => api.post("/today/daily-note", date ? { date } : {}).then((r) => r.data as { note_id: string; slug: string; created: boolean }),
-  templates: () => api.get("/templates").then((r) => r.data as TemplateInfo[]),
+  templates: (all = false) => api.get("/templates", { params: all ? { all: "1" } : {} }).then((r) => r.data as TemplateInfo[]),
+  createTemplate: (body: TemplateBody) => api.post("/templates", body).then((r) => r.data as TemplateInfo),
+  updateTemplate: (id: string, body: TemplateBody) => api.put(`/templates/${encodeURIComponent(id)}`, body).then((r) => r.data as TemplateInfo),
+  deleteTemplate: (id: string) => api.delete(`/templates/${encodeURIComponent(id)}`).then((r) => r.data),
   applyTemplate: (key: string, body: Record<string, unknown>) =>
     api.post(`/templates/${key}/apply`, body).then((r) => r.data as { primary_id: string; slug: string; created: string[]; reused: string[]; relations: number }),
   home: () => api.get("/home").then((r) => r.data as HomeData),

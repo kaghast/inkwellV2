@@ -123,3 +123,40 @@ export function planTemplate(key: TemplateKey, input: TemplateInput, today: stri
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// User-editable template text (Settings > Şablonlar)
+// ---------------------------------------------------------------------------
+export interface TemplateOverride {
+  title_template?: string | null;
+  content_template?: string | null;
+}
+
+export const PLACEHOLDERS = ["{{tarih}}", "{{başlık}}"] as const;
+
+/** Fill {{tarih}} and {{başlık}} (also {{baslik}}). */
+export function fillTemplate(text: string, vars: { date: string; title: string }): string {
+  return (text || "").replace(/\{\{\s*tarih\s*\}\}/gi, vars.date).replace(/\{\{\s*ba[şs]l[ıi]k\s*\}\}/gi, vars.title);
+}
+
+/** The built-in defaults shown in Settings, as editable text. */
+export function builtinDefaults(key: TemplateKey): { title_template: string; content_template: string } {
+  const sample = planTemplate(key, { title: "{{başlık}}" }, "{{tarih}}");
+  const primary = sample.objects.find((o) => o.ref === sample.primary)!;
+  const title = key === "daily" ? "Günlük not · {{tarih}}" : key === "meeting" ? "Toplantı · {{tarih}}" : key === "project" ? "Yeni proje" : "Yeni araştırma";
+  return { title_template: title, content_template: primary.content };
+}
+
+/** Apply a user's override to the primary object of a built-in plan. */
+export function withOverride(plan: TemplatePlan, override: TemplateOverride | null, vars: { date: string; typedTitle?: string }): TemplatePlan {
+  if (!override) return plan;
+  return {
+    ...plan,
+    objects: plan.objects.map((o) => {
+      if (o.ref !== plan.primary) return o;
+      const title = vars.typedTitle?.trim() || (override.title_template ? fillTemplate(override.title_template, { date: vars.date, title: "" }).trim() : "") || o.title;
+      const content = override.content_template != null ? fillTemplate(override.content_template, { date: vars.date, title }) : o.content;
+      return { ...o, title, content };
+    }),
+  };
+}

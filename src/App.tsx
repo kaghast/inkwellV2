@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { DrawerTabsProvider } from "@/contexts/DrawerTabsContext";
 import NoteDrawer from "@/components/NoteDrawer";
@@ -20,7 +20,6 @@ import NoteDetail from "@/pages/NoteDetail";
 import NewNotePage from "@/pages/NewNotePage";
 import SettingsPage from "@/pages/SettingsPage";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import HomePage from "@/pages/HomePage";
 import InboxPage from "@/pages/InboxPage";
 import TodayPage from "@/pages/TodayPage";
 import SpacesPage from "@/pages/SpacesPage";
@@ -37,10 +36,11 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
-      <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+      {/* Today is the home page; old /home and /today links keep working */}
+      <Route path="/" element={<ProtectedRoute><TodayPage /></ProtectedRoute>} />
+      <Route path="/home" element={<Navigate to="/" replace />} />
       <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
-      <Route path="/today" element={<ProtectedRoute><TodayPage /></ProtectedRoute>} />
+      <Route path="/today" element={<Navigate to="/" replace />} />
       <Route path="/today/:date" element={<ProtectedRoute><TodayPage /></ProtectedRoute>} />
       <Route path="/ask" element={<ProtectedRoute><AskPage /></ProtectedRoute>} />
       <Route path="/spaces" element={<ProtectedRoute><SpacesPage /></ProtectedRoute>} />

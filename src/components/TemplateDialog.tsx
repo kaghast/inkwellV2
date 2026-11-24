@@ -21,7 +21,7 @@ const lines = (s: string) => s.split(/\n|,/).map((x) => x.trim()).filter(Boolean
 
 export default function TemplateDialog() {
   const navigate = useNavigate();
-  const { templateKey, openTemplate } = useWorkspace();
+  const { templateKey, openTemplate, templates } = useWorkspace();
   const [title, setTitle] = useState("");
   const [people, setPeople] = useState("");
   const [project, setProject] = useState("");
@@ -42,7 +42,11 @@ export default function TemplateDialog() {
   }, [templateKey]);
 
   if (!templateKey) return null;
-  const meta = META[templateKey];
+  const own = templates.find((t) => t.id === templateKey);
+  const meta = META[templateKey] || {
+    title: own?.name || "Şablon",
+    description: own?.description || "Bu şablondan yeni bir nesne oluşturur. Başlığı boş bırakırsan şablondaki başlık kullanılır.",
+  };
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

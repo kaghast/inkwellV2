@@ -78,9 +78,8 @@ export default function AppMenubar({
   type NavItem = { label: string; path: string; icon: any; testId: string; badge?: number; match?: (p: string) => boolean };
   const needsReview = inbox?.needs_review || 0;
   const primaryNav: NavItem[] = [
-    { label: "Ana sayfa", path: "/", icon: Home, testId: "nav-home", match: (p) => p === "/" || p === "/home" },
     { label: "Gelen kutusu", path: "/inbox", icon: InboxIcon, testId: "nav-inbox", badge: needsReview },
-    { label: "Bugün", path: "/today", icon: Sun, testId: "nav-today", match: (p) => p.startsWith("/today") },
+    { label: "Bugün", path: "/", icon: Sun, testId: "nav-today", match: (p) => p === "/" || p === "/home" || p.startsWith("/today") },
     { label: "Bilgi · Bütün notlar", path: "/all-notes", icon: FileText, testId: "nav-all-notes", match: (p) => p === "/all-notes" || p === "/notes" },
   ];
   const groups: Array<{ label: string; icon: any; testId: string; items: NavItem[] }> = [
@@ -112,7 +111,7 @@ export default function AppMenubar({
       testId: "nav-work",
       items: [
         { label: "Kanban", path: "/kanban", icon: KanbanIcon, testId: "nav-kanban" },
-        { label: "Bugünün görevleri", path: "/today", icon: CheckCheck, testId: "nav-work-today" },
+        { label: "Bugünün görevleri", path: "/", icon: CheckCheck, testId: "nav-work-today" },
       ],
     },
   ];

@@ -12,7 +12,7 @@ The current icon rail (`AppMenubar`, `w-16`) lists six destinations flat. The ne
 
 | Rail item | Route | Contents |
 | --- | --- | --- |
-| Ana sayfa (Home) | `/` | Capture, inbox summary, today snapshot, recent objects, connection suggestions, activation checklist |
+| Bugün (Today, home) | `/` | Daily note, timeline, tasks, week/month notes, calendar, captures. The separate Home page was removed (2026-11-24); `/today` and `/home` redirect here |
 | Gelen kutusu (Inbox) | `/inbox` | Captures awaiting review; badge = ready + failed count |
 | Bugün (Today) | `/today` | Daily note, timeline, tasks, reminders, the day's captures |
 | Bilgi (Knowledge) | `/all-notes` | All objects, filter by type/space |

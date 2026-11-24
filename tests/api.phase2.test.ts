@@ -137,6 +137,44 @@ describe("Phase 2 API", { skip: !BASE }, () => {
     assert.ok(r.body.pairs.some((p: any) => [p.a.note_id, p.b.note_id].sort().join() === [ids.mush1, ids.mush2].sort().join()));
   });
 
+  test("templates: own templates CRUD + apply, built-in override, hide and reset, isolation", async () => {
+    const created = await a("POST", "/templates", {
+      name: "Kitap özeti",
+      note_type_id: "type_book",
+      title_template: "Özet · {{tarih}}",
+      content_template: "# {{başlık}}\n\nOkuma tarihi: {{tarih}}\n- [ ] Ana fikir",
+    });
+    assert.equal(created.status, 200, JSON.stringify(created.body));
+    const tid = created.body.id;
+    const applied = await a("POST", `/templates/${tid}/apply`, { title: "Sapiens" });
+    assert.equal(applied.status, 200);
+    const note = (await a("GET", `/notes/${applied.body.primary_id}`)).body;
+    assert.equal(note.title, "Sapiens");
+    assert.equal(note.note_type_id, "type_book");
+    assert.match(note.content, /^# Sapiens\n\nOkuma tarihi: \d{4}-\d{2}-\d{2}/);
+    const untitled = (await a("GET", `/notes/${(await a("POST", `/templates/${tid}/apply`, {})).body.primary_id}`)).body;
+    assert.match(untitled.title, /^Özet · \d{4}-\d{2}-\d{2}$/);
+    assert.equal((await a("PUT", `/templates/${tid}`, { name: "Kitap notu" })).body.name, "Kitap notu");
+    assert.equal((await b("PUT", `/templates/${tid}`, { name: "x" })).status, 404);
+    assert.equal((await b("POST", `/templates/${tid}/apply`, {})).status, 404);
+    assert.equal((await a("POST", "/templates", { name: "Günlük?", note_type_id: "type_daily" })).status, 400);
+
+    await a("PUT", "/templates/meeting", { content_template: "## Özel gündem {{tarih}}" });
+    const m = await a("POST", "/templates/meeting/apply", { title: "Haftalık" });
+    const mnote = (await a("GET", `/notes/${m.body.primary_id}`)).body;
+    assert.match(mnote.content, /^## Özel gündem \d{4}-/);
+    assert.equal(mnote.title, "Haftalık");
+    await a("PUT", "/templates/meeting", { hidden: true });
+    assert.ok(!(await a("GET", "/templates")).body.some((t: any) => t.id === "meeting"));
+    assert.ok((await a("GET", "/templates?all=1")).body.find((t: any) => t.id === "meeting").hidden);
+    await a("DELETE", "/templates/meeting");
+    const reset = (await a("GET", "/templates")).body.find((t: any) => t.id === "meeting");
+    assert.equal(reset.customized, false);
+    assert.equal(reset.hidden, false);
+    assert.equal((await a("DELETE", `/templates/${tid}`)).status, 200);
+    assert.equal((await a("DELETE", `/templates/${tid}`)).status, 404);
+  });
+
   test("ai settings accept anthropic and reject a provider switch without a key", async () => {
     const s = await a("GET", "/ai/settings");
     assert.ok(s.body.providers.some((p: any) => p.id === "anthropic"));

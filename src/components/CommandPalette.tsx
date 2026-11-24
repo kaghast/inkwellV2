@@ -43,7 +43,7 @@ interface Item {
 
 export default function CommandPalette() {
   const navigate = useNavigate();
-  const { paletteOpen, paletteMode, closePalette, focusCapture, openTemplate, spaces, typeById } = useWorkspace();
+  const { paletteOpen, paletteMode, closePalette, focusCapture, openTemplate, spaces, typeById, templates } = useWorkspace();
   const [q, setQ] = useState("");
   const [mode, setMode] = useState(paletteMode);
   const [results, setResults] = useState<SearchResult | null>(null);
@@ -104,19 +104,28 @@ export default function CommandPalette() {
           }
         },
       },
-      { id: "tpl-meeting", label: "Şablon: Toplantı", icon: LayoutTemplate, keywords: "template meeting", run: () => { closePalette(); openTemplate("meeting"); } },
-      { id: "tpl-project", label: "Şablon: Proje", icon: LayoutTemplate, keywords: "template project", run: () => { closePalette(); openTemplate("project"); } },
-      { id: "tpl-research", label: "Şablon: Araştırma", icon: LayoutTemplate, keywords: "template research makale", run: () => { closePalette(); openTemplate("research"); } },
+      ...templates
+        .filter((t) => t.id !== "daily")
+        .map((t) => ({
+          id: `tpl-${t.id}`,
+          label: `Şablon: ${t.name}`,
+          icon: LayoutTemplate,
+          keywords: `template şablon ${t.description}`,
+          run: () => {
+            closePalette();
+            openTemplate(t.id);
+          },
+        })),
+      { id: "tpl-manage", label: "Şablonları yönet", icon: Settings, keywords: "template şablon ayar", run: go("/settings?tab=templates") },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [templates]
   );
 
   const destinations: Item[] = useMemo(
     () => [
-      { id: "g-home", label: "Ana sayfa", hint: "G H", icon: Home, run: go("/") },
       { id: "g-inbox", label: "Gelen kutusu", hint: "G I", icon: Inbox, run: go("/inbox") },
-      { id: "g-today", label: "Bugün", hint: "G T", icon: Sun, run: go("/today") },
+      { id: "g-today", label: "Bugün (ana sayfa)", hint: "G T", icon: Sun, keywords: "home ana sayfa today", run: go("/") },
       { id: "g-notes", label: "Bilgi · Bütün notlar", hint: "G K", icon: FileText, run: go("/all-notes") },
       { id: "g-spaces", label: "Bölümler", hint: "G S", icon: Layers, run: go("/spaces") },
       { id: "g-feed", label: "Günlük akış", icon: Calendar, run: go("/feed") },

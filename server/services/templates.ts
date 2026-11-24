@@ -2,7 +2,8 @@
 // returns a plan of objects + relations; applyTemplate creates them and rolls
 // back (deletes what it created) if any step fails.
 import { DAILY_TYPE_ID } from "../../src/lib/objectTypes";
-import { TEMPLATES, planTemplate, type TemplateInput, type TemplateKey } from "./templatePlans";
+import { TEMPLATES, planTemplate, withOverride, type TemplateInput, type TemplateKey } from "./templatePlans";
+import { applyCustomTemplate, builtinOverride } from "./userTemplates";
 import { createObject, deleteObjects, findByTitle } from "./objects";
 import { createRelation } from "./relations";
 import { AccessError } from "./workspaces";
@@ -19,9 +20,12 @@ export async function findDailyNote(userId: string, date: string) {
 }
 
 export async function applyTemplate(userId: string, key: string, input: TemplateInput, today: string) {
-  if (!TEMPLATES.some((t) => t.key === key)) throw new AccessError(404, "Şablon bulunamadı");
-  const plan = planTemplate(key as TemplateKey, input, today);
+  if (!TEMPLATES.some((t) => t.key === key)) return applyCustomTemplate(userId, key, input, today);
   const date = input.date && /^\d{4}-\d{2}-\d{2}$/.test(input.date) ? input.date : today;
+  const plan = withOverride(planTemplate(key as TemplateKey, input, today), await builtinOverride(userId, key as TemplateKey), {
+    date,
+    typedTitle: key === "daily" ? undefined : input.title,
+  });
 
   if (key === "daily") {
     const existing = await findDailyNote(userId, date);

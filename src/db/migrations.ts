@@ -136,6 +136,26 @@ const DDL_STEPS: Array<{ id: string; statements: string[] }> = [
     ],
   },
   {
+    id: "2026_11_24_008_user_templates",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS user_templates (
+        template_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        builtin_key TEXT,
+        name TEXT NOT NULL,
+        description TEXT,
+        note_type_id TEXT,
+        title_template TEXT,
+        content_template TEXT,
+        hidden BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE INDEX IF NOT EXISTS utpl_user_idx ON user_templates(user_id)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS utpl_builtin_uq ON user_templates(user_id, builtin_key) WHERE builtin_key IS NOT NULL`,
+    ],
+  },
+  {
     id: "2026_11_23_007_embedding_model",
     statements: [`ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding_model TEXT`],
   },

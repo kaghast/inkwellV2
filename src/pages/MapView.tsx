@@ -852,7 +852,15 @@ export default function MapView() {
                       noteTypeMap={noteTypeMap}
                       noteTypes={noteTypes}
                       onChanged={fetchAux}
-                      onDelete={fetchAux}
+                      onDelete={async (id) => {
+                        try {
+                          await api.delete(`/notes/${id}`);
+                          toast.success("Not silindi");
+                          fetchAux();
+                        } catch (err) {
+                          toast.error(formatApiError(err) || "Not silinemedi");
+                        }
+                      }}
                     />
                   ))
                 )}

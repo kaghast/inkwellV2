@@ -480,3 +480,23 @@ export const aiSettings = pgTable('ai_settings', {
   lastError: text('last_error'),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+// User templates (Settings > Şablonlar). builtin_key set = the user's override
+// of a built-in template (meeting/project/research/daily); NULL = own template.
+export const userTemplates = pgTable(
+  'user_templates',
+  {
+    templateId: text('template_id').primaryKey(),
+    userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }).notNull(),
+    builtinKey: text('builtin_key'),
+    name: text('name').notNull(),
+    description: text('description'),
+    noteTypeId: text('note_type_id'),
+    titleTemplate: text('title_template'),
+    contentTemplate: text('content_template'),
+    hidden: boolean('hidden').default(false).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [index('utpl_user_idx').on(table.userId)]
+);
