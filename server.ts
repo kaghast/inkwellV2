@@ -21,7 +21,7 @@ import type { DriveFileRef } from "./src/db/schema";
 import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions, stickers, phrases, areas, googleIntegrations } from "./src/db/index";
 import { generateTextEmbedding } from "./src/lib/embeddings";
 import { normalizePeriod, periodEnd, periodStart, type NotePeriod } from "./src/lib/period";
-import { toggleTaskInMarkdown } from "./src/lib/tasks";
+import { setTaskStateInMarkdown, TASK_STATES, type TaskState } from "./src/lib/tasks";
 import {
   genId, TAG_RE, MENTION_RE, extractTags, extractPeople, extractReminders, ensureTags, ensurePeople,
   syncReminders, saveNoteVersion, todayIso, nowDatetimeIso, normalizeDateToIso, dateForPeriod,
@@ -3010,8 +3010,11 @@ api.get("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
 api.patch("/notes/:note_id/tasks", authMiddleware, async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
   const identifier = req.params.note_id;
-  const { index, checked, content: seen } = req.body || {};
-  if (!Number.isInteger(index) || index < 0 || typeof checked !== "boolean") {
+  const { index, checked, state, content: seen } = req.body || {};
+  // `state` sets a journal state (open/done/migrated/scheduled/cancelled); `checked` is the plain checkbox
+  const nextState: TaskState | null =
+    typeof state === "string" ? (TASK_STATES.includes(state as TaskState) ? (state as TaskState) : null) : typeof checked === "boolean" ? (checked ? "done" : "open") : null;
+  if (!Number.isInteger(index) || index < 0 || !nextState) {
     return res.status(400).json({ detail: "Geçersiz görev isteği" });
   }
   try {
@@ -3027,7 +3030,7 @@ api.patch("/notes/:note_id/tasks", authMiddleware, async (req: AuthRequest, res:
     if (typeof seen === "string" && seen !== before) {
       return res.status(409).json({ detail: "Not başka bir yerde değişti, lütfen yenileyin" });
     }
-    const next = toggleTaskInMarkdown(before, index, checked);
+    const next = setTaskStateInMarkdown(before, index, nextState);
     if (next !== before) {
       const updated = await db
         .update(notes)

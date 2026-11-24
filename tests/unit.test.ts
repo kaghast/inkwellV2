@@ -245,3 +245,57 @@ describe("citations after punctuation", () => {
     assert.equal(c.uncitedSentences, 0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2.5a — journal bullets
+// ---------------------------------------------------------------------------
+import {
+  bulletLineMap, countTasks, setTaskStateInMarkdown, parseLogEntry, formatLogEntry, insertLogLine, taskLineIndexMap,
+} from "../src/lib/tasks";
+
+describe("journal bullets", () => {
+  const md = "## Kayıt\n- [ ] open\n- [x] done\n- [>] moved\n- [<] later\n- [-] dropped\n- [o] ! meeting\n- ? read about it\n```\n- [>] code\n```";
+
+  test("bullet map knows tasks with states, events, notes and signifiers", () => {
+    const m = bulletLineMap(md);
+    assert.deepEqual(m.get(2), { kind: "task", state: "open", taskIndex: 0 });
+    assert.equal(m.get(4)?.state, "migrated");
+    assert.equal(m.get(5)?.state, "scheduled");
+    assert.equal(m.get(6)?.state, "cancelled");
+    assert.deepEqual(m.get(7), { kind: "event", signifier: "priority" });
+    assert.deepEqual(m.get(8), { kind: "note", signifier: "explore" });
+    assert.equal(m.get(10), undefined, "code is never a bullet");
+    assert.equal(taskLineIndexMap(md).size, 5);
+  });
+
+  test("progress counts open and done only; states round-trip", () => {
+    assert.deepEqual(countTasks(md), { total: 2, done: 1 });
+    const moved = setTaskStateInMarkdown(md, 0, "migrated");
+    assert.match(moved, /^- \[>\] open$/m);
+    assert.equal(setTaskStateInMarkdown(moved, 0, "open"), md);
+    assert.equal(setTaskStateInMarkdown(md, 99, "done"), md);
+  });
+
+  test("quick entry prefixes and signifiers", () => {
+    assert.deepEqual(parseLogEntry(". süt al"), { kind: "task", signifier: undefined, text: "süt al" });
+    assert.deepEqual(parseLogEntry("o ! Ayşe ile kahve", "note"), { kind: "event", signifier: "priority", text: "Ayşe ile kahve" });
+    assert.deepEqual(parseLogEntry("- ? kuantum", "task"), { kind: "note", signifier: "explore", text: "kuantum" });
+    assert.deepEqual(parseLogEntry("sadece metin", "note"), { kind: "note", signifier: undefined, text: "sadece metin" });
+    assert.equal(formatLogEntry({ kind: "task", signifier: "priority", text: "rapor" }), "- [ ] ! rapor");
+    assert.equal(formatLogEntry({ kind: "event", text: "toplantı" }), "- [o] toplantı");
+    assert.equal(formatLogEntry({ kind: "note", text: "fikir" }), "- fikir");
+  });
+
+  test("log lines go to the end of the Kayıt section, before the next heading and the comments", () => {
+    const daily = "## Kayıt\n\n## Yansıma\n- Bugün ne iyi gitti?\n";
+    const one = insertLogLine(daily, "- [ ] a");
+    assert.equal(one, "## Kayıt\n\n- [ ] a\n\n## Yansıma\n- Bugün ne iyi gitti?\n");
+    const two = insertLogLine(one, "- [o] b");
+    assert.equal(two, "## Kayıt\n\n- [ ] a\n- [o] b\n\n## Yansıma\n- Bugün ne iyi gitti?\n");
+    const old = "## Plan\n\n## Notlar\n";
+    assert.equal(insertLogLine(old, "- x"), "## Plan\n\n- x\n\n## Notlar\n");
+    const withComments = "metin\n\n<!-- inkwell:comments:start -->\nc\n<!-- inkwell:comments:end -->";
+    assert.equal(insertLogLine(withComments, "- y"), "metin\n\n- y\n\n<!-- inkwell:comments:start -->\nc\n<!-- inkwell:comments:end -->");
+    assert.equal(insertLogLine("", "- z"), "- z\n");
+  });
+});

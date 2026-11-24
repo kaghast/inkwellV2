@@ -3,10 +3,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Link } from "react-router-dom";
 import { useFilter } from "@/contexts/FilterContext";
-import { BellRing, MapPin, Youtube, Check, Loader2, Maximize2, X, Clock, Calendar } from "lucide-react";
+import { BellRing, MapPin, Youtube, Check, Loader2, Maximize2, X, Clock, Calendar, ChevronRight, ChevronLeft, Circle, MoreHorizontal } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { isGmap, isYoutube, extractYoutubeId } from "@/lib/blocks";
 import { highlightText } from "@/lib/highlight";
-import { taskLineIndexMap, toggleTaskInMarkdown } from "@/lib/tasks";
+import { bulletLineMap, taskLineIndexMap, toggleTaskInMarkdown, type BulletInfo, type Signifier, type TaskState } from "@/lib/tasks";
 import DrawingViewer from "@/components/drawing/DrawingViewer";
 import MindmapViewer from "@/components/mindmap/MindmapViewer";
 import TimeSlotCard from "@/components/TimeSlotCard";
@@ -503,9 +504,117 @@ function CodeRenderer(props: any) {
   return <code {...props} className={`${cls} break-all [overflow-wrap:anywhere]`} />;
 }
 
+// ------------------------------------------------------------ journal bullets
+
+/** Removes `re` from the first text of `node` (descending into elements). */
+function stripLead(node: React.ReactNode, re: RegExp): React.ReactNode {
+  let done = false;
+  const walk = (n: React.ReactNode): React.ReactNode => {
+    if (done) return n;
+    if (typeof n === "string") {
+      if (!n.trim()) return n; // the space markdown leaves after a checkbox
+      done = true;
+      return n.replace(re, "");
+    }
+    // Keep strings as strings: transformChildren turns #tags, @people and [[links]] in them into chips
+    if (Array.isArray(n)) return n.map(walk);
+    if (React.isValidElement(n) && (n as any).props?.children !== undefined) {
+      return React.cloneElement(n as React.ReactElement<any>, {}, walk((n as any).props.children));
+    }
+    return n;
+  };
+  return walk(node);
+}
+
+const SIGNIFIER_RE = /^\s*[!?](?=\s)\s*/;
+const BOX_RE = /^\s*\[[^\]]\]\s*/;
+
+function SignifierBadge({ s }: { s?: Signifier }) {
+  if (!s) return null;
+  return s === "priority" ? (
+    <span className="mr-1 inline-flex h-4 min-w-4 items-center justify-center rounded bg-red-500/15 px-1 text-[10px] font-bold text-red-600 dark:text-red-400" title="Öncelikli" aria-label="Öncelikli" data-testid="signifier-priority">!</span>
+  ) : (
+    <span className="mr-1 inline-flex h-4 min-w-4 items-center justify-center rounded bg-sky-500/15 px-1 text-[10px] font-bold text-sky-600 dark:text-sky-400" title="Araştırılacak" aria-label="Araştırılacak" data-testid="signifier-explore">?</span>
+  );
+}
+
+const STATE_LABEL: Record<TaskState, string> = {
+  open: "Açık",
+  done: "Tamamlandı",
+  migrated: "Taşındı",
+  scheduled: "İleriye planlandı",
+  cancelled: "İptal edildi",
+};
+
+function TaskStateMenu({ state, disabled, onPick, idx }: { state: TaskState; disabled: boolean; onPick: (s: TaskState) => void; idx: number }) {
+  const items: Array<{ s: TaskState; label: string }> = [
+    { s: "done", label: "Tamamlandı" },
+    { s: "migrated", label: "Taşındı  ›" },
+    { s: "scheduled", label: "İleriye planlandı  ‹" },
+    { s: "cancelled", label: "İptal" },
+    { s: "open", label: "Yeniden aç" },
+  ];
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          className="ml-1 mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover/task:opacity-100 data-[state=open]:opacity-100"
+          aria-label="Görev durumu"
+          data-testid={`task-menu-${idx}`}
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44" onClick={(e) => e.stopPropagation()}>
+        {items
+          .filter((i) => i.s !== state)
+          .map((i) => (
+            <DropdownMenuItem key={i.s} className="cursor-pointer text-xs" onClick={() => onPick(i.s)} data-testid={`task-state-${i.s}`}>
+              {i.label}
+            </DropdownMenuItem>
+          ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** A journal line markdown does not know: a migrated, scheduled or cancelled task, or an event. */
+function JournalItem({ info, children, interactive, pending, onPick }: { info: BulletInfo; children: React.ReactNode; interactive: boolean; pending: boolean; onPick: (s: TaskState) => void }) {
+  const state = info.state;
+  const icon =
+    info.kind === "event" ? (
+      <Circle className="h-3 w-3 text-[hsl(var(--accent-tag))]" strokeWidth={2.5} aria-label="Etkinlik" />
+    ) : state === "migrated" ? (
+      <ChevronRight className="h-4 w-4 text-muted-foreground" strokeWidth={2.5} aria-label="Taşındı" />
+    ) : state === "scheduled" ? (
+      <ChevronLeft className="h-4 w-4 text-muted-foreground" strokeWidth={2.5} aria-label="İleriye planlandı" />
+    ) : (
+      <X className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={2.5} aria-label="İptal edildi" />
+    );
+  return (
+    <li
+      className="group/task flex items-start gap-2 list-none -ml-6 break-words [overflow-wrap:anywhere]"
+      data-testid={info.kind === "event" ? "journal-event" : `journal-task-${state}`}
+      title={info.kind === "task" && state ? STATE_LABEL[state] : undefined}
+    >
+      <span className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center">{pending ? <Loader2 className="h-3 w-3 animate-spin" /> : icon}</span>
+      <span className={`min-w-0 flex-1 break-words [overflow-wrap:anywhere] ${info.kind === "task" ? "text-muted-foreground" : ""} ${state === "cancelled" ? "line-through" : ""}`}>
+        <SignifierBadge s={info.signifier} />
+        {children}
+      </span>
+      {interactive && info.kind === "task" && state && <TaskStateMenu state={state} disabled={pending} onPick={onPick} idx={info.taskIndex ?? -1} />}
+    </li>
+  );
+}
+
 interface Props {
   content: string;
-  onTaskToggle?: (index: number, checked: boolean) => void | Promise<void>;
+  /** `next` is a checkbox value, or a journal state chosen from the task menu. */
+  onTaskToggle?: (index: number, next: boolean | TaskState) => void | Promise<void>;
   highlight?: string;
 }
 
@@ -554,10 +663,11 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
   }, [content]);
 
   const taskLineToIdx = useMemo(() => taskLineIndexMap(displayContent || ""), [displayContent]);
+  const bullets = useMemo(() => bulletLineMap(displayContent || ""), [displayContent]);
 
   const [pendingIdx, setPendingIdx] = useState<number | null>(null);
 
-  async function handleTaskClick(idx: number, next: boolean) {
+  async function handleTaskClick(idx: number, next: boolean | TaskState) {
     if (pendingIdx !== null) return;
     if (!onTaskToggle) return;
     setPendingIdx(idx);
@@ -592,8 +702,9 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
               }
               const isPending = pendingIdx === myIdx;
               const disabled = !interactive || pendingIdx !== null;
+              const sig = line != null ? bullets.get(line)?.signifier : undefined;
               return (
-                <li className="flex items-start gap-2 list-none -ml-6 break-words [overflow-wrap:anywhere]" data-testid={`task-item-${myIdx}`}>
+                <li className="group/task flex items-start gap-2 list-none -ml-6 break-words [overflow-wrap:anywhere]" data-testid={`task-item-${myIdx}`}>
                   <button
                     type="button"
                     onClick={(e) => {
@@ -625,8 +736,32 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
                     ) : null}
                   </button>
                   <span className={`break-words [overflow-wrap:anywhere] min-w-0 flex-1 ${checked ? "line-through text-muted-foreground" : ""}`}>
-                    {transformChildren(rest_children)}
+                    <SignifierBadge s={sig} />
+                    {transformChildren(sig ? stripLead(rest_children, SIGNIFIER_RE) : rest_children)}
                   </span>
+                  {interactive && (
+                    <TaskStateMenu state={checked ? "done" : "open"} disabled={pendingIdx !== null} onPick={(st) => handleTaskClick(myIdx, st)} idx={myIdx} />
+                  )}
+                </li>
+              );
+            }
+            const srcLine: number | undefined = node?.position?.start?.line;
+            const info = srcLine != null ? bullets.get(srcLine) : undefined;
+            if (info && (info.kind === "event" || (info.kind === "task" && info.state !== "open" && info.state !== "done"))) {
+              const idx = info.taskIndex ?? -1;
+              let body = stripLead(children, BOX_RE);
+              if (info.signifier) body = stripLead(body, SIGNIFIER_RE);
+              return (
+                <JournalItem info={info} interactive={Boolean(onTaskToggle) && idx >= 0} pending={pendingIdx === idx && idx >= 0} onPick={(st) => handleTaskClick(idx, st)}>
+                  {transformChildren(body)}
+                </JournalItem>
+              );
+            }
+            if (info?.signifier) {
+              return (
+                <li {...rest} className={`${className || ""} break-words [overflow-wrap:anywhere]`}>
+                  <SignifierBadge s={info.signifier} />
+                  {transformChildren(stripLead(children, SIGNIFIER_RE))}
                 </li>
               );
             }

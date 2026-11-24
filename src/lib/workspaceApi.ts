@@ -216,6 +216,8 @@ export const wsApi = {
   search: (q: string, params: { type_id?: string; space_id?: string; limit?: number } = {}) =>
     api.get("/search", { params: { q, ...params } }).then((r) => r.data as SearchResult),
   today: (date?: string) => api.get("/today", { params: date ? { date } : {} }).then((r) => r.data as TodayData),
+  logToDay: (body: { text: string; kind?: "task" | "event" | "note"; date?: string }) =>
+    api.post("/today/log", body).then((r) => r.data as { note_id: string; slug: string; line: string; content: string }),
   ensureDailyNote: (date?: string) => api.post("/today/daily-note", date ? { date } : {}).then((r) => r.data as { note_id: string; slug: string; created: boolean }),
   templates: (all = false) => api.get("/templates", { params: all ? { all: "1" } : {} }).then((r) => r.data as TemplateInfo[]),
   createTemplate: (body: TemplateBody) => api.post("/templates", body).then((r) => r.data as TemplateInfo),

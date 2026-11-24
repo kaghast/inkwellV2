@@ -47,7 +47,8 @@ export type TemplateKey = (typeof TEMPLATES)[number]["key"];
 const clean = (list?: string[]) => Array.from(new Set((list || []).map((s) => s.trim()).filter(Boolean))).slice(0, 30);
 
 export function dailyContent(date: string): string {
-  return `## Plan\n\n## Notlar\n\n## Yansıma\n- Bugün ne iyi gitti?\n- Neyi farklı yapardım?\n`;
+  // Rapid log: tasks "- [ ]", events "- [o]", notes "- "; quick entries from Today land under "## Kayıt".
+  return `## Kayıt\n\n## Yansıma\n- Bugün ne iyi gitti?\n- Neyi farklı yapardım?\n`;
 }
 
 export function planTemplate(key: TemplateKey, input: TemplateInput, today: string): TemplatePlan {

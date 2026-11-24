@@ -15,7 +15,7 @@ import {
 } from "../services/relations";
 import { listSpaces, createSpace, updateSpace, moveObjectToSpace, ensurePersonalWorkspace } from "../services/workspaces";
 import { search } from "../services/search";
-import { today, ensureDailyNote } from "../services/today";
+import { today, ensureDailyNote, logToDay } from "../services/today";
 import { applyTemplate } from "../services/templates";
 import { listTemplates, createTemplate, updateTemplate, deleteTemplate } from "../services/userTemplates";
 import { activationSummary, recordActiveDay } from "../services/analytics";
@@ -182,6 +182,16 @@ export function createWorkspaceRouter(auth: RequestHandler) {
     handle(async (req) => {
       const { date } = parse(z.object({ date: isoDay.optional() }), req.body);
       return ensureDailyNote(uid(req), date || todayIso(), todayIso());
+    })
+  );
+  r.post(
+    "/today/log",
+    handle(async (req) => {
+      const body = parse(
+        z.object({ date: isoDay.optional(), text: z.string().min(1).max(2000), kind: z.enum(["task", "event", "note"]).optional() }),
+        req.body
+      );
+      return logToDay(uid(req), body.date || todayIso(), todayIso(), { text: body.text as string, kind: body.kind });
     })
   );
 

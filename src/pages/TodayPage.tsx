@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Clock, Bell, Feather, ExternalLink, Loader2, LayoutTemplate } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, Bell, Feather, ExternalLink, Loader2, LayoutTemplate, Square, Circle, Minus, FilePlus2 } from "lucide-react";
+import { parseLogEntry, taskPatchBody, type BulletKind, type TaskState } from "@/lib/tasks";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import PageShell, { Empty, Section } from "@/components/PageShell";
@@ -35,6 +36,14 @@ interface Slot {
   duration: string;
 }
 
+type EntryKind = BulletKind | "object";
+const KINDS: Array<{ id: EntryKind; label: string; hint: string; icon: React.ComponentType<{ className?: string }> }> = [
+  { id: "task", label: "Görev", hint: ". ya da t", icon: Square },
+  { id: "event", label: "Etkinlik", hint: "o", icon: Circle },
+  { id: "note", label: "Not", hint: "-", icon: Minus },
+  { id: "object", label: "Ayrı not", hint: "", icon: FilePlus2 },
+];
+
 const TIMESLOT_RE = /```timeslot\s*\n([\s\S]*?)```/g;
 const hhmm = (v: string) => (v.includes("T") ? v.split("T")[1] : v).slice(0, 5);
 
@@ -46,6 +55,7 @@ export default function TodayPage() {
   const isToday = date === todayKey;
   const [data, setData] = useState<TodayData | null>(null);
   const [note, setNote] = useState<string>("");
+  const [kind, setKind] = useState<EntryKind>("task");
   const [busy, setBusy] = useState(false);
   const { templates, openTemplate } = useWorkspace();
   const [reloadKey, setReloadKey] = useState(0);
@@ -112,25 +122,38 @@ export default function TodayPage() {
     return out.sort((a, b) => a.start.localeCompare(b.start));
   }, [data]);
 
-  async function toggleTask(noteId: string, index: number, checked: boolean) {
+  async function toggleTask(noteId: string, index: number, next: boolean | TaskState) {
     try {
-      await api.patch(`/notes/${noteId}/tasks`, { index, checked });
+      await api.patch(`/notes/${noteId}/tasks`, taskPatchBody(index, next));
       load();
     } catch (e) {
       toast.error(formatApiError(e));
     }
   }
 
+  // A typed prefix (". ", "o ", "- ") wins over the selected kind, as on paper.
+  const typed = kind === "object" ? null : parseLogEntry(note, kind);
+
   async function addToDay(e: React.FormEvent) {
     e.preventDefault();
-    if (!note.trim()) return;
+    const text = note;
+    if (!text.trim() || busy) return;
+    if (kind !== "object" && !typed?.text) return;
+    // Clear at once so the next entry can be typed while this one saves; restore on failure
+    setNote("");
     setBusy(true);
     try {
-      await wsApi.capture({ text: note.trim(), mode: "direct", source: "quick", captured_on: date });
-      setNote("");
-      notifyInboxChanged();
-      toast.success("Güne eklendi ve günlük nota bağlandı");
+      if (kind === "object") {
+        await wsApi.capture({ text: text.trim(), mode: "direct", source: "quick", captured_on: date });
+        notifyInboxChanged();
+        toast.success("Ayrı not olarak eklendi ve günlük nota bağlandı");
+      } else {
+        await wsApi.logToDay({ text, kind, date });
+        load();
+        setReloadKey((k) => k + 1);
+      }
     } catch (err) {
+      setNote((cur) => (cur ? cur : text));
       toast.error(formatApiError(err));
     } finally {
       setBusy(false);
@@ -204,17 +227,44 @@ export default function TodayPage() {
                   <Button size="sm" variant="outline" onClick={createDaily}>Günlük not oluştur</Button>
                 </div>
               )}
-              <form onSubmit={addToDay} className="mt-3 flex items-center gap-2 border-t border-border/60 pt-3">
-                <Feather className="w-4 h-4 text-primary" aria-hidden />
-                <input
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="Bu güne bir not, düşünce ya da görev ekle…"
-                  className="h-8 flex-1 bg-transparent text-sm outline-none"
-                  aria-label="Güne ekle"
-                  data-testid="today-append"
-                />
-                <Button type="submit" size="sm" disabled={busy || !note.trim()}>{busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Ekle"}</Button>
+              <form onSubmit={addToDay} className="mt-3 border-t border-border/60 pt-3" data-testid="today-log-form">
+                <div className="mb-2 flex flex-wrap items-center gap-1" role="radiogroup" aria-label="Kayıt türü">
+                  {KINDS.map((k) => {
+                    const active = (typed && note.trim() ? typed.kind : kind) === k.id && (k.id !== "object" || kind === "object");
+                    const Icon = k.icon;
+                    return (
+                      <button
+                        key={k.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => setKind(k.id)}
+                        title={k.hint ? `Kısayol: satırın başına "${k.hint}"` : "Günlük nota bağlı ayrı bir not oluşturur"}
+                        className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs transition-colors ${active ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted"}`}
+                        data-testid={`log-kind-${k.id}`}
+                      >
+                        <Icon className="w-3.5 h-3.5" /> {k.label}
+                      </button>
+                    );
+                  })}
+                  {typed?.signifier && (
+                    <span className="ml-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{typed.signifier === "priority" ? "! öncelikli" : "? araştırılacak"}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Feather className="w-4 h-4 text-primary" aria-hidden />
+                  <input
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder={kind === "object" ? "Bu güne bağlı ayrı bir not yaz…" : "Hızlı kayıt: görev, etkinlik ya da not… (! öncelikli, ? araştır)"}
+                    className="h-8 flex-1 min-w-0 bg-transparent text-sm outline-none"
+                    aria-label="Güne ekle"
+                    data-testid="today-append"
+                  />
+                  <Button type="submit" size="sm" disabled={busy || !note.trim() || (typed !== null && !typed.text)}>
+                    {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Ekle"}
+                  </Button>
+                </div>
               </form>
             </Section>
 

@@ -74,6 +74,46 @@ Remaining in Phase 2:
 7. Graph 2.0 on the existing 2D/3D graph: typed relation edges, filters (type, space, date, tag, relation, person, project), node inspector, "Find unexpected connections" (embedding similarity between objects with **no** path ≤ 2, explained by the model with cited passages; proximity alone is never labelled meaningful).
 8. Daily AI review: built only from that day's objects/captures/tasks/timeslots; states what it used; no inferred activity.
 
+## Phase 2.5 — Journal (Bullet Journal method)
+
+Goal: Inkwell can be used as a bullet journal — rapid logging, daily/monthly/future logs, migration, collections, trackers, reflection — built on the existing daily notes, markdown tasks, templates and Today page. It sits before Phase 3 so the journal data model is settled before sharing arrives; journal content stays private by default.
+
+Principle: **the markdown text stays the source of truth.** Bullets live in note content; any table added for them is a derived index that can be rebuilt from content. Existing `- [ ]` / `- [x]` stay valid and keep their meaning.
+
+Bullet syntax (one list item per entry):
+
+| Entry | Markdown | Shown as |
+| --- | --- | --- |
+| Open task | `- [ ] text` | checkbox |
+| Done task | `- [x] text` | ticked |
+| Migrated (carried forward) | `- [>] text` | › |
+| Scheduled (future log) | `- [<] text` | ‹ |
+| Cancelled | `- [-] text` | struck through |
+| Event | `- [o] text` | ○ |
+| Note | `- text` | – |
+| Signifiers | `!` priority, `?` explore, right after the bullet: `- [ ] ! text` | badge |
+
+Sub-steps:
+
+- **2.5a Rapid logging and task states** — parser for the syntax above (`src/lib/tasks.ts`), task state changes through `PATCH /notes/:id/tasks` (`state` in addition to `checked`), rendering and a state menu in notes, a quick-entry line on Today (`POST /today/log`) that writes into the day's daily note, daily template in rapid-log format. Task progress counts open + done only.
+- **2.5b Monthly log, future log, migration** — `type_monthly` / `type_future` system types, `notes.period_key` (`2026-11`, unique per user and type), monthly page (calendar list + task list), future log grid, migration review (carry to today / schedule to a month / cancel; the original line becomes `[>]`/`[<]` with a link to where it went; nothing is deleted).
+- **2.5c Collections and index** — `type_collection` with `part_of` relations, auto-built index page (months, collections, threads).
+- **2.5d Trackers** — `habits` + `habit_logs`, monthly habit grid and streaks, optional mood/energy on the daily note.
+- **2.5e Reflection and AI** — daily/weekly/monthly reflection prompts; AI monthly review (done, postponed repeatedly, recurring themes) with citations, which also covers Phase 2's "daily AI review".
+- Derived `bullets` index table (kind, state, signifier, date, scheduled month, origin/moved links) once cross-day queries need it (2.5b), rebuilt on every save.
+
+Changes to existing features: Today page becomes the daily log; note preview renders bullet states; templates gain monthly/future/collection; capture gets an "add to today's log" target; Ask/search filter by bullet kind/state; a task bullet can be turned into a Kanban card.
+
+Out of scope: handwriting/stylus (Phase 6), shared journals (Phases 3–4), decorative page layouts.
+
+### Phase 2.5a status
+
+- Bullet parser, states and signifiers in `src/lib/tasks.ts` (pure, unit tested); `[>] [<] [-] [o]` lines are rendered with their own markers, open/done keep the checkbox.
+- `PATCH /notes/:id/tasks` accepts `{ index, state }` (`open | done | migrated | scheduled | cancelled`); `{ index, checked }` still works.
+- Task menu on every task in the note view (done, carried forward, scheduled, cancelled, reopen).
+- Today: quick-entry line (`POST /today/log`) — prefixes `.`/`t` task, `o` event, `-` note, `!` priority, `?` explore; creates the daily note when missing.
+- Daily template uses the rapid-log format (`## Kayıt`, `## Yansıma`); customised daily templates are kept.
+
 ## Phase 3 — SaaS: workspaces, roles, tenancy, billing, storage, jobs
 
 1. Team workspaces, workspace switcher, invitations (hashed tokens, expiry), roles Owner/Admin/Editor/Commenter/Viewer.

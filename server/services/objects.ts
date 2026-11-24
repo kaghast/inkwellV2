@@ -116,6 +116,28 @@ export function serializeObjectSummary(n: typeof notes.$inferSelect) {
  * Inserted before the embedded comments block so comments stay last.
  */
 export async function appendToObject(userId: string, idOrSlug: string, text: string, summary: string) {
+  const addition = text.trim();
+  if (!addition) throw new AccessError(400, "Eklenecek içerik boş");
+  return rewriteObjectContent(
+    userId,
+    idOrSlug,
+    (old) => {
+      const marker = old.search(/<!--\s*inkwell:comments:start\s*-->/i);
+      return marker >= 0
+        ? `${old.slice(0, marker).trimEnd()}\n\n${addition}\n\n${old.slice(marker)}`
+        : `${old.trimEnd()}${old.trim() ? "\n\n" : ""}${addition}`;
+    },
+    summary
+  );
+}
+
+/**
+ * Replaces an object's content with `transform(old)` and runs the usual save
+ * side effects (tags, people, reminders, wikilinks, embedding). A version is
+ * saved when `summary` is given. Refuses archived and locked notes, and an
+ * edit made meanwhile (409) instead of overwriting it.
+ */
+export async function rewriteObjectContent(userId: string, idOrSlug: string, transform: (old: string) => string, summary: string | null) {
   const found = await db
     .select()
     .from(notes)
@@ -125,13 +147,7 @@ export async function appendToObject(userId: string, idOrSlug: string, text: str
   if (!n) throw new AccessError(404, "Nesne bulunamadı");
   if (n.archived) throw new AccessError(403, "Arşivlenmiş notlar düzenlenemez");
   if (n.isEncrypted) throw new AccessError(400, "Parola kilitli notlara eklenemez");
-  const addition = text.trim();
-  if (!addition) throw new AccessError(400, "Eklenecek içerik boş");
-  const marker = n.content.search(/<!--\s*inkwell:comments:start\s*-->/i);
-  const content =
-    marker >= 0
-      ? `${n.content.slice(0, marker).trimEnd()}\n\n${addition}\n\n${n.content.slice(marker)}`
-      : `${n.content.trimEnd()}${n.content.trim() ? "\n\n" : ""}${addition}`;
+  const content = transform(n.content || "");
   const tagsArr = extractTags(content);
   const peopleArr = extractPeople(content);
   await ensureTags(userId, tagsArr);
@@ -144,8 +160,10 @@ export async function appendToObject(userId: string, idOrSlug: string, text: str
     .returning({ id: notes.noteId });
   if (updated.length === 0) throw new AccessError(409, "Not başka bir yerde değişti, lütfen yenileyin");
   await syncReminders(userId, n.noteId, content);
-  const row = (await db.select().from(notes).where(eq(notes.noteId, n.noteId)).limit(1))[0];
-  await saveNoteVersion(userId, n.noteId, row, summary);
+  if (summary) {
+    const row = (await db.select().from(notes).where(eq(notes.noteId, n.noteId)).limit(1))[0];
+    await saveNoteVersion(userId, n.noteId, row, summary);
+  }
   await syncWikilinkRelations(userId, n.noteId);
   scheduleEmbedding(userId, n.noteId);
   return { note_id: n.noteId, content };

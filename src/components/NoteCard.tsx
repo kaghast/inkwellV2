@@ -23,7 +23,7 @@ import {
   Scissors,
 } from "lucide-react";
 import api, { formatApiError } from "@/lib/api";
-import { countTasks } from "@/lib/tasks";
+import { countTasks, taskPatchBody, type TaskState } from "@/lib/tasks";
 import { periodLabel } from "@/lib/period";
 import type { Note, LocationItem, Category, NoteType } from "@/types";
 import MarkdownView from "@/components/MarkdownView";
@@ -338,13 +338,9 @@ export default function NoteCard({
     setContent(extractCommentsFromContent(next).mainContent);
   }
 
-  async function handleTaskToggle(index: number, checked: boolean) {
+  async function handleTaskToggle(index: number, next: boolean | TaskState) {
     try {
-      const { data } = await api.patch<Note>(`/notes/${note.note_id}/tasks`, {
-        index,
-        checked,
-        content: note.content,
-      });
+      const { data } = await api.patch<Note>(`/notes/${note.note_id}/tasks`, taskPatchBody(index, next, note.content));
       applyServerContent(data.content);
     } catch (err: any) {
       toast.error(formatApiError(err) || "Görev güncellenemedi");

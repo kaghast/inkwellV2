@@ -81,6 +81,7 @@ import EncryptNoteDialog from "@/components/EncryptNoteDialog";
 import { verifyPassword } from "@/lib/crypto";
 import { extractCommentsFromContent, embedCommentsIntoContent } from "@/lib/comments";
 import { useLinkTitleSync } from "@/lib/linkTitles";
+import { taskPatchBody } from "@/lib/tasks";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1354,13 +1355,9 @@ export default function NoteDetail() {
                   onTaskToggle={
                     note.archived || (note.is_encrypted && !isUnlocked)
                       ? undefined
-                      : async (idx, checked) => {
+                      : async (idx, next) => {
                           try {
-                            const { data } = await api.patch<Note>(`/notes/${note.note_id}/tasks`, {
-                              index: idx,
-                              checked,
-                              content: note.content,
-                            });
+                            const { data } = await api.patch<Note>(`/notes/${note.note_id}/tasks`, taskPatchBody(idx, next, note.content));
                             setNote(data);
                             setContent(extractCommentsFromContent(data.content).mainContent);
                           } catch (err: any) {

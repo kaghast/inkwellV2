@@ -175,6 +175,30 @@ describe("Phase 2 API", { skip: !BASE }, () => {
     assert.equal((await a("DELETE", `/templates/${tid}`)).status, 404);
   });
 
+  test("journal: rapid log into the daily note, task states, isolation", async () => {
+    const date = "2031-03-04";
+    const t1 = await a("POST", "/today/log", { date, text: ". ! raporu bitir" });
+    assert.equal(t1.status, 200, JSON.stringify(t1.body));
+    assert.equal(t1.body.line, "- [ ] ! raporu bitir");
+    await a("POST", "/today/log", { date, text: "o Ayşe ile kahve #sosyal" });
+    await a("POST", "/today/log", { date, text: "fikir: haftalık gözden geçirme", kind: "note" });
+    assert.equal((await a("POST", "/today/log", { date, text: ". " })).status, 400);
+    const note = (await a("GET", `/notes/${t1.body.note_id}`)).body;
+    assert.match(note.content, /^## Kayıt\n\n- \[ \] ! raporu bitir\n- \[o\] Ayşe ile kahve #sosyal\n- fikir: haftalık gözden geçirme\n\n## Yansıma/);
+    assert.ok(note.tags.includes("sosyal"));
+    assert.equal((await a("GET", `/today?date=${date}`)).body.daily_note.note_id, t1.body.note_id);
+
+    const moved = await a("PATCH", `/notes/${t1.body.note_id}/tasks`, { index: 0, state: "migrated" });
+    assert.equal(moved.status, 200);
+    assert.match(moved.body.content, /- \[>\] ! raporu bitir/);
+    assert.equal((await a("GET", `/today?date=${date}`)).body.tasks.length, 0, "a migrated task is not open");
+    assert.equal((await a("PATCH", `/notes/${t1.body.note_id}/tasks`, { index: 0, checked: false })).body.content.includes("- [ ] ! raporu"), true);
+    assert.equal((await a("PATCH", `/notes/${t1.body.note_id}/tasks`, { index: 0, state: "nope" })).status, 400);
+    assert.equal((await b("PATCH", `/notes/${t1.body.note_id}/tasks`, { index: 0, state: "done" })).status, 404);
+    const other = await b("POST", "/today/log", { date, text: "b'nin kaydı" });
+    assert.notEqual(other.body.note_id, t1.body.note_id);
+  });
+
   test("ai settings accept anthropic and reject a provider switch without a key", async () => {
     const s = await a("GET", "/ai/settings");
     assert.ok(s.body.providers.some((p: any) => p.id === "anthropic"));

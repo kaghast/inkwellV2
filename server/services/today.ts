@@ -6,6 +6,9 @@ import { DAILY_TYPE_ID } from "../../src/lib/objectTypes";
 import { openTasks } from "./dayTasks";
 import { capturesForDay } from "./capture";
 import { applyTemplate, findDailyNote } from "./templates";
+import { rewriteObjectContent } from "./objects";
+import { formatLogEntry, insertLogLine, parseLogEntry, type BulletKind } from "../../src/lib/tasks";
+import { AccessError } from "./workspaces";
 
 function summarize(n: any) {
   return {
@@ -81,3 +84,17 @@ export async function ensureDailyNote(userId: string, date: string, todayIso: st
   return { note_id: r.primary_id, slug: r.slug, created: r.created.length > 0 };
 }
 
+
+/**
+ * Rapid logging: adds one journal entry (task, event or note) to the day's
+ * daily note, creating the note when missing. Prefixes in `text` ("." task,
+ * "o" event, "-" note, "!" / "?" signifiers) override `kind`.
+ */
+export async function logToDay(userId: string, date: string, todayIso: string, input: { text: string; kind?: BulletKind }) {
+  const entry = parseLogEntry(input.text, input.kind || "task");
+  if (!entry.text) throw new AccessError(400, "Boş kayıt eklenemez");
+  const daily = await ensureDailyNote(userId, date, todayIso);
+  const line = formatLogEntry(entry);
+  const r = await rewriteObjectContent(userId, daily.note_id, (old) => insertLogLine(old, line), null);
+  return { note_id: r.note_id, slug: daily.slug, line, entry, content: r.content };
+}
