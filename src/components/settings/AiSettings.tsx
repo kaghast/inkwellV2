@@ -4,6 +4,7 @@ import { CheckCircle2, ExternalLink, KeyRound, Loader2, Sparkles, Trash2, XCircl
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import api, { formatApiError } from "@/lib/api";
+import AiUsage from "./AiUsage";
 
 interface AiSettingsData {
   provider: string;
@@ -215,7 +216,10 @@ export default function AiSettings() {
       <p className="text-xs text-muted-foreground">
         Not içerikleri yalnızca sen yakaladığında, Ask Inkwell'e sorduğunda ya da bir yapay zeka eylemi çalıştırdığında seçtiğin sağlayıcıya gönderilir; parola kilitli
         notlar hiç gönderilmez. Claude'un embedding servisi olmadığı için anlamsal arama yalnızca Gemini ile çalışır; Claude ile tam metin ve ilişki araması kullanılır.
+        Görsel ve PDF'lerdeki metin (OCR) de bu sağlayıcıyla okunur; Word, PowerPoint ve Excel dosyaları sunucuda, yapay zekasız okunur.
       </p>
+
+      <AiUsage />
     </div>
   );
 }

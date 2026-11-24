@@ -425,6 +425,8 @@ export interface CaptureSuggestion {
   site?: string | null;
   author?: string | null;
   related?: Array<{ object_id: string; title: string; reason: string }>;
+  /** Why the attached file gave no text (no model, unsupported type...). */
+  file_text_note?: string | null;
 }
 
 export const captures = pgTable(
@@ -440,6 +442,9 @@ export const captures = pgTable(
     rawText: text('raw_text').default('').notNull(),
     rawUrl: text('raw_url'),
     fileId: text('file_id'),
+    // Text read from the attached file (office formats locally, images/PDF by OCR)
+    fileText: text('file_text'),
+    fileTextMethod: text('file_text_method'),
     suggestion: jsonb('suggestion').$type<CaptureSuggestion>().default({}).notNull(),
     provider: text('provider'),
     error: text('error'),
@@ -535,3 +540,22 @@ export const dayRatings = pgTable('day_ratings', {
   energy: integer('energy'),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+// One row per model call: who, which provider/model, what for, tokens, outcome
+export const aiRuns = pgTable(
+  'ai_runs',
+  {
+    runId: text('run_id').primaryKey(),
+    userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    model: text('model'),
+    task: text('task').notNull(),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    ok: boolean('ok').notNull(),
+    error: text('error'),
+    durationMs: integer('duration_ms').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('ai_runs_user_created_idx').on(table.userId, table.createdAt)]
+);

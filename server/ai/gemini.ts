@@ -4,6 +4,8 @@ import { GoogleGenAI } from "@google/genai";
 import { getGenAI } from "../../src/lib/embeddings";
 import type { AiProvider, Extraction, ExtractionContext } from "./types";
 import { AiUnavailableError } from "./types";
+import { markCalled, reportUsage } from "./usageScope";
+import { READ_FILE_PROMPT, cleanReadText, IMAGE_MIMES } from "./fileRead";
 
 const MODEL = () => process.env.AI_MODEL || "gemini-2.5-flash";
 const EMBED_MODEL = () => process.env.AI_EMBED_MODEL || "gemini-embedding-001";
@@ -53,6 +55,18 @@ export function parseExtraction(raw: string, ctx: ExtractionContext): Extraction
   };
 }
 
+function reportGemini(res: any, model: string) {
+  const u = res?.usageMetadata;
+  reportUsage({
+    model,
+    input: u?.promptTokenCount ?? null,
+    output: u ? (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0) : null,
+  });
+}
+
+// Inline data is limited to about 20 MB per request, base64 included
+const GEMINI_READ_MAX = 14 * 1024 * 1024;
+
 function textOf(res: any): string {
   const out = typeof res?.text === "function" ? res.text() : res?.text;
   return out ? String(out) : "";
@@ -69,11 +83,13 @@ export function createGeminiProvider(getClient: () => GoogleGenAI | null, model?
     async extract(text, ctx) {
       const ai = getClient();
       if (!ai) throw new AiUnavailableError("Gemini API key is not set");
+      markCalled(modelName());
       const res: any = await ai.models.generateContent({
         model: modelName(),
         contents: buildExtractionPrompt(text, ctx),
         config: { responseMimeType: "application/json", temperature: 0.1 },
       });
+      reportGemini(res, modelName());
       const out = textOf(res);
       if (!out) throw new Error("Empty model response");
       return parseExtraction(out, ctx);
@@ -81,6 +97,7 @@ export function createGeminiProvider(getClient: () => GoogleGenAI | null, model?
     async generate({ system, prompt, maxTokens, json }) {
       const ai = getClient();
       if (!ai) throw new AiUnavailableError("Gemini API key is not set");
+      markCalled(modelName());
       const res: any = await ai.models.generateContent({
         model: modelName(),
         contents: prompt,
@@ -91,14 +108,29 @@ export function createGeminiProvider(getClient: () => GoogleGenAI | null, model?
           ...(json ? { responseMimeType: "application/json" } : {}),
         },
       });
+      reportGemini(res, modelName());
       const out = textOf(res);
       if (!out) throw new Error("Empty model response");
       return out;
+    },
+    canRead: (mime, bytes) => (IMAGE_MIMES.includes(mime) || mime === "application/pdf") && bytes <= GEMINI_READ_MAX,
+    async readFile({ data, mime }) {
+      const ai = getClient();
+      if (!ai) throw new AiUnavailableError("Gemini API key is not set");
+      markCalled(modelName());
+      const res: any = await ai.models.generateContent({
+        model: modelName(),
+        contents: [{ role: "user", parts: [{ inlineData: { mimeType: mime, data: data.toString("base64") } }, { text: READ_FILE_PROMPT }] }],
+        config: { temperature: 0, maxOutputTokens: 16384 },
+      });
+      reportGemini(res, modelName());
+      return cleanReadText(textOf(res));
     },
     embedModel: EMBED_MODEL(),
     async embed(text) {
       const ai = getClient();
       if (!ai || !text.trim()) return null;
+      markCalled(EMBED_MODEL());
       const response: any = await ai.models.embedContent({
         model: EMBED_MODEL(),
         contents: text.slice(0, 8000),

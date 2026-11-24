@@ -16,6 +16,7 @@ import { recordEvent } from "./analytics";
 import { AccessError, resolveTargetSpace } from "./workspaces";
 import { suggestRelated } from "./suggest";
 import { buildCaptureContent } from "./captureContent";
+import { readFileText } from "./fileText";
 
 export type CaptureStatus = "new" | "processing" | "ready" | "processed" | "failed";
 export const OPEN_STATUSES: CaptureStatus[] = ["new", "processing", "ready", "failed"];
@@ -41,6 +42,10 @@ export function serializeCapture(c: CaptureRow) {
     raw_text: c.rawText,
     raw_url: c.rawUrl,
     file_id: c.fileId,
+    // A preview is enough for the Inbox card; the whole text goes into the object
+    file_text: c.fileText ? c.fileText.slice(0, 4000) : null,
+    file_text_length: c.fileText ? c.fileText.length : 0,
+    file_text_method: c.fileTextMethod,
     space_id: c.spaceId,
     suggestion: c.suggestion || {},
     provider: c.provider,
@@ -142,7 +147,21 @@ export async function processCapture(captureId: string) {
       }
     }
     const file = cap.fileId ? await fileMeta(userId, cap.fileId) : null;
-    const text = cap.rawText || cap.rawUrl || "";
+    // Text inside the attached file: office files locally, images/PDF by OCR
+    let fileText = "";
+    let fileTextNote: string | null = null;
+    if (cap.fileId) {
+      const ft = await readFileText(userId, cap.fileId).catch(() => null);
+      if (ft) {
+        fileText = ft.text;
+        fileTextNote = ft.note;
+        await db
+          .update(captures)
+          .set({ fileText: ft.text || null, fileTextMethod: ft.method })
+          .where(eq(captures.captureId, captureId));
+      }
+    }
+    const text = [cap.rawText || cap.rawUrl || "", fileText].filter(Boolean).join("\n\n");
     const { extraction, provider, fellBack, error } = await extractWithFallback(text, {
       today: cap.capturedOn,
       types,
@@ -174,6 +193,7 @@ export async function processCapture(captureId: string) {
       site: linkCtx?.site || (cap.rawUrl ? safeHost(cap.rawUrl) : null),
       author: extraction.author || null,
       related: related.map(({ object_id, title, reason }) => ({ object_id, title, reason })),
+      file_text_note: fileTextNote,
     };
     await db
       .update(captures)

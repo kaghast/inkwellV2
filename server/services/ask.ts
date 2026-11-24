@@ -52,7 +52,7 @@ export async function ask(userId: string, question: string, filters: RetrievalFi
   }
   let raw: string;
   try {
-    raw = await provider.generate({ system: ASK_SYSTEM, prompt: buildAskPrompt(question, chunks), maxTokens: 1500 });
+    raw = await provider.generate({ task: "ask", system: ASK_SYSTEM, prompt: buildAskPrompt(question, chunks), maxTokens: 1500 });
   } catch (e) {
     return { ...base, answer: null, mode: "sources_only", provider: provider.label, citations: [], warning: `Yapay zeka yanıt veremedi: ${friendlyAiError(e)}` };
   }

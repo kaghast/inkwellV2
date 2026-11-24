@@ -19,6 +19,7 @@ const STATUS: Record<Capture["status"], { label: string; cls: string }> = {
   failed: { label: "Hata", cls: "bg-destructive/15 text-destructive" },
 };
 
+const FILE_TEXT_METHOD: Record<string, string> = { text: "metin dosyası", docx: "Word", pptx: "PowerPoint", xlsx: "Excel", ocr: "OCR" };
 const RESOLUTION: Record<string, string> = { accepted: "Kabul edildi", saved_raw: "Yapay zekasız kaydedildi", rejected: "Reddedildi" };
 
 function isEditable(el: EventTarget | null) {
@@ -349,6 +350,25 @@ export default function InboxPage() {
                     </Field>
                   )}
                 </div>
+              )}
+
+              {current.file_id && (current.file_text || current.suggestion.file_text_note) && (
+                <details className="mt-3 text-xs" data-testid="inbox-file-text">
+                  <summary className="cursor-pointer text-muted-foreground">
+                    Dosyadaki metin
+                    {current.file_text
+                      ? ` · ${FILE_TEXT_METHOD[current.file_text_method || "none"] || ""} · ${(current.file_text_length || 0).toLocaleString("tr-TR")} karakter`
+                      : " · okunamadı"}
+                  </summary>
+                  {current.file_text ? (
+                    <>
+                      <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-2 font-mono text-[11px]">{current.file_text}</pre>
+                      <p className="mt-1 text-muted-foreground">Kaydedince metnin tamamı nesnenin “Dosyadaki metin” bölümüne eklenir.</p>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-muted-foreground">{current.suggestion.file_text_note}</p>
+                  )}
+                </details>
               )}
 
               <details className="mt-3 text-xs">

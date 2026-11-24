@@ -26,6 +26,7 @@ import { applyTemplate } from "../services/templates";
 import { listTemplates, createTemplate, updateTemplate, deleteTemplate } from "../services/userTemplates";
 import { activationSummary, recordActiveDay } from "../services/analytics";
 import { aiStatus } from "../ai";
+import { usageSummary } from "../ai/usage";
 import { getAiSettings, saveAiSettings, testAiSettings, deleteAiKey } from "../services/aiSettings";
 import { embeddingCoverage, reindexUser } from "../services/embeddings";
 import { ask } from "../services/ask";
@@ -42,7 +43,7 @@ const list = (max = 30, len = 200) => z.array(z.string().trim().min(1).max(len))
 export function createWorkspaceRouter(auth: RequestHandler) {
   const r = express.Router();
   r.use(
-    ["/capture", "/inbox", "/relations", "/relation-types", "/objects", "/spaces", "/workspace", "/search", "/today", "/templates", "/home", "/ai/settings", "/ai/embeddings", "/ai/actions", "/ask", "/graph", "/journal"],
+    ["/capture", "/inbox", "/relations", "/relation-types", "/objects", "/spaces", "/workspace", "/search", "/today", "/templates", "/home", "/ai/settings", "/ai/embeddings", "/ai/actions", "/ai/usage", "/ask", "/graph", "/journal"],
     auth
   );
 
@@ -383,6 +384,7 @@ export function createWorkspaceRouter(auth: RequestHandler) {
   );
   r.post("/ai/settings/test", rateLimit("ai-settings", 20), handle(async (req) => testAiSettings(uid(req))));
   r.get("/ai/embeddings", handle(async (req) => embeddingCoverage(uid(req))));
+  r.get("/ai/usage", handle(async (req) => usageSummary(uid(req), Math.min(365, Math.max(1, Number(req.query.days) || 30)))));
   r.post("/ai/embeddings/reindex", rateLimit("ai-reindex", 5), handle(async (req) => ({ queued: await reindexUser(uid(req)) })));
   r.delete("/ai/settings", handle(async (req) => deleteAiKey(uid(req))));
 

@@ -3,7 +3,7 @@
 const TAG_TOKEN = /^[\p{L}\p{N}_-]+$/u;
 
 export function buildCaptureContent(
-  cap: { rawText: string; rawUrl: string | null },
+  cap: { rawText: string; rawUrl: string | null; fileText?: string | null },
   file: { id: string; name: string; content_type: string } | null,
   extras: { tags?: string[]; people?: string[]; tasks?: string[] } = {}
 ): string {
@@ -13,7 +13,9 @@ export function buildCaptureContent(
     const link = /^image\//.test(file.content_type) ? `![${file.name}](/api/files/${file.id})` : `[📎 ${file.name}](/api/files/${file.id})`;
     content = content ? `${content}\n\n${link}` : link;
   }
+  // Tasks already written by the user are not repeated; ones found in the file's text are added as tasks
   const lower = content.toLocaleLowerCase("tr-TR");
+  if (cap.fileText && cap.fileText.trim()) content += `\n\n## Dosyadaki metin\n\n${cap.fileText.trim()}`;
   const missingTasks = (extras.tasks || []).filter((t) => !lower.includes(t.toLocaleLowerCase("tr-TR")));
   if (missingTasks.length) content += `\n\n## Görevler\n${missingTasks.map((t) => `- [ ] ${t}`).join("\n")}`;
   const tagTokens = (extras.tags || [])

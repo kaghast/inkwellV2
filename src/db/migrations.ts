@@ -188,6 +188,29 @@ const DDL_STEPS: Array<{ id: string; statements: string[] }> = [
     ],
   },
   {
+    // Phase 2b: AI usage accounting and text read from captured files.
+    // A new table and one nullable column; existing rows are untouched.
+    id: "2026_11_26_010_ai_runs",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS ai_runs (
+        run_id TEXT PRIMARY KEY,
+        user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        model TEXT,
+        task TEXT NOT NULL,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        ok BOOLEAN NOT NULL,
+        error TEXT,
+        duration_ms INTEGER NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE INDEX IF NOT EXISTS ai_runs_user_created_idx ON ai_runs(user_id, created_at)`,
+      `ALTER TABLE captures ADD COLUMN IF NOT EXISTS file_text TEXT`,
+      `ALTER TABLE captures ADD COLUMN IF NOT EXISTS file_text_method TEXT`,
+    ],
+  },
+  {
     id: "2026_11_23_007_embedding_model",
     statements: [`ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding_model TEXT`],
   },

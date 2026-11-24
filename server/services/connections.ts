@@ -59,6 +59,7 @@ export async function unexpectedConnections(userId: string) {
     const pa = pick(A), pb = pick(B);
     try {
       const raw = await provider.generate({
+        task: "connections",
         system: SYSTEM,
         prompt: `[1] ${A.title}\n${pa}\n\n[2] ${B.title}\n${pb}`,
         maxTokens: 400,

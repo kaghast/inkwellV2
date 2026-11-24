@@ -8,6 +8,7 @@ import { heuristicProvider, heuristicExtract } from "./heuristic";
 import { geminiProvider } from "./gemini";
 import { mockProvider, mockEnabled } from "./mock";
 import { userAiProvider } from "../services/aiSettings";
+import { metered } from "./usage";
 
 const PROVIDERS: Record<string, AiProvider> = {
   gemini: geminiProvider,
@@ -22,13 +23,14 @@ export function serverProvider(): AiProvider {
   return p && p.available() ? p : heuristicProvider;
 }
 
+/** The provider for a user's request; model calls through it are recorded in ai_runs. */
 export async function activeProvider(userId?: string): Promise<{ provider: AiProvider; source: "user" | "server" | "none" }> {
   if (userId && !mockEnabled()) {
     const own = await userAiProvider(userId);
-    if (own) return { provider: own, source: "user" };
+    if (own) return { provider: metered(own, userId), source: "user" };
   }
   const s = serverProvider();
-  return { provider: s, source: s.isModel ? "server" : "none" };
+  return { provider: metered(s, userId), source: s.isModel ? "server" : "none" };
 }
 
 export async function aiStatus(userId?: string) {

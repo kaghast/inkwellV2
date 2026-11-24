@@ -12,6 +12,9 @@ import { checkCitations } from "./retrievalRank";
 import { friendlyAiError } from "./aiSettings";
 import { buildAskPrompt } from "./askPrompt";
 import { stripCode } from "../../src/lib/wikilinks";
+import { fileIdsInContent, readFileText, type FileTextResult } from "./fileText";
+
+const MAX_FILES_PER_READ = 5;
 
 export const AI_ACTIONS = {
   summarize: { label: "Özetle", output: "text", prompt: "Summarize this note in 3-5 concise bullet points." },
@@ -25,6 +28,7 @@ export const AI_ACTIONS = {
   project_summary: { label: "Proje özeti", output: "text", prompt: "Write a short project status summary: goal, progress, open items, risks. Only from the note." },
   research_questions: { label: "Araştırma soruları", output: "tasks", prompt: "Suggest 3-6 open research questions this note raises. Reply as JSON {\"items\": [\"...\"]}." },
   research_insights: { label: "Araştırma içgörüleri", output: "text", prompt: "List the key insights, claims and evidence in this note as bullets. Mark claims without evidence in the note as 'kanıtsız'." },
+  read_files: { label: "Dosyalardaki metin", output: "text", prompt: "" },
   find_related: { label: "İlgili notları bul", output: "related", prompt: "" },
   find_connections: { label: "Bağlantıları bul", output: "text", prompt: "" },
   compare: { label: "Karşılaştır", output: "text", prompt: "" },
@@ -82,6 +86,27 @@ export async function runAiAction(userId: string, noteId: string, action: AiActi
   const note = await ownedNote(userId, noteId);
   const base = { action, label: def.label, output: def.output } as const;
 
+  // Text inside the note's attached files: office files are read locally
+  // (works without a model), images and PDFs by OCR.
+  if (action === "read_files") {
+    const ids = fileIdsInContent(note.content).slice(0, MAX_FILES_PER_READ);
+    if (ids.length === 0) return { ...base, provider: null, text: "", warning: "Bu notta ekli dosya yok." };
+    const results: FileTextResult[] = [];
+    for (const fid of ids) {
+      // A link to a file the user does not own is skipped
+      const r = await readFileText(userId, fid).catch(() => null);
+      if (r) results.push(r);
+    }
+    const read = results.filter((r) => r.text);
+    const skipped = results.filter((r) => !r.text).map((r) => `${r.name}: ${r.note}`);
+    return {
+      ...base,
+      provider: results.find((r) => r.method === "ocr" && r.text)?.provider || null,
+      text: read.map((r) => `### ${r.name}\n\n${r.text}`).join("\n\n"),
+      warning: skipped.length ? skipped.join(" · ") : read.length === 0 ? "Dosyalardan metin okunamadı." : null,
+    };
+  }
+
   // Grounded actions: retrieve other notes about this one
   if (action === "find_related" || action === "find_connections" || (action === "contradictions" && !opts.other_id)) {
     const query = `${note.title}\n${plain(note.content).slice(0, 600)}`;
@@ -124,7 +149,7 @@ export async function runAiAction(userId: string, noteId: string, action: AiActi
     body = `Note A: ${note.title}\n${plain(note.content).slice(0, 9000)}\n\nNote B: ${other.title}\n${plain(other.content).slice(0, 9000)}`;
   }
   try {
-    const raw = await provider.generate({ system: SYSTEM, prompt: `${prompt}\n\n${body}`, maxTokens: 2000, json: def.output === "tasks" || def.output === "tags" });
+    const raw = await provider.generate({ task: `action:${action}`, system: SYSTEM, prompt: `${prompt}\n\n${body}`, maxTokens: 2000, json: def.output === "tasks" || def.output === "tags" });
     if (def.output === "tasks" || def.output === "tags") {
       const items = parseItems(raw);
       return { ...base, provider: provider.label, items: def.output === "tags" ? items.map((t) => t.toLowerCase().replace(/^#/, "").replace(/\s+/g, "-")) : items };
@@ -140,7 +165,7 @@ async function grounded(userId: string, base: any, question: string, chunks: any
   const { provider } = await activeProvider(userId);
   if (!provider.isModel) throw new AccessError(400, "Bu eylem için yapay zekayı Ayarlar > Yapay Zeka'dan etkinleştir");
   try {
-    const raw = await provider.generate({ system: SYSTEM + "\nCite sources as [n]. Only use the numbered sources.", prompt: buildAskPrompt(question, chunks), maxTokens: 1500 });
+    const raw = await provider.generate({ task: `action:${base.action}`, system: SYSTEM + "\nCite sources as [n]. Only use the numbered sources.", prompt: buildAskPrompt(question, chunks), maxTokens: 1500 });
     const check = checkCitations(raw, chunks.length);
     return {
       ...base,

@@ -11,6 +11,7 @@ import { buildCaptureContent } from "../server/services/captureContent";
 import { openTasks } from "../server/services/dayTasks";
 import { SYSTEM_OBJECT_TYPES, SYSTEM_RELATION_TYPES } from "../src/lib/objectTypes";
 import { toggleTaskInMarkdown } from "../src/lib/tasks";
+import { makeZip } from "./zipFixture";
 
 const ctx = {
   today: "2026-11-22",
@@ -409,5 +410,80 @@ describe("journal sections", () => {
     assert.equal(ensureSection("## Yansıma\n", "Yansıma"), "## Yansıma\n");
     assert.equal(ensureSection("x\n<!-- inkwell:comments:start -->\nc", "Yansıma"), "x\n\n## Yansıma\n\n<!-- inkwell:comments:start -->\nc");
     assert.equal(insertLogLine(ensureSection("## Notlar\n- n", "Yansıma"), "- cevap", ["Yansıma"]), "## Notlar\n- n\n\n## Yansıma\n\n- cevap\n");
+  });
+});
+
+// ---------------------------------------------------------------- Phase 2b: file text
+
+describe("file text (office, zip, OCR clean-up)", () => {
+  test("zip reader lists and inflates entries, rejects non-zip data", async () => {
+    const { listZip, readZipTexts } = await import("../server/lib/zip");
+    const zip = await makeZip({ "a.txt": "merhaba dünya", "dir/b.xml": "<x/>".repeat(100) });
+    assert.deepEqual(listZip(zip).map((e) => e.name), ["a.txt", "dir/b.xml"]);
+    const t = readZipTexts(zip, (n) => n === "a.txt");
+    assert.equal(t.get("a.txt"), "merhaba dünya");
+    assert.equal(t.has("dir/b.xml"), false);
+    assert.throws(() => listZip(Buffer.from("not a zip at all, just some text")), /Not a zip/);
+  });
+
+  test("docx: headings, lists, tabs, breaks and entities; deleted text is dropped", async () => {
+    const { readLocalText } = await import("../server/services/officeText");
+    const xml = `<w:document><w:body>
+      <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Toplantı</w:t></w:r></w:p>
+      <w:p><w:r><w:t xml:space="preserve">Ali &amp; Ayşe </w:t></w:r><w:r><w:t>geldi</w:t><w:tab/><w:t>saat 10</w:t></w:r></w:p>
+      <w:p/>
+      <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/></w:numPr></w:pPr><w:r><w:t>Bütçe</w:t></w:r><w:del><w:r><w:t>silinen</w:t></w:r></w:del></w:p>
+      <w:p><w:r><w:t>satır</w:t><w:br/><w:t>iki</w:t></w:r></w:p>
+    </w:body></w:document>`;
+    const zip = await makeZip({ "word/document.xml": xml, "[Content_Types].xml": "<Types/>" });
+    assert.equal(readLocalText("docx", zip), "# Toplantı\nAli & Ayşe geldi\tsaat 10\n\n- Bütçe\nsatır\niki");
+  });
+
+  test("pptx slides are read in numeric order; xlsx uses shared strings and sheet names", async () => {
+    const { readLocalText } = await import("../server/services/officeText");
+    const slide = (t: string) => `<p:sld><a:p><a:r><a:t>${t}</a:t></a:r></a:p><a:p/></p:sld>`;
+    const pptx = await makeZip({ "ppt/slides/slide10.xml": slide("On"), "ppt/slides/slide2.xml": slide("İki"), "ppt/slides/_rels/slide2.xml.rels": "<r/>" });
+    assert.equal(readLocalText("pptx", pptx), "## Slayt 2\n\nİki\n\n## Slayt 10\n\nOn");
+    const xlsx = await makeZip({
+      "xl/workbook.xml": `<workbook><sheets><sheet name="Bütçe" sheetId="1"/></sheets></workbook>`,
+      "xl/sharedStrings.xml": `<sst><si><t>Kalem</t></si><si><r><t>Tu</t></r><r><t>tar</t></r></si><si><t>Kira</t></si></sst>`,
+      "xl/worksheets/sheet1.xml": `<worksheet><sheetData>
+        <row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>
+        <row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2"><v>1500</v></c><c r="C2" t="inlineStr"><is><t>not</t></is></c></row>
+        <row r="3"><c r="A3"/></row>
+      </sheetData></worksheet>`,
+    });
+    assert.equal(readLocalText("xlsx", xlsx), "## Bütçe\n\nKalem | Tutar\nKira | 1500 | not");
+  });
+
+  test("local reader choice by type or extension; text files; binary is not text", async () => {
+    const { localKind, readLocalText } = await import("../server/services/officeText");
+    assert.equal(localKind("application/octet-stream", "Rapor.DOCX"), "docx");
+    assert.equal(localKind("text/csv", "a.csv"), "text");
+    assert.equal(localKind("image/png", "a.png"), null);
+    assert.equal(localKind("application/pdf", "a.pdf"), null);
+    assert.equal(readLocalText("text", Buffer.from("﻿a\r\nb\n\n\n\nc")), "a\nb\n\nc");
+    assert.equal(readLocalText("text", Buffer.from([0x50, 0x4b, 0x00, 0x01])), "");
+  });
+
+  test("OCR output: fences and the EMPTY marker are removed", async () => {
+    const { cleanReadText } = await import("../server/ai/fileRead");
+    assert.equal(cleanReadText("```markdown\n# Kart\nAli Veli\n```"), "# Kart\nAli Veli");
+    assert.equal(cleanReadText(" EMPTY "), "");
+    assert.equal(cleanReadText("Metin"), "Metin");
+  });
+
+  test("file links in a note and the capture content with file text", async () => {
+    const { fileIdsInContent } = await import("../server/services/officeText");
+    assert.deepEqual(fileIdsInContent("![a](/api/files/file_1) [b](/api/files/file_2) ![a](/api/files/file_1)"), ["file_1", "file_2"]);
+    const content = buildCaptureContent(
+      { rawText: "kartvizit", rawUrl: null, fileText: "Ali Veli\nAra: pazartesi" },
+      { id: "file_9", name: "kart.png", content_type: "image/png" },
+      { tasks: ["kartvizit", "Ali'yi ara"] }
+    );
+    assert.equal(
+      content,
+      "kartvizit\n\n![kart.png](/api/files/file_9)\n\n## Dosyadaki metin\n\nAli Veli\nAra: pazartesi\n\n## Görevler\n- [ ] Ali'yi ara"
+    );
   });
 });

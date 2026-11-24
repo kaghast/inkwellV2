@@ -20,6 +20,7 @@ export interface CaptureSuggestion {
   site?: string | null;
   author?: string | null;
   related?: Array<{ object_id: string; title: string; reason: string }>;
+  file_text_note?: string | null;
 }
 
 export interface Capture {
@@ -30,6 +31,9 @@ export interface Capture {
   raw_text: string;
   raw_url: string | null;
   file_id: string | null;
+  file_text?: string | null;
+  file_text_length?: number;
+  file_text_method?: "text" | "docx" | "pptx" | "xlsx" | "ocr" | "none" | null;
   space_id: string | null;
   suggestion: CaptureSuggestion;
   provider: string | null;
@@ -264,7 +268,19 @@ export interface AskResult {
 export type AiActionKey =
   | "summarize" | "rewrite" | "translate" | "explain" | "extract_tasks" | "generate_tags" | "outline"
   | "meeting_notes" | "project_summary" | "research_questions" | "research_insights"
-  | "find_related" | "find_connections" | "compare" | "contradictions";
+  | "find_related" | "find_connections" | "compare" | "contradictions" | "read_files";
+
+export interface AiUsageData {
+  days: number;
+  since: string;
+  calls: number;
+  failed: number;
+  input_tokens: number;
+  output_tokens: number;
+  by_task: Array<{ task: string; calls: number; failed: number; input_tokens: number; output_tokens: number }>;
+  by_day: Array<{ day: string; calls: number; tokens: number }>;
+  by_model: Array<{ provider: string; model: string | null; calls: number }>;
+}
 
 export interface AiActionResult {
   action: AiActionKey;
@@ -300,6 +316,7 @@ export const aiApi = {
   ask: (question: string, filters: AskFilters = {}) => api.post("/ask", { question, filters }).then((r) => r.data as AskResult),
   action: (noteId: string, action: AiActionKey, opts: { language?: string; other_id?: string } = {}) =>
     api.post(`/objects/${encodeURIComponent(noteId)}/ai`, { action, ...opts }).then((r) => r.data as AiActionResult),
+  usage: (days = 30) => api.get("/ai/usage", { params: { days } }).then((r) => r.data as AiUsageData),
   append: (noteId: string, text: string, summary?: string) =>
     api.post(`/objects/${encodeURIComponent(noteId)}/append`, { text, summary }).then((r) => r.data as { note_id: string; content: string }),
   status: () => api.get("/home").then((r) => (r.data as HomeData).ai),

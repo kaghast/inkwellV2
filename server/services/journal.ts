@@ -409,7 +409,7 @@ export async function monthlyReview(userId: string, month: string, today: string
   }
   let raw: string;
   try {
-    raw = await provider.generate({ system: REVIEW_SYSTEM, prompt: buildReviewPrompt(monthLabel(month), facts, sources), maxTokens: 1200 });
+    raw = await provider.generate({ task: "review", system: REVIEW_SYSTEM, prompt: buildReviewPrompt(monthLabel(month), facts, sources), maxTokens: 1200 });
   } catch (e) {
     return { ...base, mode: "facts_only" as const, review: null, citations: [], provider: provider.label, warning: `Yapay zeka yanıt veremedi: ${friendlyAiError(e)}` };
   }

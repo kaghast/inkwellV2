@@ -55,12 +55,19 @@ Known limits after Phase 1 (by design, documented in the PR):
 - **Graph 2.0 (`/network`):** Typed relation edges (amber, labelled on hover) and filters for object type, relation type, date, Bölüm and person. The inspector shows typed relations, "İlgili notları bul" and Ask. "Beklenmedik bağlantılar" finds pairs that are similar (by embeddings, otherwise TF-IDF) but more than two hops apart; a pair is shown only when the model explains it with `[1]`/`[2]` passages, and "NONE" or uncited explanations are dropped.
 - **Tests:** A deterministic mock provider (`AI_PROVIDER=mock`, refused when `NODE_ENV=production`) lets the end-to-end tests cover the model paths. Live Gemini and Claude calls were not exercised because no real key was available; key validation was checked against Google's API with an invalid key.
 
+### Phase 2b status (shipped)
+
+- **AI usage accounting:** migration `2026_11_26_010_ai_runs` adds the `ai_runs` table (one row per real model call: user, provider, model, task, input/output tokens, ok/error, duration). `activeProvider()` wraps model providers with `metered()` (`server/ai/usage.ts`); providers report the model and token counts into an `AsyncLocalStorage` scope (`server/ai/usageScope.ts`) after each API call. Calls that never reach an API (no key, Claude embeddings) are not stored. Tasks: `capture`, `embedding`, `ask`, `review`, `connections`, `file_text`, `action:<key>`. `GET /api/ai/usage?days=30` and a "Kullanım · son 30 gün" card in Settings > Yapay Zeka. Gemini embedding calls report no token counts. Key tests (`pingGemini`/`pingAnthropic`) are not recorded.
+- **File text:** `server/services/fileText.ts`. DOCX, PPTX, XLSX and text files are read on the server without a model (`server/services/officeText.ts` over a minimal zip reader in `server/lib/zip.ts`: stored/deflate entries, per-entry output capped, no ZIP64). Images and PDFs are read by the active provider's new optional `readFile` (Gemini inline data up to 14 MB; Claude images up to 5 MB and PDFs up to 20 MB as document blocks). The prompt asks for a verbatim transcription, never a summary.
+- **Capture:** a captured file's text is stored on the capture (`captures.file_text`, `file_text_method`, migration `010`), fed to extraction with the typed text, shown in the Inbox ("Dosyadaki metin"), and written to the object under `## Dosyadaki metin` on accept or raw save. Without a model, images and PDFs say why they have no text (`suggestion.file_text_note`).
+- **Note action:** "Dosyalardaki metin" (`read_files`) reads up to 5 files linked from the note; files the user does not own are skipped. Works without a model for office and text files. The result is a suggestion; "Nota ekle" appends it as a new version.
+- **Not done here:** PDF text without a model (needs a PDF parser dependency), audio transcription, ZIP64 office files.
+- **Not exercised live:** Gemini and Claude `readFile` calls (no real key in development); the mock provider covers the pipeline in the API tests.
+
 Remaining in Phase 2:
 - OpenAI provider
 - `vector` column with an HNSW index on Postgres, and `tsvector` full text in SQL (ranking is still in Node)
-- `ai_runs` token accounting
-- Vision/OCR and file text extraction
-- Daily AI review
+- Audio transcription
 - 3D graph
 
 ### Original Phase 2 plan

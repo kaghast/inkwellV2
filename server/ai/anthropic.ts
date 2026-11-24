@@ -4,8 +4,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AiProvider, Extraction, ExtractionContext, GenerateRequest } from "./types";
 import { buildExtractionPrompt, parseExtraction } from "./gemini";
+import { markCalled, reportUsage } from "./usageScope";
+import { READ_FILE_PROMPT, cleanReadText } from "./fileRead";
 
 export const DEFAULT_ANTHROPIC_MODEL = "claude-opus-5-5";
+
+const CLAUDE_IMAGES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 function textFrom(content: Array<{ type: string; text?: string }>): string {
   return content
@@ -15,17 +19,21 @@ function textFrom(content: Array<{ type: string; text?: string }>): string {
     .trim();
 }
 
-async function complete(client: Anthropic, model: string, req: GenerateRequest): Promise<string> {
+type UserContent = string | Array<Record<string, unknown>>;
+
+async function complete(client: Anthropic, model: string, req: GenerateRequest, content?: UserContent): Promise<string> {
   // Server-side fallback: if the model declines for a policy reason, the API
   // retries the same request on a fallback model chosen by refusal category.
+  markCalled(model);
   const res = await client.beta.messages.create({
     model,
     max_tokens: req.maxTokens || 4096,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     system: req.json ? `${req.system}\n\nReply with a single JSON object and nothing else.` : req.system,
-    messages: [{ role: "user", content: req.prompt }],
+    messages: [{ role: "user", content: (content ?? req.prompt) as any }],
   });
+  reportUsage({ model: (res as any).model || model, input: res.usage?.input_tokens ?? null, output: res.usage?.output_tokens ?? null });
   if (res.stop_reason === "refusal") throw new Error("Model declined the request");
   const out = textFrom(res.content);
   if (!out) throw new Error("Empty model response");
@@ -52,6 +60,16 @@ export function anthropicForKey(apiKey: string, model?: string | null): AiProvid
     },
     generate: (req) => complete(client, modelName, req),
     embed: async () => null,
+    canRead: (mime, bytes) => (CLAUDE_IMAGES.includes(mime) && bytes <= 5 * 1024 * 1024) || (mime === "application/pdf" && bytes <= 20 * 1024 * 1024),
+    async readFile({ data, mime }) {
+      const source = { type: "base64", media_type: mime, data: data.toString("base64") };
+      const block = mime === "application/pdf" ? { type: "document", source } : { type: "image", source };
+      const out = await complete(client, modelName, { system: "You transcribe text from files.", prompt: READ_FILE_PROMPT, maxTokens: 16000 }, [
+        block,
+        { type: "text", text: READ_FILE_PROMPT },
+      ]);
+      return cleanReadText(out);
+    },
   };
 }
 

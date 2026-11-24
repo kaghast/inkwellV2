@@ -48,6 +48,19 @@ export interface AiProvider {
   embed(text: string): Promise<number[] | null>;
   /** Name of the embedding model, so stored vectors from another model are never compared. */
   embedModel?: string;
+  /**
+   * Reads the text of an image or PDF (OCR / document understanding). Only
+   * on providers with vision; returns "" when the file has no text.
+   */
+  readFile?(file: FileInput): Promise<string>;
+  /** Whether readFile accepts this type and size. */
+  canRead?(mime: string, bytes: number): boolean;
+}
+
+export interface FileInput {
+  data: Buffer;
+  mime: string;
+  name: string;
 }
 
 export interface GenerateRequest {
@@ -56,6 +69,8 @@ export interface GenerateRequest {
   maxTokens?: number;
   /** Ask for a JSON reply (the caller still parses defensively). */
   json?: boolean;
+  /** What the call is for, recorded in ai_runs (e.g. "ask", "action:summarize"). */
+  task?: string;
 }
 
 export class AiUnavailableError extends Error {}

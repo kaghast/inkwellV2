@@ -9,7 +9,7 @@
     "start": "tsx server.ts",
     "lint": "tsc --noEmit",
     "test": "tsx --test \"tests/unit.test.ts\"",
-    "test:api": "tsx --test \"tests/api.integration.test.ts\" \"tests/api.phase2.test.ts\" \"tests/api.journal.test.ts\""
+    "test:api": "tsx --test \"tests/api.integration.test.ts\" \"tests/api.phase2.test.ts\" \"tests/api.journal.test.ts\" \"tests/api.files.test.ts\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.12.0",

@@ -11,7 +11,7 @@ import { aiApi, objectPath, wsApi, type AiActionKey, type AiActionResult, type S
 
 const GROUPS: Array<{ title: string; actions: Array<[AiActionKey, string]> }> = [
   { title: "Yaz", actions: [["summarize", "Özetle"], ["rewrite", "Yeniden yaz"], ["translate", "Çevir"], ["explain", "Açıkla"], ["outline", "Taslak"]] },
-  { title: "Çıkar", actions: [["extract_tasks", "Görevler"], ["generate_tags", "Etiketler"], ["research_questions", "Araştırma soruları"], ["research_insights", "İçgörüler"]] },
+  { title: "Çıkar", actions: [["extract_tasks", "Görevler"], ["generate_tags", "Etiketler"], ["research_questions", "Araştırma soruları"], ["research_insights", "İçgörüler"], ["read_files", "Dosyalardaki metin"]] },
   { title: "Biçimlendir", actions: [["meeting_notes", "Toplantı notu"], ["project_summary", "Proje özeti"]] },
   { title: "Bağla", actions: [["find_related", "İlgili notlar"], ["find_connections", "Bağlantılar"], ["contradictions", "Çelişkiler"], ["compare", "Karşılaştır…"]] },
 ];
