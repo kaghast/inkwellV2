@@ -41,7 +41,7 @@ Known limits after Phase 1 (by design, documented in the PR):
 - The job runner is in-process: work survives restarts (re-queued at boot from `captures.status`) but not multiple server instances.
 - Team workspaces, invites and roles beyond the owner exist only in the schema and access helpers.
 - OCR, PDF/DOCX text extraction and audio transcription need an AI provider with vision/audio → Phase 2. Files and images are captured into the Inbox with their file attached and metadata from the filename.
-- Search ranks in Node over the user's rows (same O(n) cost as today's list endpoint); SQL/pgvector retrieval → Phase 2.
+- Search ranks in Node over the user's rows (same O(n) cost as today's list endpoint); SQL/pgvector retrieval → Phase 2 (full text moved to SQL in migration 011; pgvector still open).
 
 ## Phase 2 — AI pipeline, Ask Inkwell, Graph 2.0
 
@@ -64,9 +64,17 @@ Known limits after Phase 1 (by design, documented in the PR):
 - **Not done here:** PDF text without a model (needs a PDF parser dependency), audio transcription, ZIP64 office files.
 - **Not exercised live:** Gemini and Claude `readFile` calls (no real key in development); the mock provider covers the pipeline in the API tests.
 
+### Phase 2 status: search in SQL
+
+- **Full text in Postgres:** migration `2026_11_27_011_search_tsv` adds `inkwell_fold(text)` (an `IMMUTABLE` SQL function that folds Turkish letters and common accents like the app's `fold()`), a generated `notes.search_tsv tsvector` column (`simple` config; title weight A, tags and people B, body D; fenced code blocks and HTML comments left out; body capped at 200 000 characters; a locked note contributes only its title) and a GIN index. Postgres computes the column on every write, whatever code path made it, and for existing rows when the column is added; no data is changed. Runs on PGlite and Postgres.
+- **Global search** (`GET /api/search`): SQL picks at most 400 candidates (`search_tsv @@ to_tsquery(any query word as a prefix)`, or an object type whose name contains a word), ordered by `ts_rank`; the existing pure ranking (`rankDocuments`) scores only those, so the response shape, `matched` and snippets are unchanged. Behaviour change: a word matches the start of a word ("toplant" finds "toplantısı"), no longer the middle of one ("lant" does not). Inbox captures (latest 300) and spaces are still filtered in Node.
+- **Ask Inkwell and "find related"** (`retrieve`): candidates are the best 150 full-text matches (words of 4+ letters as prefixes, shorter ones exact, as in BM25) plus the 40 nearest note vectors from the active embedding model (cosine ≥ 0.3; only ids and vectors are read, not bodies). Only candidates are chunked and ranked, so BM25 document frequencies now come from the candidate set. "Find unexpected connections" still reads every note by design.
+- **Not done: pgvector.** Vectors are still stored as JSON text and compared in Node. PGlite needs the new `@electric-sql/pglite-pgvector` package, which requires PGlite 0.6.0 (both released 2026-11-23), and no Postgres with pgvector is available to test against. An HNSW index would also need care: the per-user filter runs after the approximate scan, which loses results unless pgvector ≥ 0.8 iterative scans or per-tenant partial indexes are used.
+- Tests: `tests/api.search.test.ts` (folding, suffixes, code blocks, locked notes, type names, edits, isolation, Ask), unit tests for the query builder and vector candidates.
+
 Remaining in Phase 2:
 - OpenAI provider
-- `vector` column with an HNSW index on Postgres, and `tsvector` full text in SQL (ranking is still in Node)
+- pgvector column and index (see above)
 - Audio transcription
 - 3D graph
 

@@ -96,6 +96,17 @@ export function cosine(a: number[], b: number[]): number {
   return na && nb ? dot / (Math.sqrt(na) * Math.sqrt(nb)) : 0;
 }
 
+/** Ids of the `k` vectors most similar to the query (cosine >= `min`), best first. */
+export function nearestIds(query: number[], rows: Array<{ id: string; vector: number[] | null }>, k: number, min = 0.3): string[] {
+  return rows
+    .filter((r): r is { id: string; vector: number[] } => Array.isArray(r.vector) && r.vector.length > 0)
+    .map((r) => ({ id: r.id, sim: cosine(query, r.vector) }))
+    .filter((r) => r.sim >= min)
+    .sort((a, b) => b.sim - a.sim)
+    .slice(0, k)
+    .map((r) => r.id);
+}
+
 export interface RankOptions {
   queryVector?: number[] | null;
   /** note id -> related note ids (relations, wikilinks), used for the relation boost. */

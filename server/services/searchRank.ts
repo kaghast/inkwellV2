@@ -36,6 +36,25 @@ export const fold = (s: string) =>
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "");
 
+/** Folded query words (letters and digits only), unique, at most `max`. */
+export function queryWords(query: string, max = 32): string[] {
+  return Array.from(new Set(fold(query).split(/[^\p{L}\p{N}]+/u).filter(Boolean))).slice(0, max);
+}
+
+/**
+ * A `to_tsquery('simple', …)` string that matches a row containing ANY of the
+ * words (the caller still checks every word). Words at least `prefixMin` long
+ * match as prefixes, so "toplanti" finds "toplantisi" (Turkish suffixes).
+ * Only letters and digits get through, so the string is always valid syntax.
+ */
+export function tsQueryFor(words: string[], prefixMin = 1): string | null {
+  const clean = words.map((w) => w.replace(/[^\p{L}\p{N}]+/gu, "")).filter(Boolean);
+  if (clean.length === 0) return null;
+  return Array.from(new Set(clean))
+    .map((w) => (w.length >= prefixMin ? `${w}:*` : w))
+    .join(" | ");
+}
+
 function snippetAround(text: string, terms: string[], radius = 70): string {
   const flat = text.replace(/\s+/g, " ").trim();
   const f = fold(flat);

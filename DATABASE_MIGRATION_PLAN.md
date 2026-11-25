@@ -168,6 +168,12 @@ After 005, every `POST/PUT /api/notes`, split, merge and restore path calls `syn
 
 Backups before any production deploy: `pg_dump -Fc` of the database and a copy of `DATA_DIR/uploads`. The in-app JSON export (`/api/backup/export`) also works as a per-user safety net.
 
+## 3b. Phase 2 migrations
+
+### 011 — full-text search (`2026_11_27_011_search_tsv`)
+
+`inkwell_fold(text)` (IMMUTABLE SQL function), generated column `notes.search_tsv tsvector` and GIN index `notes_search_tsv_idx`. Adding a stored generated column rewrites `notes` once and computes the value for existing rows; no row is changed otherwise. If `inkwell_fold` is ever changed, the column must be recomputed (drop and re-add the column in a new migration). Rollback: old code ignores the column; optional `DROP INDEX notes_search_tsv_idx; ALTER TABLE notes DROP COLUMN search_tsv;` only with owner approval.
+
 ## 4. Later phases (planned, not applied)
 
 | Phase | Change | Notes |

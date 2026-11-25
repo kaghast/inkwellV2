@@ -211,6 +211,29 @@ const DDL_STEPS: Array<{ id: string; statements: string[] }> = [
     ],
   },
   {
+    // Phase 2: full-text search in SQL. A generated column (Postgres keeps it
+    // in step with every write, whatever code path made it) and a GIN index.
+    // Text is folded like the app's `fold()` (Turkish dotless i, accents) so
+    // "istanbul" finds "İstanbul". Code blocks and HTML comments are left
+    // out, as in the Node ranking; locked notes contribute only their title.
+    // Adding the column computes it for existing rows; no data is changed.
+    id: "2026_11_27_011_search_tsv",
+    statements: [
+      `CREATE OR REPLACE FUNCTION inkwell_fold(t text) RETURNS text
+        LANGUAGE sql IMMUTABLE PARALLEL SAFE AS
+        $fn$ SELECT translate(lower(translate(coalesce(t, ''), 'İIı', 'iii')),
+          'çğöşüâîûêôáàäãéèëíìïóòõúùñ', 'cgosuaiueoaaaaeeeiiiooouun') $fn$`,
+      `ALTER TABLE notes ADD COLUMN IF NOT EXISTS search_tsv tsvector GENERATED ALWAYS AS (
+        setweight(to_tsvector('simple'::regconfig, inkwell_fold(title)), 'A') ||
+        setweight(to_tsvector('simple'::regconfig, inkwell_fold(tags::text || ' ' || people::text)), 'B') ||
+        setweight(to_tsvector('simple'::regconfig, CASE WHEN is_encrypted THEN '' ELSE inkwell_fold(left(
+          regexp_replace(regexp_replace(content, '\`\`\`.*?\`\`\`', ' ', 'g'), '<!--.*?-->', ' ', 'g'),
+          200000)) END), 'D')
+      ) STORED`,
+      `CREATE INDEX IF NOT EXISTS notes_search_tsv_idx ON notes USING gin (search_tsv)`,
+    ],
+  },
+  {
     id: "2026_11_23_007_embedding_model",
     statements: [`ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding_model TEXT`],
   },

@@ -520,3 +520,36 @@ describe("journal links (2.5f)", () => {
     assert.equal(cardTitleFromTask("[[Atlas|Proje]] **sunum** [link](http://x)"), "Proje sunum link");
   });
 });
+
+import { queryWords, tsQueryFor } from "../server/services/searchRank";
+
+describe("full-text query building", () => {
+  test("query words are folded, unique and letters/digits only", () => {
+    assert.deepEqual(queryWords("İstanbul'da  TOPLANTI, e-posta istanbul'da"), ["istanbul", "da", "toplanti", "e", "posta"]);
+    assert.deepEqual(queryWords("  ...  "), []);
+  });
+  test("tsquery is ORed, prefix-matched from a length, and never carries operators", () => {
+    assert.equal(tsQueryFor(["atlas", "ab"]), "atlas:* | ab:*");
+    assert.equal(tsQueryFor(["toplanti", "ab"], 4), "toplanti:* | ab");
+    assert.equal(tsQueryFor(["a&b", "x|y", "!(z)"]), "ab:* | xy:* | z:*");
+    assert.equal(tsQueryFor(["", "&"]), null);
+  });
+});
+
+import { nearestIds } from "../server/services/retrievalRank";
+
+describe("vector candidates", () => {
+  test("nearest ids: most similar first, weak and missing vectors left out, capped", () => {
+    const rows = [
+      { id: "far", vector: [0, 1] },
+      { id: "near", vector: [1, 0.1] },
+      { id: "exact", vector: [2, 0] },
+      { id: "none", vector: null },
+      { id: "empty", vector: [] },
+      { id: "mid", vector: [1, 1] },
+    ];
+    assert.deepEqual(nearestIds([1, 0], rows, 10), ["exact", "near", "mid"]);
+    assert.deepEqual(nearestIds([1, 0], rows, 1), ["exact"]);
+    assert.deepEqual(nearestIds([1, 0], rows, 10, 0.9), ["exact", "near"]);
+  });
+});
