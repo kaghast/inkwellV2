@@ -30,6 +30,13 @@ import {
 import { runMigrations, runOnce } from "./src/db/migrations";
 import { initPgvector } from "./server/services/vectorStore";
 import { createWorkspaceRouter } from "./server/http/workspaceRoutes";
+import { createSaasRouter } from "./server/http/saasRoutes";
+import { checkQuota } from "./server/services/billing";
+import { objectRole, visibleObjectsSql } from "./server/services/teams";
+const needsWrite = (need: string) => need !== "read";
+/** Editors may write; deleting a shared object needs its creator or a workspace owner/admin. */
+const canWriteRole = (role: string, need: string) =>
+  need === "delete" ? ["owner", "admin"].includes(role) : ["owner", "admin", "editor"].includes(role);
 import { initSecrets, encryptSecret, decryptSecret } from "./server/lib/secrets";
 import { backfillPersonalWorkspaces, resolveTargetSpace, AccessError } from "./server/services/workspaces";
 import { backfillWikilinkRelations, syncWikilinkRelations } from "./server/services/relations";
@@ -312,6 +319,7 @@ async function authMiddleware(req: AuthRequest, res: Response, next: NextFunctio
       if (payload && payload.sub) {
         const u = await db.select().from(users).where(eq(users.userId, payload.sub)).limit(1);
         if (u.length > 0) {
+          if (u[0].disabled) return res.status(403).json({ detail: "Hesabın devre dışı bırakıldı. Destek için yöneticiyle iletişime geç." });
           req.user = u[0];
           return next();
         }
@@ -327,6 +335,7 @@ async function authMiddleware(req: AuthRequest, res: Response, next: NextFunctio
       if (payload && payload.sub) {
         const u = await db.select().from(users).where(eq(users.userId, payload.sub)).limit(1);
         if (u.length > 0) {
+          if (u[0].disabled) return res.status(403).json({ detail: "Hesabın devre dışı bırakıldı. Destek için yöneticiyle iletişime geç." });
           req.user = u[0];
           const newAccessToken = createAccessToken(u[0].userId, u[0].email);
           res.cookie("access_token", newAccessToken, {
@@ -354,6 +363,8 @@ const api = express.Router();
 
 // Phase 1 modules (capture, inbox, relations, spaces, search, today, templates, home)
 api.use(createWorkspaceRouter(authMiddleware as any));
+// Phase 3a modules (billing, team workspaces, invitations, platform admin)
+api.use(createSaasRouter(authMiddleware as any));
 
 // Root check & AI dataset export for model training
 api.get("/", (req, res) => {
@@ -885,6 +896,10 @@ api.post("/auth/login", async (req, res) => {
       return res.status(401).json({ detail: "Geçersiz e-posta veya şifre" });
     }
 
+    if (user.disabled) {
+      return res.status(403).json({ detail: "Hesabın devre dışı bırakıldı. Destek için yöneticiyle iletişime geç." });
+    }
+    await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.userId, user.userId));
     const accessToken = createAccessToken(user.userId, cleanEmail);
     const refreshToken = createRefreshToken(user.userId);
     setAuthCookies(res, accessToken, refreshToken);
@@ -2640,6 +2655,7 @@ api.post("/notes", authMiddleware, async (req: AuthRequest, res: Response) => {
       const target = await resolveTargetSpace(userId, typeof req.body?.space_id === "string" ? req.body.space_id : null);
       values.workspaceId = target.workspaceId;
       values.spaceId = target.spaceId;
+      await checkQuota(userId, "objects", { workspaceId: target.workspaceId });
     } catch (e) {
       if (e instanceof AccessError) return res.status(e.status).json({ detail: e.message });
       throw e;
@@ -2968,12 +2984,16 @@ api.get("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     const found = await db.select().from(notes).where(
       and(
         or(eq(notes.noteId, identifier), eq(notes.slug, identifier)),
-        eq(notes.userId, userId)
+        visibleObjectsSql(userId)
       )
     ).limit(1);
 
     if (found.length === 0) {
       return res.status(404).json({ detail: "Not bulunamadı" });
+    }
+    const accessRole = await objectRole(userId, found[0]);
+    if (!accessRole || (needsWrite("read") && !canWriteRole(accessRole, "read"))) {
+      return res.status(accessRole ? 403 : 404).json({ detail: accessRole ? "Bu not için yetkin yok" : "Not bulunamadı" });
     }
     const n = found[0];
     res.json({
@@ -2993,6 +3013,8 @@ api.get("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
       period: n.period || "day",
       drive_files: n.driveFiles || [],
       space_id: n.spaceId || null,
+      workspace_id: n.workspaceId || null,
+      access_role: accessRole,
       pinned: n.pinned,
       archived: n.archived || false,
       is_encrypted: Boolean(n.isEncrypted),
@@ -3020,9 +3042,13 @@ api.patch("/notes/:note_id/tasks", authMiddleware, async (req: AuthRequest, res:
   }
   try {
     const found = await db.select().from(notes).where(
-      and(or(eq(notes.noteId, identifier), eq(notes.slug, identifier)), eq(notes.userId, userId))
+      and(or(eq(notes.noteId, identifier), eq(notes.slug, identifier)), visibleObjectsSql(userId))
     ).limit(1);
     if (found.length === 0) return res.status(404).json({ detail: "Not bulunamadı" });
+    const accessRole = await objectRole(userId, found[0]);
+    if (!accessRole || (needsWrite("write") && !canWriteRole(accessRole, "write"))) {
+      return res.status(accessRole ? 403 : 404).json({ detail: accessRole ? "Bu not için yetkin yok" : "Not bulunamadı" });
+    }
     const current = found[0];
     if (current.archived) {
       return res.status(403).json({ detail: "Arşivlenmiş notlar düzenlenemez. Lütfen önce arşivden çıkarın." });
@@ -3036,7 +3062,7 @@ api.patch("/notes/:note_id/tasks", authMiddleware, async (req: AuthRequest, res:
       const updated = await db
         .update(notes)
         .set({ content: next, updatedAt: new Date() })
-        .where(and(eq(notes.noteId, current.noteId), eq(notes.userId, userId), eq(notes.content, before)))
+        .where(and(eq(notes.noteId, current.noteId), eq(notes.content, before)))
         .returning({ noteId: notes.noteId });
       if (updated.length === 0) {
         return res.status(409).json({ detail: "Not başka bir yerde değişti, lütfen yenileyin" });
@@ -3080,12 +3106,16 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     const found = await db.select().from(notes).where(
       and(
         or(eq(notes.noteId, identifier), eq(notes.slug, identifier)),
-        eq(notes.userId, userId)
+        visibleObjectsSql(userId)
       )
     ).limit(1);
 
     if (found.length === 0) {
       return res.status(404).json({ detail: "Not bulunamadı" });
+    }
+    const accessRole = await objectRole(userId, found[0]);
+    if (!accessRole || (needsWrite("write") && !canWriteRole(accessRole, "write"))) {
+      return res.status(accessRole ? 403 : 404).json({ detail: accessRole ? "Bu not için yetkin yok" : "Not bulunamadı" });
     }
     const current = found[0];
     const noteId = current.noteId;
@@ -3162,13 +3192,13 @@ api.put("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Respons
     }
 
     await db.update(notes).set(updateData).where(eq(notes.noteId, noteId));
-    await syncReminders(userId, noteId, noteContent);
+    await syncReminders(found[0].userId, noteId, noteContent);
 
     const updated = (await db.select().from(notes).where(eq(notes.noteId, noteId)).limit(1))[0];
     const changeSummary = req.body?.change_summary || "Not içeriği güncellendi";
     await saveNoteVersion(userId, noteId, updated, changeSummary);
-    await syncWikilinkRelations(userId, noteId);
-    scheduleEmbedding(userId, noteId);
+    await syncWikilinkRelations(found[0].userId, noteId);
+    scheduleEmbedding(found[0].userId, noteId);
 
     res.json({
       note_id: updated.noteId,
@@ -3206,19 +3236,23 @@ api.get("/notes/:note_id/versions", authMiddleware, async (req: AuthRequest, res
     const found = await db.select().from(notes).where(
       and(
         or(eq(notes.noteId, identifier), eq(notes.slug, identifier)),
-        eq(notes.userId, userId)
+        visibleObjectsSql(userId)
       )
     ).limit(1);
 
     if (found.length === 0) {
       return res.status(404).json({ detail: "Not bulunamadı" });
     }
+    const accessRole = await objectRole(userId, found[0]);
+    if (!accessRole || (needsWrite("read") && !canWriteRole(accessRole, "read"))) {
+      return res.status(accessRole ? 403 : 404).json({ detail: accessRole ? "Bu not için yetkin yok" : "Not bulunamadı" });
+    }
     const noteId = found[0].noteId;
 
     const list = await db
       .select()
       .from(noteVersions)
-      .where(and(eq(noteVersions.noteId, noteId), eq(noteVersions.userId, userId)))
+      .where(eq(noteVersions.noteId, noteId))
       .orderBy(desc(noteVersions.versionNumber));
 
     res.json(
@@ -3252,12 +3286,16 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
     const found = await db.select().from(notes).where(
       and(
         or(eq(notes.noteId, identifier), eq(notes.slug, identifier)),
-        eq(notes.userId, userId)
+        visibleObjectsSql(userId)
       )
     ).limit(1);
 
     if (found.length === 0) {
       return res.status(404).json({ detail: "Not bulunamadı" });
+    }
+    const accessRole = await objectRole(userId, found[0]);
+    if (!accessRole || (needsWrite("write") && !canWriteRole(accessRole, "write"))) {
+      return res.status(accessRole ? 403 : 404).json({ detail: accessRole ? "Bu not için yetkin yok" : "Not bulunamadı" });
     }
     const current = found[0];
     const noteId = current.noteId;
@@ -3273,8 +3311,7 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
         .where(
           and(
             eq(noteVersions.versionId, versionId),
-            eq(noteVersions.noteId, noteId),
-            eq(noteVersions.userId, userId)
+            eq(noteVersions.noteId, noteId)
           )
         )
         .limit(1)
@@ -3300,12 +3337,12 @@ api.post("/notes/:note_id/versions/:version_id/restore", authMiddleware, async (
     };
 
     await db.update(notes).set(updateData).where(eq(notes.noteId, noteId));
-    await syncReminders(userId, noteId, targetVer.content);
+    await syncReminders(found[0].userId, noteId, targetVer.content);
 
     const updated = (await db.select().from(notes).where(eq(notes.noteId, noteId)).limit(1))[0];
     await saveNoteVersion(userId, noteId, updated, `v${targetVer.versionNumber} versiyonuna geri dönüldü`);
-    await syncWikilinkRelations(userId, noteId);
-    scheduleEmbedding(userId, noteId);
+    await syncWikilinkRelations(found[0].userId, noteId);
+    scheduleEmbedding(found[0].userId, noteId);
 
     res.json({
       note_id: updated.noteId,
@@ -3392,12 +3429,16 @@ const handleArchiveToggle = async (req: AuthRequest, res: Response) => {
     const found = await db.select().from(notes).where(
       and(
         or(eq(notes.noteId, identifier), eq(notes.slug, identifier)),
-        eq(notes.userId, userId)
+        visibleObjectsSql(userId)
       )
     ).limit(1);
 
     if (found.length === 0) {
       return res.status(404).json({ detail: "Not bulunamadı" });
+    }
+    const accessRole = await objectRole(userId, found[0]);
+    if (!accessRole || (needsWrite("write") && !canWriteRole(accessRole, "write"))) {
+      return res.status(accessRole ? 403 : 404).json({ detail: accessRole ? "Bu not için yetkin yok" : "Not bulunamadı" });
     }
     const current = found[0];
     const newArchived = req.body?.archived !== undefined ? Boolean(req.body.archived) : !current.archived;
@@ -3452,12 +3493,16 @@ api.delete("/notes/:note_id", authMiddleware, async (req: AuthRequest, res: Resp
     const found = await db.select().from(notes).where(
       and(
         or(eq(notes.noteId, identifier), eq(notes.slug, identifier)),
-        eq(notes.userId, userId)
+        visibleObjectsSql(userId)
       )
     ).limit(1);
 
     if (found.length === 0) {
       return res.status(404).json({ detail: "Not bulunamadı" });
+    }
+    const accessRole = await objectRole(userId, found[0]);
+    if (!accessRole || (needsWrite("delete") && !canWriteRole(accessRole, "delete"))) {
+      return res.status(accessRole ? 403 : 404).json({ detail: accessRole ? "Bu not için yetkin yok" : "Not bulunamadı" });
     }
     if (found[0].archived) {
       return res.status(403).json({ detail: "Arşivlenmiş notlar silinemez. Lütfen önce arşivden çıkarın." });
@@ -4064,6 +4109,12 @@ const handleImageUpload = async (req: AuthRequest, res: Response) => {
     const mime = typeof req.body.contentType === "string" ? req.body.contentType : "image/png";
     const buffer = Buffer.from(req.body.dataBase64.replace(/^data:image\/\w+;base64,/, ""), "base64");
     try {
+      await checkQuota(req.user!.userId, "storage_mb", { amount: buffer.length });
+    } catch (e) {
+      if (e instanceof AccessError) return res.status(e.status).json({ detail: e.message });
+      throw e;
+    }
+    try {
       // 1. Save to database for relational backup
       await db.insert(files).values({
         fileId,
@@ -4097,6 +4148,12 @@ const handleImageUpload = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ detail: "No file provided" });
   }
 
+  try {
+    await checkQuota(req.user!.userId, "storage_mb", { amount: file.size });
+  } catch (e) {
+    if (e instanceof AccessError) return res.status(e.status).json({ detail: e.message });
+    throw e;
+  }
   const fileId = genId("file");
   const contentType = file.mimetype || "application/octet-stream";
   const filename = file.originalname || "attachment";

@@ -675,3 +675,59 @@ describe("3D graph projection", () => {
     assert.ok(near(depthAlpha(-400), 1) && near(depthAlpha(400), 0.35) && depthAlpha(0) > 0.6);
   });
 });
+
+import crypto from "node:crypto";
+import {
+  authorizationHeader, formatPrice, signaturePrice, responseSignature, verifyRetrieveSignature, checkoutRequest, splitName, addPeriod, iyzicoConfig,
+} from "../server/lib/iyzico";
+
+describe("iyzico client", () => {
+  const cfg = { apiKey: "sandbox-key", secretKey: "sandbox-secret", baseUrl: "https://sandbox-api.iyzipay.com" };
+  test("IYZWSv2 header: base64 of apiKey/randomKey/signature with HMAC-SHA256 over rnd + path + body", () => {
+    const body = JSON.stringify({ locale: "tr", token: "abc" });
+    const h = authorizationHeader(cfg, "/payment/iyzipos/checkoutform/auth/ecom/detail", body, "123456789");
+    assert.match(h, /^IYZWSv2 /);
+    const decoded = Buffer.from(h.slice(8), "base64").toString("utf8");
+    const sig = crypto.createHmac("sha256", "sandbox-secret").update("123456789/payment/iyzipos/checkoutform/auth/ecom/detail" + body).digest("hex");
+    assert.equal(decoded, `apiKey:sandbox-key&randomKey:123456789&signature:${sig}`);
+  });
+  test("prices: requests use a dot and one decimal at least; signatures drop trailing zeros", () => {
+    assert.equal(formatPrice("149"), "149.0");
+    assert.equal(formatPrice("149,5"), "149.5");
+    assert.equal(formatPrice(12.345), "12.35");
+    assert.throws(() => formatPrice("-1"));
+    assert.equal(signaturePrice("50.00"), "50");
+    assert.equal(signaturePrice("10.510"), "10.51");
+    assert.equal(signaturePrice(149.5), "149.5");
+    assert.equal(signaturePrice("149"), "149");
+  });
+  test("retrieve signature: verified over the documented fields, rejects any change", () => {
+    const r: Record<string, any> = { paymentStatus: "SUCCESS", paymentId: "2241", currency: "TRY", basketId: "pay_1", conversationId: "pay_1", paidPrice: "149.00000000", price: 149, token: "tok" };
+    r.signature = responseSignature(["SUCCESS", "2241", "TRY", "pay_1", "pay_1", "149", "149", "tok"], "sandbox-secret");
+    assert.equal(verifyRetrieveSignature(r, "sandbox-secret"), true);
+    assert.equal(verifyRetrieveSignature({ ...r, price: 1 }, "sandbox-secret"), false);
+    assert.equal(verifyRetrieveSignature({ ...r, signature: "00" }, "sandbox-secret"), false);
+    assert.equal(verifyRetrieveSignature({ ...r, signature: undefined }, "sandbox-secret"), false);
+    assert.equal(verifyRetrieveSignature(r, "other-secret"), false);
+  });
+  test("checkout request: one virtual item equal to the price, basket = conversation", () => {
+    const b: any = checkoutRequest({
+      conversationId: "pay_1", price: "149.0", currency: "TRY", callbackUrl: "https://x/cb", itemId: "pro-month", itemName: "Pro",
+      buyer: { id: "u1", name: "Ayşe", surname: "Kaya", email: "a@x.test", gsmNumber: "+905551112233", identityNumber: "11111111111", address: "Adres 1", city: "İstanbul", country: "Turkey" },
+    });
+    assert.equal(b.basketId, "pay_1");
+    assert.equal(b.paidPrice, "149.0");
+    assert.deepEqual(b.basketItems.map((i: any) => [i.itemType, i.price]), [["VIRTUAL", "149.0"]]);
+    assert.equal(b.billingAddress.contactName, "Ayşe Kaya");
+    assert.equal(b.buyer.registrationAddress, "Adres 1");
+  });
+  test("names, periods and config", () => {
+    assert.deepEqual(splitName("Ayşe Nur Kaya"), { name: "Ayşe Nur", surname: "Kaya" });
+    assert.deepEqual(splitName("Cher"), { name: "Cher", surname: "Cher" });
+    assert.equal(addPeriod(new Date("2026-01-31T10:00:00Z"), "month").toISOString(), "2026-02-28T10:00:00.000Z");
+    assert.equal(addPeriod(new Date("2026-11-25T10:00:00Z"), "month").toISOString(), "2026-12-25T10:00:00.000Z");
+    assert.equal(addPeriod(new Date("2026-11-25T10:00:00Z"), "year").toISOString(), "2027-11-25T10:00:00.000Z");
+    assert.equal(iyzicoConfig({}), null);
+    assert.equal(iyzicoConfig({ IYZICO_API_KEY: "k", IYZICO_SECRET_KEY: "s" })!.baseUrl, "https://sandbox-api.iyzipay.com");
+  });
+});

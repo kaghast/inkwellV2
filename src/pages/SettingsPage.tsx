@@ -2,6 +2,9 @@ import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import GoogleCalendarSettings from "@/components/settings/GoogleCalendarSettings";
 import AiSettings from "@/components/settings/AiSettings";
+import BillingSettings from "@/components/settings/BillingSettings";
+import TeamSettings from "@/components/settings/TeamSettings";
+import { saasApi } from "@/lib/saasApi";
 import TemplatesSettings from "@/components/settings/TemplatesSettings";
 import GoogleDriveFilesSettings from "@/components/settings/GoogleDriveFilesSettings";
 import { useGdriveStatus } from "@/lib/googleDrive";
@@ -26,6 +29,9 @@ import {
   Calendar,
   Clock,
   Sparkles,
+  CreditCard,
+  Users as UsersIcon,
+  ShieldCheck as AdminIcon,
   LayoutTemplate,
   FileText,
   Hash,
@@ -74,7 +80,7 @@ import {
 import { toast } from "sonner";
 import type { User } from "@/types";
 
-type SettingsTab = "appearance" | "note_types" | "templates" | "ai" | "integrations" | "drive" | "export_import" | "account";
+type SettingsTab = "appearance" | "note_types" | "templates" | "ai" | "billing" | "team" | "integrations" | "drive" | "export_import" | "account";
 
 const FILTER_OPTIONS: { id: NoteDefaultFilter; label: string; desc: string; icon: any }[] = [
   {
@@ -124,6 +130,15 @@ export default function SettingsPage() {
 
   const tabParam = (searchParams.get("tab") as SettingsTab) || "appearance";
   const [activeTab, setActiveTab] = useState<SettingsTab>(tabParam);
+  // Links inside settings (e.g. Ekip -> Paket ve Ödeme) change only the URL
+  useEffect(() => setActiveTab(tabParam), [tabParam]);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  useEffect(() => {
+    saasApi
+      .adminMe()
+      .then((r) => setIsPlatformAdmin(r.is_admin))
+      .catch(() => setIsPlatformAdmin(false));
+  }, []);
 
   const { status: gcalStatus } = useGcalStatus();
   const { status: gdriveStatus } = useGdriveStatus();
@@ -450,6 +465,45 @@ export default function SettingsPage() {
 
           <button
             type="button"
+            onClick={() => handleTabChange("billing")}
+            data-testid="settings-tab-billing"
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition-all text-left cursor-pointer ${
+              activeTab === "billing"
+                ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/70"
+            }`}
+          >
+            <CreditCard className="w-4 h-4 shrink-0 text-emerald-500" />
+            <span className="truncate flex-1">Paket ve Ödeme</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTabChange("team")}
+            data-testid="settings-tab-team"
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition-all text-left cursor-pointer ${
+              activeTab === "team"
+                ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/70"
+            }`}
+          >
+            <UsersIcon className="w-4 h-4 shrink-0 text-sky-500" />
+            <span className="truncate flex-1">Ekip</span>
+          </button>
+
+          {isPlatformAdmin && (
+            <Link
+              to="/admin"
+              data-testid="settings-admin-link"
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/70"
+            >
+              <AdminIcon className="w-4 h-4 shrink-0 text-rose-500" />
+              <span className="truncate flex-1">Yönetim paneli</span>
+            </Link>
+          )}
+
+          <button
+            type="button"
             onClick={() => handleTabChange("integrations")}
             data-testid="settings-tab-integrations"
             className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition-all text-left cursor-pointer ${
@@ -684,6 +738,8 @@ export default function SettingsPage() {
           {activeTab === "templates" && <TemplatesSettings />}
 
           {activeTab === "ai" && <AiSettings />}
+          {activeTab === "billing" && <BillingSettings />}
+          {activeTab === "team" && <TeamSettings />}
 
           {activeTab === "integrations" && <GoogleCalendarSettings />}
 

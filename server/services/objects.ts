@@ -2,6 +2,7 @@
 // legacy POST /api/notes path: tags/people extraction, slug, embedding,
 // reminders, v1 version, wikilink relations, space assignment.
 import { and, eq, or, isNull, inArray } from "drizzle-orm";
+import { checkQuota } from "./billing";
 import { db, notes, noteTypes } from "../../src/db/index";
 import { CARD_TYPE_ID, PLAIN_TYPE_ID } from "../../src/lib/objectTypes";
 import {
@@ -74,6 +75,7 @@ export async function createObject(userId: string, input: NewObjectInput) {
     aiMeta: input.ai_meta || {},
     aiSummary: input.ai_summary || null,
   };
+  await checkQuota(userId, "objects", { workspaceId: target.workspaceId });
   await db.insert(notes).values(values);
   await syncReminders(userId, noteId, content);
   const inserted = (await db.select().from(notes).where(eq(notes.noteId, noteId)).limit(1))[0];

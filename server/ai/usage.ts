@@ -18,6 +18,7 @@ async function record(row: {
   ok: boolean;
   error?: string;
   ms: number;
+  keySource?: "user" | "server";
 }) {
   try {
     await db.insert(aiRuns).values({
@@ -26,6 +27,7 @@ async function record(row: {
       provider: row.provider,
       model: row.usage.model || null,
       task: row.task.slice(0, 60),
+      keySource: row.keySource || null,
       inputTokens: toInt(row.usage.input),
       outputTokens: toInt(row.usage.output),
       ok: row.ok,
@@ -38,7 +40,7 @@ async function record(row: {
 }
 
 /** Wraps a model provider so every real call is recorded for `userId`. */
-export function metered(p: AiProvider, userId?: string): AiProvider {
+export function metered(p: AiProvider, userId?: string, keySource?: "user" | "server"): AiProvider {
   if (!p.isModel) return p;
   function wrap<A extends unknown[], R>(task: (args: A) => string, fn: (...a: A) => Promise<R>) {
     return async (...args: A): Promise<R> => {
@@ -46,11 +48,11 @@ export function metered(p: AiProvider, userId?: string): AiProvider {
       const t0 = Date.now();
       try {
         const out = await usageScope.run(usage, () => fn(...args));
-        if (usage.called) void record({ userId, provider: p.id, task: task(args), usage, ok: true, ms: Date.now() - t0 });
+        if (usage.called) void record({ userId, provider: p.id, task: task(args), usage, ok: true, ms: Date.now() - t0, keySource });
         return out;
       } catch (e) {
         if (usage.called && !(e instanceof AiUnavailableError)) {
-          void record({ userId, provider: p.id, task: task(args), usage, ok: false, error: (e as Error).message, ms: Date.now() - t0 });
+          void record({ userId, provider: p.id, task: task(args), usage, ok: false, error: (e as Error).message, ms: Date.now() - t0, keySource });
         }
         throw e;
       }

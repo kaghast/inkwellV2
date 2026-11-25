@@ -10,6 +10,7 @@ import { openaiServerProvider } from "./openai";
 import { mockProvider, mockEnabled } from "./mock";
 import { userAiProvider } from "../services/aiSettings";
 import { metered } from "./usage";
+import { serverAiAllowed } from "../services/billing";
 
 const PROVIDERS: Record<string, AiProvider> = {
   gemini: geminiProvider,
@@ -25,13 +26,15 @@ export function serverProvider(): AiProvider {
 }
 
 /** The provider for a user's request; model calls through it are recorded in ai_runs. */
-export async function activeProvider(userId?: string): Promise<{ provider: AiProvider; source: "user" | "server" | "none" }> {
+export async function activeProvider(userId?: string): Promise<{ provider: AiProvider; source: "user" | "server" | "none" | "quota" }> {
   if (userId && !mockEnabled()) {
     const own = await userAiProvider(userId);
-    if (own) return { provider: metered(own, userId), source: "user" };
+    if (own) return { provider: metered(own, userId, "user"), source: "user" };
   }
   const s = serverProvider();
-  return { provider: metered(s, userId), source: s.isModel ? "server" : "none" };
+  // The server's key counts against the plan's monthly AI quota; a user's own key never does
+  if (s.isModel && userId && !(await serverAiAllowed(userId))) return { provider: heuristicProvider, source: "quota" };
+  return { provider: metered(s, userId, "server"), source: s.isModel ? "server" : "none" };
 }
 
 export async function aiStatus(userId?: string) {

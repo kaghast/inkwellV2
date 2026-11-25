@@ -234,6 +234,106 @@ const DDL_STEPS: Array<{ id: string; statements: string[] }> = [
     ],
   },
   {
+    // Phase 3a: plans, subscriptions per workspace, iyzico payments, team
+    // invitations, billing profiles, audit log; users can be disabled by a
+    // platform admin. New tables and nullable/defaulted columns only.
+    id: "2026_11_28_012_saas",
+    statements: [
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT false`,
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP`,
+      // whose key paid for a model call: 'user' (own key) or 'server' (counts against the plan)
+      `ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS key_source TEXT`,
+      `CREATE TABLE IF NOT EXISTS plans (
+        plan_key TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        price_monthly TEXT NOT NULL DEFAULT '0',
+        price_yearly TEXT NOT NULL DEFAULT '0',
+        currency TEXT NOT NULL DEFAULT 'TRY',
+        limits JSONB NOT NULL DEFAULT '{}'::jsonb,
+        features JSONB NOT NULL DEFAULT '[]'::jsonb,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        is_default BOOLEAN NOT NULL DEFAULT false,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS subscriptions (
+        workspace_id TEXT PRIMARY KEY REFERENCES workspaces(workspace_id) ON DELETE CASCADE,
+        plan_key TEXT NOT NULL,
+        period TEXT NOT NULL DEFAULT 'month',
+        current_period_end TIMESTAMP,
+        source TEXT NOT NULL DEFAULT 'payment',
+        note TEXT,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS payments (
+        payment_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(workspace_id) ON DELETE CASCADE,
+        user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+        plan_key TEXT NOT NULL,
+        period TEXT NOT NULL,
+        amount TEXT NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'TRY',
+        status TEXT NOT NULL DEFAULT 'pending',
+        provider TEXT NOT NULL DEFAULT 'iyzico',
+        token TEXT,
+        provider_payment_id TEXT,
+        error TEXT,
+        period_end TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        paid_at TIMESTAMP
+      )`,
+      `CREATE INDEX IF NOT EXISTS payments_workspace_idx ON payments(workspace_id, created_at)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS payments_token_idx ON payments(token) WHERE token IS NOT NULL`,
+      `CREATE TABLE IF NOT EXISTS invitations (
+        invitation_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL REFERENCES workspaces(workspace_id) ON DELETE CASCADE,
+        email TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'editor',
+        token_hash TEXT NOT NULL UNIQUE,
+        invited_by TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+        expires_at TIMESTAMP NOT NULL,
+        accepted_at TIMESTAMP,
+        accepted_by TEXT,
+        revoked_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE INDEX IF NOT EXISTS invitations_workspace_idx ON invitations(workspace_id)`,
+      `CREATE TABLE IF NOT EXISTS billing_profiles (
+        user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+        full_name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        address TEXT NOT NULL,
+        city TEXT NOT NULL,
+        country TEXT NOT NULL DEFAULT 'Turkey',
+        zip_code TEXT,
+        identity_number_enc TEXT,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS audit_logs (
+        audit_id TEXT PRIMARY KEY,
+        actor_id TEXT,
+        action TEXT NOT NULL,
+        target_type TEXT,
+        target_id TEXT,
+        details JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE INDEX IF NOT EXISTS audit_logs_created_idx ON audit_logs(created_at)`,
+      // Built-in plans; prices and limits are edited in the admin panel and
+      // never overwritten here. limits: -1 = unlimited.
+      `INSERT INTO plans (plan_key, name, description, price_monthly, price_yearly, limits, features, is_default, sort_order) VALUES
+        ('free', 'Ücretsiz', 'Kişisel kullanım için başlangıç', '0', '0',
+          '{"objects": 500, "storage_mb": 100, "members": 1, "ai_calls_month": 100}'::jsonb, '["Sınırsız arama", "Defter ve Kanban"]'::jsonb, true, 0),
+        ('pro', 'Pro', 'Yoğun kişisel kullanım', '149', '1490',
+          '{"objects": 20000, "storage_mb": 5120, "members": 1, "ai_calls_month": 3000}'::jsonb, '["Yüksek yapay zeka kotası", "5 GB dosya"]'::jsonb, false, 1),
+        ('team', 'Ekip', 'Ortak çalışma alanı ve roller', '399', '3990',
+          '{"objects": 100000, "storage_mb": 20480, "members": 10, "ai_calls_month": 10000}'::jsonb, '["10 üye", "Roller ve davetler", "20 GB dosya"]'::jsonb, false, 2)
+        ON CONFLICT (plan_key) DO NOTHING`,
+    ],
+  },
+  {
     id: "2026_11_23_007_embedding_model",
     statements: [`ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding_model TEXT`],
   },

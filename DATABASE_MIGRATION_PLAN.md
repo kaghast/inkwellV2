@@ -174,6 +174,10 @@ Backups before any production deploy: `pg_dump -Fc` of the database and a copy o
 
 `inkwell_fold(text)` (IMMUTABLE SQL function), generated column `notes.search_tsv tsvector` and GIN index `notes_search_tsv_idx`. Adding a stored generated column rewrites `notes` once and computes the value for existing rows; no row is changed otherwise. If `inkwell_fold` is ever changed, the column must be recomputed (drop and re-add the column in a new migration). Rollback: old code ignores the column; optional `DROP INDEX notes_search_tsv_idx; ALTER TABLE notes DROP COLUMN search_tsv;` only with owner approval.
 
+### 012 — SaaS (`2026_11_28_012_saas`)
+
+New tables `plans` (seeded `free`, `pro`, `team` with `ON CONFLICT DO NOTHING`, so admin edits are kept), `subscriptions` (PK `workspace_id`), `payments` (unique `token`), `invitations` (unique `token_hash`), `billing_profiles`, `audit_logs`; new columns `users.disabled` (default false), `users.last_login_at`, `ai_runs.key_source`. No existing row changes meaning: every workspace without a subscription is on the default plan. Rollback: old code ignores the tables and columns; `users.disabled` must stay false for everyone before rolling back, since old code does not check it.
+
 ### Optional: pgvector (boot step, not a ledger migration)
 
 Runs on every boot, only on Postgres with the `vector` extension available (`server/services/vectorStore.ts`): `CREATE EXTENSION IF NOT EXISTS vector` (needs the privilege), `ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding_vec vector`, a one-time copy `UPDATE notes SET embedding_vec = embedding::vector` for rows with a model and a well-formed vector, and the index `notes_embedding_vec_user_idx (user_id, embedding_model) WHERE embedding_vec IS NOT NULL`. `notes.embedding` (text) stays the source of truth. Any failure leaves pgvector off and the app on the Node path. Rollback: `INKWELL_PGVECTOR=off`; optional `ALTER TABLE notes DROP COLUMN embedding_vec` only with owner approval.

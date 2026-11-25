@@ -15,6 +15,8 @@ import MapView from "@/pages/MapView";
 import AreaMapView from "@/pages/AreaMapView";
 import KanbanPage from "@/pages/KanbanPage";
 import GraphView from "@/pages/GraphView";
+import AdminPage from "@/pages/AdminPage";
+import InvitePage from "@/pages/InvitePage";
 import TimelinePage from "@/pages/TimelinePage";
 import NoteDetail from "@/pages/NoteDetail";
 import NewNotePage from "@/pages/NewNotePage";
@@ -72,6 +74,8 @@ function AppRoutes() {
       <Route path="/map" element={<ProtectedRoute><MapView /></ProtectedRoute>} />
       <Route path="/kanban" element={<ProtectedRoute><KanbanPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
+      <Route path="/invite/:token" element={<ProtectedRoute><InvitePage /></ProtectedRoute>} />
       <Route path="/day/:date" element={<ProtectedRoute><Dashboard mode="day" /></ProtectedRoute>} />
       <Route path="/week/:date" element={<ProtectedRoute><Dashboard mode="week" /></ProtectedRoute>} />
       <Route path="/month/:date" element={<ProtectedRoute><Dashboard mode="month" /></ProtectedRoute>} />

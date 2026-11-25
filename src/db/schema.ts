@@ -9,6 +9,9 @@ export const users = pgTable('users', {
   picture: text('picture'),
   passwordHash: text('password_hash'),
   authProvider: text('auth_provider').default('email').notNull(),
+  /** Set by a platform admin; a disabled user cannot sign in or use the API. */
+  disabled: boolean('disabled').default(false).notNull(),
+  lastLoginAt: timestamp('last_login_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updated_at: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -555,7 +558,100 @@ export const aiRuns = pgTable(
     ok: boolean('ok').notNull(),
     error: text('error'),
     durationMs: integer('duration_ms').notNull(),
+    /** 'user' (own key) or 'server' (counts against the plan's AI quota). */
+    keySource: text('key_source'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [index('ai_runs_user_created_idx').on(table.userId, table.createdAt)]
 );
+
+// ---------------------------------------------------------------------------
+// Phase 3a: plans, subscriptions, payments, invitations, billing, audit
+// (DDL lives in src/db/migrations.ts, migration 012)
+// ---------------------------------------------------------------------------
+export interface PlanLimits {
+  objects?: number;
+  storage_mb?: number;
+  members?: number;
+  ai_calls_month?: number;
+}
+
+export const plans = pgTable('plans', {
+  planKey: text('plan_key').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description').default('').notNull(),
+  priceMonthly: text('price_monthly').default('0').notNull(),
+  priceYearly: text('price_yearly').default('0').notNull(),
+  currency: text('currency').default('TRY').notNull(),
+  limits: jsonb('limits').$type<PlanLimits>().default({}).notNull(),
+  features: jsonb('features').$type<string[]>().default([]).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  isDefault: boolean('is_default').default(false).notNull(),
+  sortOrder: integer('sort_order').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const subscriptions = pgTable('subscriptions', {
+  workspaceId: text('workspace_id').primaryKey(),
+  planKey: text('plan_key').notNull(),
+  period: text('period').default('month').notNull(), // month | year
+  currentPeriodEnd: timestamp('current_period_end'),
+  source: text('source').default('payment').notNull(), // payment | admin
+  note: text('note'),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const payments = pgTable('payments', {
+  paymentId: text('payment_id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  userId: text('user_id'),
+  planKey: text('plan_key').notNull(),
+  period: text('period').notNull(),
+  amount: text('amount').notNull(),
+  currency: text('currency').default('TRY').notNull(),
+  status: text('status').default('pending').notNull(), // pending | paid | failed
+  provider: text('provider').default('iyzico').notNull(),
+  token: text('token'),
+  providerPaymentId: text('provider_payment_id'),
+  error: text('error'),
+  periodEnd: timestamp('period_end'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  paidAt: timestamp('paid_at'),
+});
+
+export const invitations = pgTable('invitations', {
+  invitationId: text('invitation_id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  email: text('email').notNull(),
+  role: text('role').default('editor').notNull(),
+  tokenHash: text('token_hash').notNull(),
+  invitedBy: text('invited_by'),
+  expiresAt: timestamp('expires_at').notNull(),
+  acceptedAt: timestamp('accepted_at'),
+  acceptedBy: text('accepted_by'),
+  revokedAt: timestamp('revoked_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const billingProfiles = pgTable('billing_profiles', {
+  userId: text('user_id').primaryKey(),
+  fullName: text('full_name').notNull(),
+  phone: text('phone').notNull(),
+  address: text('address').notNull(),
+  city: text('city').notNull(),
+  country: text('country').default('Turkey').notNull(),
+  zipCode: text('zip_code'),
+  identityNumberEnc: text('identity_number_enc'),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const auditLogs = pgTable('audit_logs', {
+  auditId: text('audit_id').primaryKey(),
+  actorId: text('actor_id'),
+  action: text('action').notNull(),
+  targetType: text('target_type'),
+  targetId: text('target_id'),
+  details: jsonb('details').$type<Record<string, unknown>>().default({}).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
