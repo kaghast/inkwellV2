@@ -4,7 +4,7 @@
 import type { AiProvider } from "./types";
 import { heuristicExtract } from "./heuristic";
 import { reportUsage } from "./usageScope";
-import { IMAGE_MIMES } from "./fileRead";
+import { AUDIO_MIMES, IMAGE_MIMES } from "./fileRead";
 
 export const mockEnabled = () => process.env.AI_PROVIDER === "mock" && process.env.NODE_ENV !== "production";
 
@@ -32,6 +32,13 @@ export const mockProvider: AiProvider = {
     reportUsage({ model: "mock", input: 258, output: 20 });
     const head = data.subarray(0, 4096).toString("utf8");
     return head.startsWith("MOCK-OCR:") ? head.slice(9).trim() : "";
+  },
+  canTranscribe: (mime, bytes) => AUDIO_MIMES.includes(mime) && bytes <= 10 * 1024 * 1024,
+  // Audio whose bytes start with "MOCK-SPEECH:" "says" the text after it.
+  async transcribe({ data }) {
+    reportUsage({ model: "mock", input: 300, output: 40 });
+    const head = data.subarray(0, 8192).toString("utf8");
+    return head.startsWith("MOCK-SPEECH:") ? head.slice(12).trim() : "";
   },
 };
 

@@ -1,11 +1,12 @@
 // AI service entry point. Provider order for a request:
 //   1. the user's own key from Settings > Yapay Zeka (when enabled),
-//   2. the server-wide key (AI_PROVIDER / GEMINI_API_KEY),
+//   2. the server-wide key (AI_PROVIDER / GEMINI_API_KEY / OPENAI_API_KEY),
 //   3. the deterministic heuristic provider.
 // Results always carry the provider that produced them.
 import type { AiProvider, Extraction, ExtractionContext } from "./types";
 import { heuristicProvider, heuristicExtract } from "./heuristic";
 import { geminiProvider } from "./gemini";
+import { openaiServerProvider } from "./openai";
 import { mockProvider, mockEnabled } from "./mock";
 import { userAiProvider } from "../services/aiSettings";
 import { metered } from "./usage";
@@ -18,8 +19,8 @@ const PROVIDERS: Record<string, AiProvider> = {
 /** Server-wide provider from environment configuration. */
 export function serverProvider(): AiProvider {
   if (mockEnabled()) return mockProvider;
-  const wanted = (process.env.AI_PROVIDER || (process.env.GEMINI_API_KEY ? "gemini" : "heuristic")).toLowerCase();
-  const p = PROVIDERS[wanted];
+  const wanted = (process.env.AI_PROVIDER || (process.env.GEMINI_API_KEY ? "gemini" : process.env.OPENAI_API_KEY ? "openai" : "heuristic")).toLowerCase();
+  const p = wanted === "openai" ? openaiServerProvider() : PROVIDERS[wanted];
   return p && p.available() ? p : heuristicProvider;
 }
 

@@ -1,17 +1,19 @@
 // Text from a user's uploaded file. Office and text files are read locally;
-// images and PDFs need a model with vision (OCR), which is recorded in
+// images and PDFs need a model with vision (OCR) and audio a model that
+// transcribes speech; both are recorded in
 // ai_runs like every other model call. Never throws for an unreadable file:
 // the result says why there is no text.
 import { and, eq } from "drizzle-orm";
 import { db, files } from "../../src/db/index";
 import { activeProvider } from "../ai";
-import { AiUnavailableError } from "../ai/types";
+import { AiUnavailableError, type AiProvider } from "../ai/types";
+import { audioMime } from "../ai/fileRead";
 import { AccessError } from "./workspaces";
 import { friendlyAiError } from "./aiSettings";
 import { localKind, readLocalText, MAX_FILE_TEXT } from "./officeText";
 export { fileIdsInContent } from "./officeText";
 
-export type FileTextMethod = "text" | "docx" | "pptx" | "xlsx" | "ocr" | "none";
+export type FileTextMethod = "text" | "docx" | "pptx" | "xlsx" | "ocr" | "transcript" | "none";
 
 export interface FileTextResult {
   file_id: string;
@@ -47,6 +49,9 @@ export async function readFileText(userId: string, fileId: string): Promise<File
     }
   }
 
+  const audio = audioMime(f.contentType, f.originalFilename);
+  if (audio) return transcribeFile(userId, base, data, audio, f.originalFilename);
+
   if (!ocrTypes(f.contentType)) return { ...base, text: "", method: "none", note: "Bu dosya türünden metin okunamıyor." };
 
   const { provider } = await activeProvider(userId);
@@ -65,11 +70,44 @@ export async function readFileText(userId: string, fileId: string): Promise<File
   }
 }
 
+async function transcribeFile(
+  userId: string,
+  base: Pick<FileTextResult, "file_id" | "name" | "content_type" | "provider">,
+  data: Buffer,
+  mime: string,
+  name: string
+): Promise<FileTextResult> {
+  const { provider } = await activeProvider(userId);
+  const p = provider as AiProvider;
+  if (!p.isModel || !p.transcribe) {
+    return {
+      ...base,
+      text: "",
+      method: "none",
+      provider: p.isModel ? p.label : null,
+      note: p.isModel
+        ? `${p.label} ses dökümü yapamıyor. Ayarlar > Yapay Zeka'dan Gemini ya da OpenAI'ı seç.`
+        : "Sesi yazıya dökmek için Ayarlar > Yapay Zeka'dan Gemini ya da OpenAI'ı etkinleştir.",
+    };
+  }
+  if (p.canTranscribe && !p.canTranscribe(mime, data.length)) {
+    return { ...base, text: "", method: "none", provider: p.label, note: `${p.label} bu ses dosyasını dökemiyor (tür ya da boyut sınırı).` };
+  }
+  try {
+    const text = (await p.transcribe({ data, mime, name })).slice(0, MAX_FILE_TEXT);
+    return { ...base, text, method: "transcript", provider: p.label, note: text ? null : "Ses dosyasında konuşma bulunamadı." };
+  } catch (e) {
+    if (e instanceof AiUnavailableError) return { ...base, text: "", method: "none", note: "Yapay zeka etkin değil." };
+    return { ...base, text: "", method: "none", provider: p.label, note: `Ses yazıya dökülemedi: ${friendlyAiError(e)}` };
+  }
+}
+
 export const METHOD_LABEL: Record<FileTextMethod, string> = {
   text: "metin dosyası",
   docx: "Word belgesi",
   pptx: "sunum",
   xlsx: "tablo",
   ocr: "OCR",
+  transcript: "ses dökümü",
   none: "okunamadı",
 };

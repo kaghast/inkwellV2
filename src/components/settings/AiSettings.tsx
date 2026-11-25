@@ -161,13 +161,17 @@ export default function AiSettings() {
                 spellCheck={false}
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
-                placeholder={provider.id === "anthropic" ? "sk-ant-…" : "AIza…"}
+                placeholder={provider.id === "anthropic" ? "sk-ant-…" : provider.id === "openai" ? "sk-…" : "AIza…"}
                 className="pl-8 font-mono"
                 data-testid="ai-key-input"
               />
             </div>
             <a href={provider.key_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-              {provider.id === "anthropic" ? "Anthropic Console'dan anahtar al" : "Google AI Studio'dan ücretsiz anahtar al"} <ExternalLink className="w-3 h-3" />
+              {provider.id === "anthropic"
+                ? "Anthropic Console'dan anahtar al"
+                : provider.id === "openai"
+                  ? "OpenAI Platform'dan anahtar al"
+                  : "Google AI Studio'dan ücretsiz anahtar al"} <ExternalLink className="w-3 h-3" />
             </a>
           </div>
           <div className="space-y-1">
@@ -215,8 +219,9 @@ export default function AiSettings() {
 
       <p className="text-xs text-muted-foreground">
         Not içerikleri yalnızca sen yakaladığında, Ask Inkwell'e sorduğunda ya da bir yapay zeka eylemi çalıştırdığında seçtiğin sağlayıcıya gönderilir; parola kilitli
-        notlar hiç gönderilmez. Claude'un embedding servisi olmadığı için anlamsal arama yalnızca Gemini ile çalışır; Claude ile tam metin ve ilişki araması kullanılır.
-        Görsel ve PDF'lerdeki metin (OCR) de bu sağlayıcıyla okunur; Word, PowerPoint ve Excel dosyaları sunucuda, yapay zekasız okunur.
+        notlar hiç gönderilmez. Claude'un embedding servisi olmadığı için anlamsal arama Gemini ve OpenAI ile çalışır; Claude ile tam metin ve ilişki araması kullanılır.
+        Görsel ve PDF'lerdeki metin (OCR) de bu sağlayıcıyla okunur; ses dosyaları Gemini ya da OpenAI ile yazıya dökülür (Claude ses dökümü yapmaz). Word, PowerPoint ve
+        Excel dosyaları sunucuda, yapay zekasız okunur.
       </p>
 
       <AiUsage />

@@ -553,3 +553,125 @@ describe("vector candidates", () => {
     assert.deepEqual(nearestIds([1, 0], rows, 10, 0.9), ["exact", "near"]);
   });
 });
+
+import { audioMime } from "../server/ai/fileRead";
+
+describe("audio files", () => {
+  test("audio type from MIME or, for generic types, from the file name", () => {
+    assert.equal(audioMime("audio/mpeg", "x.mp3"), "audio/mpeg");
+    assert.equal(audioMime("application/octet-stream", "Kayıt.M4A"), "audio/mp4");
+    assert.equal(audioMime("", "not.ogg"), "audio/ogg");
+    assert.equal(audioMime("video/webm", "kayit.webm"), "video/webm");
+    assert.equal(audioMime("application/pdf", "x.mp3"), null, "a declared non-audio type is not overridden");
+    assert.equal(audioMime("image/png", "a.png"), null);
+    assert.equal(audioMime("audio/x-new", "a.bin"), "audio/x-new");
+  });
+  test("a transcript goes under its own heading", () => {
+    const c = buildCaptureContent({ rawText: "Sesli not", rawUrl: null, fileText: "Merhaba dünya", fileTextMethod: "transcript" }, null);
+    assert.equal(c, "Sesli not\n\n## Ses dökümü\n\nMerhaba dünya");
+    const d = buildCaptureContent({ rawText: "", rawUrl: null, fileText: "Metin", fileTextMethod: "ocr" }, null);
+    assert.match(d, /## Dosyadaki metin\n\nMetin/);
+  });
+});
+
+import http from "node:http";
+import { openaiForKey, pingOpenAi } from "../server/ai/openai";
+
+describe("OpenAI provider (against a local stand-in for the REST API)", () => {
+  test("chat, JSON extraction, vision, embeddings, transcription and errors", async () => {
+    const seen: Array<{ path: string; auth: string; type: string; body: string }> = [];
+    const server = http.createServer((req, res) => {
+      let body = "";
+      req.setEncoding("latin1");
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        seen.push({ path: req.url || "", auth: String(req.headers.authorization), type: String(req.headers["content-type"]), body });
+        const send = (code: number, j: unknown) => {
+          res.writeHead(code, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(j));
+        };
+        if (req.headers.authorization !== "Bearer sk-test") return send(401, { error: { message: "Incorrect API key provided" } });
+        if (req.url === "/v1/chat/completions") {
+          const j = JSON.parse(body);
+          const json = Boolean(j.response_format);
+          const content = json
+            ? '{"type_key":"meeting","type_confidence":0.9,"title":"Atlas","summary":"","tags":["Atlas"],"people":[],"organizations":[],"locations":[],"dates":[],"tasks":[]}'
+            : Array.isArray(j.messages[j.messages.length - 1].content) ? "Okunan metin" : "Merhaba";
+          return send(200, { model: j.model, choices: [{ message: { content } }], usage: { prompt_tokens: 12, completion_tokens: 3 } });
+        }
+        if (req.url === "/v1/embeddings") return send(200, { data: [{ embedding: [0.1, 0.2] }], usage: { prompt_tokens: 4 } });
+        if (req.url === "/v1/audio/transcriptions") return send(200, { text: "Yarın toplantı var." });
+        send(404, { error: { message: "not found" } });
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const prev = process.env.OPENAI_BASE_URL;
+    process.env.OPENAI_BASE_URL = `http://127.0.0.1:${(server.address() as any).port}/v1`;
+    try {
+      const p = openaiForKey("sk-test", "test-model");
+      assert.equal(await p.generate({ system: "s", prompt: "p", maxTokens: 50 }), "Merhaba");
+      const chat = JSON.parse(seen[0].body);
+      assert.equal(seen[0].auth, "Bearer sk-test");
+      assert.equal(chat.model, "test-model");
+      assert.equal(chat.max_completion_tokens, 50);
+      assert.deepEqual(chat.messages.map((m: any) => m.role), ["system", "user"]);
+
+      const ex = await p.extract("Atlas toplantısı", { today: "2026-11-25", types: [{ type_id: "type_meeting", key: "meeting", name: "Toplantı" }], knownPeople: [] });
+      assert.equal(ex.type_key, "meeting");
+      assert.deepEqual(ex.tags, ["atlas"]);
+      assert.deepEqual(JSON.parse(seen[1].body).response_format, { type: "json_object" });
+
+      assert.equal(await p.readFile!({ data: Buffer.from("png"), mime: "image/png", name: "a.png" }), "Okunan metin");
+      assert.match(JSON.parse(seen[2].body).messages[1].content[0].image_url.url, /^data:image\/png;base64,/);
+      await p.readFile!({ data: Buffer.from("%PDF"), mime: "application/pdf", name: "b.pdf" });
+      assert.equal(JSON.parse(seen[3].body).messages[1].content[0].file.filename, "b.pdf");
+      assert.equal(p.canRead!("application/pdf", 1000), true);
+      assert.equal(p.canRead!("image/heic", 1000), false);
+
+      assert.deepEqual(await p.embed("metin"), [0.1, 0.2]);
+      assert.equal(JSON.parse(seen[4].body).dimensions, 768);
+      assert.equal(p.embedModel, "text-embedding-3-small");
+
+      assert.equal(await p.transcribe!({ data: Buffer.from("ses"), mime: "audio/mp4", name: "kayit" }), "Yarın toplantı var.");
+      assert.match(seen[5].type, /^multipart\/form-data/);
+      assert.match(seen[5].body, /name="model"\r\n\r\ngpt-transcribe/);
+      assert.match(seen[5].body, /filename="kayit\.m4a"/);
+      assert.equal(p.canTranscribe!("audio/mp4", 26 * 1024 * 1024), false, "25 MB limit");
+      assert.equal(p.canTranscribe!("audio/aiff", 1000), false);
+
+      await assert.rejects(pingOpenAi("sk-wrong"), (e: any) => e.status === 401 && /Incorrect API key/.test(e.message));
+      await pingOpenAi("sk-test");
+    } finally {
+      process.env.OPENAI_BASE_URL = prev;
+      if (prev === undefined) delete process.env.OPENAI_BASE_URL;
+      server.close();
+    }
+  });
+});
+
+import { project, rotateBy, depthAlpha, PITCH_LIMIT } from "../src/lib/graph3d";
+
+describe("3D graph projection", () => {
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+  test("no rotation: z = 0 stays put, nearer points grow, farther shrink", () => {
+    const flat = project(100, 50, 0, { yaw: 0, pitch: 0 });
+    assert.ok(near(flat.x, 100) && near(flat.y, 50) && near(flat.scale, 1));
+    const front = project(100, 0, -200, { yaw: 0, pitch: 0 });
+    const back = project(100, 0, 200, { yaw: 0, pitch: 0 });
+    assert.ok(front.scale > 1 && back.scale < 1 && front.x > back.x);
+    assert.ok(front.depth < back.depth);
+  });
+  test("a quarter turn of yaw brings depth onto the x axis", () => {
+    const p = project(0, 0, 100, { yaw: Math.PI / 2, pitch: 0 });
+    assert.ok(p.x > 0 && near(p.depth, 0));
+  });
+  test("points behind the camera never flip or divide by zero", () => {
+    const p = project(10, 10, -5000, { yaw: 0, pitch: 0 });
+    assert.ok(Number.isFinite(p.scale) && p.scale > 0 && p.x > 0);
+  });
+  test("pitch is clamped; alpha fades with depth", () => {
+    assert.equal(rotateBy({ yaw: 0, pitch: 0 }, 0, 100000).pitch, PITCH_LIMIT);
+    assert.equal(rotateBy({ yaw: 1, pitch: 0 }, 10, 0).yaw, 1.08);
+    assert.ok(near(depthAlpha(-400), 1) && near(depthAlpha(400), 0.35) && depthAlpha(0) > 0.6);
+  });
+});

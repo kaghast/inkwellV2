@@ -5,17 +5,21 @@ import { db, aiSettings } from "../../src/db/index";
 import { encryptSecret, decryptSecret } from "../lib/secrets";
 import { geminiForKey, pingGemini, DEFAULT_GEMINI_MODEL } from "../ai/gemini";
 import { anthropicForKey, pingAnthropic, DEFAULT_ANTHROPIC_MODEL } from "../ai/anthropic";
+import { openaiForKey, pingOpenAi, DEFAULT_OPENAI_MODEL } from "../ai/openai";
 import type { AiProvider } from "../ai/types";
 import { AccessError } from "./workspaces";
 
 export const AI_PROVIDERS = [
   { id: "gemini", name: "Google Gemini", key_url: "https://aistudio.google.com/apikey", default_model: DEFAULT_GEMINI_MODEL(), semantic: true },
   { id: "anthropic", name: "Anthropic Claude", key_url: "https://console.anthropic.com/settings/keys", default_model: DEFAULT_ANTHROPIC_MODEL, semantic: false },
+  { id: "openai", name: "OpenAI", key_url: "https://platform.openai.com/api-keys", default_model: DEFAULT_OPENAI_MODEL, semantic: true },
 ] as const;
 type ProviderId = (typeof AI_PROVIDERS)[number]["id"];
 
 function ping(provider: string, apiKey: string, model: string | null) {
-  return provider === "anthropic" ? pingAnthropic(apiKey, model) : pingGemini(apiKey, model);
+  if (provider === "anthropic") return pingAnthropic(apiKey, model);
+  if (provider === "openai") return pingOpenAi(apiKey, model);
+  return pingGemini(apiKey, model);
 }
 
 type Row = typeof aiSettings.$inferSelect;
@@ -44,17 +48,18 @@ export async function getAiSettings(userId: string) {
   return serializeAiSettings(await row(userId));
 }
 
-/** Google's errors are long JSON blobs; keep the useful sentence. */
+/** Providers' errors are long; keep the useful sentence, in Turkish. */
 export function friendlyAiError(e: unknown): string {
   const msg = String((e as any)?.message || e || "");
   const status = Number((e as any)?.status);
-  if (/API key not valid|API_KEY_INVALID|invalid x-api-key|authentication_error/i.test(msg) || status === 401)
+  if (/API key not valid|API_KEY_INVALID|invalid x-api-key|authentication_error|Incorrect API key/i.test(msg) || status === 401)
     return "API anahtarı geçersiz. Sağlayıcının panelinden kopyaladığın anahtarı kontrol et.";
   if (/credit balance|billing/i.test(msg)) return "Sağlayıcı hesabında kredi ya da faturalandırma sorunu var.";
   if (/not found|is not supported|NOT_FOUND/i.test(msg)) return "Model bulunamadı. Model adını kontrol et ya da boş bırak.";
-  if (/quota|RESOURCE_EXHAUSTED|429/i.test(msg)) return "Kota aşıldı. Biraz sonra tekrar dene ya da Google AI Studio'da kotanı kontrol et.";
-  if (/PERMISSION_DENIED|403/i.test(msg)) return "Bu anahtarın Gemini API'ye erişim izni yok.";
-  if (/fetch failed|ENOTFOUND|ECONN|timeout/i.test(msg)) return "Google'a bağlanılamadı. Sunucunun internet erişimini kontrol et.";
+  if (/insufficient_quota|exceeded your current quota/i.test(msg)) return "Sağlayıcı hesabında kredi ya da faturalandırma sorunu var.";
+  if (/quota|RESOURCE_EXHAUSTED|rate limit|429/i.test(msg) || status === 429) return "Kota ya da hız sınırı aşıldı. Biraz sonra tekrar dene ya da sağlayıcının panelinde kotanı kontrol et.";
+  if (/PERMISSION_DENIED|403/i.test(msg) || status === 403) return "Bu anahtarın bu modele ya da API'ye erişim izni yok.";
+  if (/fetch failed|ENOTFOUND|ECONN|timeout|aborted/i.test(msg)) return "Sağlayıcıya bağlanılamadı. Sunucunun internet erişimini kontrol et.";
   return msg.replace(/\s+/g, " ").slice(0, 240) || "Bilinmeyen hata";
 }
 
@@ -137,7 +142,9 @@ export async function userAiProvider(userId: string): Promise<AiProvider | null>
   if (!r?.enabled || !r.apiKeyEnc) return null;
   try {
     const key = decryptSecret(r.apiKeyEnc);
-    return r.provider === "anthropic" ? anthropicForKey(key, r.model) : geminiForKey(key, r.model);
+    if (r.provider === "anthropic") return anthropicForKey(key, r.model);
+    if (r.provider === "openai") return openaiForKey(key, r.model);
+    return geminiForKey(key, r.model);
   } catch (e) {
     console.warn("[AI] could not load user key", (e as Error).message);
     return null;

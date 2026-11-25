@@ -62,6 +62,7 @@ export function metered(p: AiProvider, userId?: string): AiProvider {
     generate: wrap(([req]) => req.task || "generate", p.generate),
     embed: wrap(() => "embedding", p.embed),
     readFile: p.readFile ? wrap(() => "file_text", p.readFile) : undefined,
+    transcribe: p.transcribe ? wrap(() => "transcribe", p.transcribe) : undefined,
   };
 }
 

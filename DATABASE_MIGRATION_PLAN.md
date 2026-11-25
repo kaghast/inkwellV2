@@ -174,11 +174,15 @@ Backups before any production deploy: `pg_dump -Fc` of the database and a copy o
 
 `inkwell_fold(text)` (IMMUTABLE SQL function), generated column `notes.search_tsv tsvector` and GIN index `notes_search_tsv_idx`. Adding a stored generated column rewrites `notes` once and computes the value for existing rows; no row is changed otherwise. If `inkwell_fold` is ever changed, the column must be recomputed (drop and re-add the column in a new migration). Rollback: old code ignores the column; optional `DROP INDEX notes_search_tsv_idx; ALTER TABLE notes DROP COLUMN search_tsv;` only with owner approval.
 
+### Optional: pgvector (boot step, not a ledger migration)
+
+Runs on every boot, only on Postgres with the `vector` extension available (`server/services/vectorStore.ts`): `CREATE EXTENSION IF NOT EXISTS vector` (needs the privilege), `ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding_vec vector`, a one-time copy `UPDATE notes SET embedding_vec = embedding::vector` for rows with a model and a well-formed vector, and the index `notes_embedding_vec_user_idx (user_id, embedding_model) WHERE embedding_vec IS NOT NULL`. `notes.embedding` (text) stays the source of truth. Any failure leaves pgvector off and the app on the Node path. Rollback: `INKWELL_PGVECTOR=off`; optional `ALTER TABLE notes DROP COLUMN embedding_vec` only with owner approval.
+
 ## 4. Later phases (planned, not applied)
 
 | Phase | Change | Notes |
 | --- | --- | --- |
-| 2 | `embedding_vec vector(768)` column + HNSW index on Postgres (keep the `TEXT` column as source until verified); `ai_runs` (provider, task, tokens, latency) | PGlite keeps the Node cosine fallback |
+| 2 | ~~`embedding_vec` column~~ (done, optional, see above) + HNSW index on Postgres; ~~`ai_runs`~~ (done, migration 010) | HNSW needs pgvector ≥ 0.8 iterative scans because of the per-user filter |
 | 2 | `object_chunks (object_id, ord, text, embedding)` for retrieval with citations | Rebuilt by a job, derived data |
 | 3 | `subscriptions`, `usage_records`, `api_keys` (hashed), `audit_logs`, `integrations` (moves `google_integrations` rows by copy, old table kept until verified), `sessions` | |
 | 3 | `files.storage_key`, `files.storage_provider`, `files.checksum`; copy to S3/R2/MinIO by job; base64 column retained until every file verifies by checksum | Never drop `data_base64` without approval |

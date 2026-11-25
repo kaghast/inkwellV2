@@ -106,6 +106,31 @@ describe("File text and AI usage API", { skip: !BASE }, () => {
     assert.equal(e.body.warning, "Bu notta ekli dosya yok.");
   });
 
+  test("audio: a transcript with a model, an explanation without one", async () => {
+    const audio = Buffer.from("MOCK-SPEECH: Yarın saat onda Atlas toplantısı var.");
+    const fileId = await upload(a, audio, "sesli-not.m4a", "application/octet-stream");
+    const cap = await a("POST", "/capture", { file_id: fileId, source: "file" });
+    const ready = await readyCapture(a, cap.body.capture.capture_id);
+    assert.equal(ready.status, "ready");
+    if (model) {
+      assert.equal(ready.file_text_method, "transcript");
+      assert.equal(ready.file_text, "Yarın saat onda Atlas toplantısı var.");
+      const acc = await a("POST", `/inbox/${ready.capture_id}/accept`, {});
+      assert.equal(acc.status, 200, JSON.stringify(acc.body));
+      const obj = (await a("GET", `/notes/${acc.body.object_id}`)).body;
+      assert.match(obj.content, /\n\n## Ses dökümü\n\nYarın saat onda Atlas toplantısı var\./);
+    } else {
+      assert.equal(ready.file_text, null);
+      assert.equal(ready.file_text_method, "none");
+      assert.match(ready.suggestion.file_text_note, /Gemini ya da OpenAI/);
+    }
+    // Silence: no speech, no text
+    const quiet = await upload(a, Buffer.from("RIFF....WAVEfmt "), "sessiz.wav", "audio/wav");
+    const q = await readyCapture(a, (await a("POST", "/capture", { file_id: quiet, source: "file" })).body.capture.capture_id);
+    assert.equal(q.file_text, null);
+    if (model) assert.equal(q.suggestion.file_text_note, "Ses dosyasında konuşma bulunamadı.");
+  });
+
   test("model calls are recorded per user in ai_runs", async () => {
     const u = await a("GET", "/ai/usage?days=7");
     assert.equal(u.status, 200);
@@ -113,6 +138,7 @@ describe("File text and AI usage API", { skip: !BASE }, () => {
       const ocr = u.body.by_task.find((t: any) => t.task === "file_text");
       assert.ok(ocr && ocr.calls >= 1, JSON.stringify(u.body.by_task));
       assert.ok(u.body.by_task.some((t: any) => t.task === "capture"));
+      assert.ok(u.body.by_task.some((t: any) => t.task === "transcribe"), "transcriptions are recorded");
       assert.ok(u.body.input_tokens > 0);
       assert.equal(u.body.failed, 0);
     } else {

@@ -5,7 +5,10 @@ import { getGenAI } from "../../src/lib/embeddings";
 import type { AiProvider, Extraction, ExtractionContext } from "./types";
 import { AiUnavailableError } from "./types";
 import { markCalled, reportUsage } from "./usageScope";
-import { READ_FILE_PROMPT, cleanReadText, IMAGE_MIMES } from "./fileRead";
+import { READ_FILE_PROMPT, TRANSCRIBE_PROMPT, cleanReadText, IMAGE_MIMES } from "./fileRead";
+
+/** Audio types Gemini understands as inline data. */
+const GEMINI_AUDIO = ["audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg", "audio/mp3", "audio/aiff", "audio/x-aiff", "audio/aac", "audio/ogg", "audio/flac", "audio/x-flac", "audio/mp4", "audio/x-m4a", "audio/m4a", "audio/webm"];
 
 const MODEL = () => process.env.AI_MODEL || "gemini-2.5-flash";
 const EMBED_MODEL = () => process.env.AI_EMBED_MODEL || "gemini-embedding-001";
@@ -122,6 +125,19 @@ export function createGeminiProvider(getClient: () => GoogleGenAI | null, model?
         model: modelName(),
         contents: [{ role: "user", parts: [{ inlineData: { mimeType: mime, data: data.toString("base64") } }, { text: READ_FILE_PROMPT }] }],
         config: { temperature: 0, maxOutputTokens: 16384 },
+      });
+      reportGemini(res, modelName());
+      return cleanReadText(textOf(res));
+    },
+    canTranscribe: (mime, bytes) => GEMINI_AUDIO.includes(mime) && bytes <= GEMINI_READ_MAX,
+    async transcribe({ data, mime }) {
+      const ai = getClient();
+      if (!ai) throw new AiUnavailableError("Gemini API key is not set");
+      markCalled(modelName());
+      const res: any = await ai.models.generateContent({
+        model: modelName(),
+        contents: [{ role: "user", parts: [{ inlineData: { mimeType: mime, data: data.toString("base64") } }, { text: TRANSCRIBE_PROMPT }] }],
+        config: { temperature: 0, maxOutputTokens: 32768 },
       });
       reportGemini(res, modelName());
       return cleanReadText(textOf(res));

@@ -55,6 +55,10 @@ export interface AiProvider {
   readFile?(file: FileInput): Promise<string>;
   /** Whether readFile accepts this type and size. */
   canRead?(mime: string, bytes: number): boolean;
+  /** Transcribes speech in an audio file, verbatim; "" when there is no speech. */
+  transcribe?(file: FileInput): Promise<string>;
+  /** Whether transcribe accepts this type and size. */
+  canTranscribe?(mime: string, bytes: number): boolean;
 }
 
 export interface FileInput {

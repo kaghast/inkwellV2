@@ -9,6 +9,7 @@ import { DAILY_TYPE_ID } from "../../src/lib/objectTypes";
 import { embedderFor } from "./embeddings";
 import { nearestIds, rankChunks, tokenize, type RankedChunk, type RetrievalDoc } from "./retrievalRank";
 import { tsQueryFor } from "./searchRank";
+import { hasPgvector, nearestNoteIdsSql } from "./vectorStore";
 
 /** Full-text candidates per query, and nearest-vector candidates. */
 const TEXT_CANDIDATES = 150;
@@ -98,8 +99,9 @@ export async function neighborMap(userId: string): Promise<Map<string, Set<strin
 /**
  * Notes worth ranking for a query: the best full-text matches (any query
  * word; short words exact, longer ones as prefixes, like the BM25 ranking)
- * and the nearest vectors from the active embedding model. Vectors are
- * compared in Node: only ids and vectors are read, never note bodies.
+ * and the nearest vectors from the active embedding model: in SQL with
+ * pgvector when the server has it, else in Node (only ids and vectors are
+ * read, never note bodies).
  */
 async function candidateIds(
   userId: string,
@@ -121,7 +123,9 @@ async function candidateIds(
       .limit(TEXT_CANDIDATES + (exclude?.size || 0));
     for (const r of rows as any[]) if (!exclude?.has(r.id)) out.add(r.id);
   }
-  if (queryVector && embedModel) {
+  if (queryVector && embedModel && hasPgvector()) {
+    for (const id of await nearestNoteIdsSql(and(...scopeConds(userId, f))!, embedModel, queryVector, VECTOR_CANDIDATES, 0.3, exclude)) out.add(id);
+  } else if (queryVector && embedModel) {
     const rows = await db
       .select({ id: notes.noteId, embedding: notes.embedding })
       .from(notes)

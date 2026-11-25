@@ -101,7 +101,7 @@ export async function runAiAction(userId: string, noteId: string, action: AiActi
     const skipped = results.filter((r) => !r.text).map((r) => `${r.name}: ${r.note}`);
     return {
       ...base,
-      provider: results.find((r) => r.method === "ocr" && r.text)?.provider || null,
+      provider: results.find((r) => (r.method === "ocr" || r.method === "transcript") && r.text)?.provider || null,
       text: read.map((r) => `### ${r.name}\n\n${r.text}`).join("\n\n"),
       warning: skipped.length ? skipped.join(" · ") : read.length === 0 ? "Dosyalardan metin okunamadı." : null,
     };

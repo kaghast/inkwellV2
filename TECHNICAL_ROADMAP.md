@@ -41,13 +41,13 @@ Known limits after Phase 1 (by design, documented in the PR):
 - The job runner is in-process: work survives restarts (re-queued at boot from `captures.status`) but not multiple server instances.
 - Team workspaces, invites and roles beyond the owner exist only in the schema and access helpers.
 - OCR, PDF/DOCX text extraction and audio transcription need an AI provider with vision/audio → Phase 2. Files and images are captured into the Inbox with their file attached and metadata from the filename.
-- Search ranks in Node over the user's rows (same O(n) cost as today's list endpoint); SQL/pgvector retrieval → Phase 2 (full text moved to SQL in migration 011; pgvector still open).
+- Search ranks in Node over the user's rows (same O(n) cost as today's list endpoint); SQL/pgvector retrieval → Phase 2 (full text moved to SQL in migration 011; optional pgvector on Postgres).
 
-## Phase 2 — AI pipeline, Ask Inkwell, Graph 2.0
+## Phase 2 — AI pipeline, Ask Inkwell, Graph 2.0 ✅
 
 ### Phase 2a status (shipped)
 
-- **Providers:** Gemini and Anthropic Claude. Anthropic uses the official `@anthropic-ai/sdk`, with server-side refusal fallback enabled. Users pick the provider and key in Settings > Yapay Zeka; keys are encrypted, verified with a real call, and the user's key takes precedence over the server key. OpenAI is not done.
+- **Providers:** Gemini and Anthropic Claude. Anthropic uses the official `@anthropic-ai/sdk`, with server-side refusal fallback enabled. Users pick the provider and key in Settings > Yapay Zeka; keys are encrypted, verified with a real call, and the user's key takes precedence over the server key. OpenAI was added later (see "Phase 2 status: remaining items").
 - **Embeddings:** Generated in a background job after every save (no AI call on the save path). Each vector stores its model in `notes.embedding_model`; legacy hash vectors (model NULL) are never compared. Reindexing is automatic when a provider is enabled, or via `POST /api/ai/embeddings/reindex`. Claude has no embeddings, so semantic search runs only with Gemini.
 - **Hybrid retrieval:** BM25 over ~700-character chunks, plus note-level cosine similarity, plus a boost from relation neighbours. Owner, filter (type, space, tag, date) and password-locked exclusion are applied in SQL; ranking runs in Node.
 - **Ask Inkwell (`/ask`):** Answers use numbered sources. `[n]` citations are checked against the retrieved set: invalid numbers are removed, and uncited sentences are counted and flagged. Without a model the page lists the sources only, and it says "bulamadım" when nothing matches.
@@ -69,14 +69,15 @@ Known limits after Phase 1 (by design, documented in the PR):
 - **Full text in Postgres:** migration `2026_11_27_011_search_tsv` adds `inkwell_fold(text)` (an `IMMUTABLE` SQL function that folds Turkish letters and common accents like the app's `fold()`), a generated `notes.search_tsv tsvector` column (`simple` config; title weight A, tags and people B, body D; fenced code blocks and HTML comments left out; body capped at 200 000 characters; a locked note contributes only its title) and a GIN index. Postgres computes the column on every write, whatever code path made it, and for existing rows when the column is added; no data is changed. Runs on PGlite and Postgres.
 - **Global search** (`GET /api/search`): SQL picks at most 400 candidates (`search_tsv @@ to_tsquery(any query word as a prefix)`, or an object type whose name contains a word), ordered by `ts_rank`; the existing pure ranking (`rankDocuments`) scores only those, so the response shape, `matched` and snippets are unchanged. Behaviour change: a word matches the start of a word ("toplant" finds "toplantısı"), no longer the middle of one ("lant" does not). Inbox captures (latest 300) and spaces are still filtered in Node.
 - **Ask Inkwell and "find related"** (`retrieve`): candidates are the best 150 full-text matches (words of 4+ letters as prefixes, shorter ones exact, as in BM25) plus the 40 nearest note vectors from the active embedding model (cosine ≥ 0.3; only ids and vectors are read, not bodies). Only candidates are chunked and ranked, so BM25 document frequencies now come from the candidate set. "Find unexpected connections" still reads every note by design.
-- **Not done: pgvector.** Vectors are still stored as JSON text and compared in Node. PGlite needs the new `@electric-sql/pglite-pgvector` package, which requires PGlite 0.6.0 (both released 2026-11-23), and no Postgres with pgvector is available to test against. An HNSW index would also need care: the per-user filter runs after the approximate scan, which loses results unless pgvector ≥ 0.8 iterative scans or per-tenant partial indexes are used.
+- **pgvector:** see "Phase 2 status: remaining items" below.
 - Tests: `tests/api.search.test.ts` (folding, suffixes, code blocks, locked notes, type names, edits, isolation, Ask), unit tests for the query builder and vector candidates.
 
-Remaining in Phase 2:
-- OpenAI provider
-- pgvector column and index (see above)
-- Audio transcription
-- 3D graph
+### Phase 2 status: remaining items (shipped)
+
+- **OpenAI provider** (`server/ai/openai.ts`): REST over `fetch`, no SDK. Chat Completions for extraction, generation and vision (images as `image_url`, PDFs as `file` parts, up to 20 MB), Embeddings (`text-embedding-3-small`, 768 dimensions), Audio Transcriptions (`gpt-transcribe`, up to 25 MB). Default chat model `gpt-6.2-sol` (model names taken from OpenAI's model docs on 2026-11-25); `max_completion_tokens` is used. Settings > Yapay Zeka offers it next to Gemini and Claude; the server key is `OPENAI_API_KEY` (optional `OPENAI_MODEL`, `OPENAI_EMBED_MODEL`, `OPENAI_TRANSCRIBE_MODEL`, `OPENAI_BASE_URL`). Calls are recorded in `ai_runs`. A unit test runs the provider against a local stand-in for the REST API (request shapes, parsing, errors); **no call was made to the real OpenAI API** (no key in development).
+- **Audio transcription:** optional `transcribe`/`canTranscribe` on providers. Gemini sends audio as inline data (≤ 14 MB), OpenAI uses `/audio/transcriptions`, Claude has none (the Inbox says so). A captured audio file (type from MIME, or from the extension when the browser sends a generic type) is transcribed verbatim; the text is shown in the Inbox as "Ses dökümü", used for extraction, and saved under `## Ses dökümü`. Method `transcript`, task `transcribe` in `ai_runs`. Not done: recording in the browser (Phase 6 voice capture), files over the provider limits (no splitting), speaker names.
+- **3D graph:** a "3B" toggle on the graph (`?view=3d`). No new dependency: the force simulation gets a depth axis and the scene is drawn with perspective on the same canvas (`src/lib/graph3d.ts`, unit-tested). Drag rotates, Shift+drag pans, wheel zooms; far nodes fade and are drawn first; clicking selects the nearest node. Nodes are not dragged in 3D. All 2D filters, highlights and the inspector work unchanged.
+- **pgvector (optional, Postgres only):** at boot, on a Postgres server where the `vector` extension is available, `initPgvector` creates it if needed, adds `notes.embedding_vec vector` (derived from the JSON text column, which stays the source of truth), copies existing vectors once and indexes `(user_id, embedding_model)`. New embeddings are written to both. Ask/related then find nearest notes in SQL (`<=>`, same model and dimension, user scope and filters in SQL). PGlite and Postgres without the extension keep comparing in Node. `INKWELL_PGVECTOR=off` disables it. The SQL was run against real pgvector (PGlite 0.6.0 + `@electric-sql/pglite-pgvector` 0.1.0 in a scratch folder, outside the project); **it has not run on a real Postgres server**. Search is exact, not HNSW: an approximate index with the per-user filter applied afterwards can silently drop results; add HNSW with pgvector ≥ 0.8 iterative scans (or per-tenant partial indexes) when a user's notes reach the size where exact search is slow.
 
 ### Original Phase 2 plan
 
@@ -188,7 +189,7 @@ Capture and the Inbox come first because they make the product's promise ("captu
 
 | Need | Status | Effect |
 | --- | --- | --- |
-| `GEMINI_API_KEY` (or OpenAI/Anthropic key) | Not configured in dev | Capture uses the heuristic provider; UI labels results as "Kural tabanlı" instead of AI. |
+| `GEMINI_API_KEY` / `OPENAI_API_KEY` (or a user's own Gemini, Claude or OpenAI key) | Not configured in dev | Capture uses the heuristic provider; UI labels results as "Kural tabanlı" instead of AI. |
 | Stripe keys + webhook secret | Not configured | Billing abstraction only (Phase 3); no payment UI. |
 | S3/R2/MinIO credentials | Not configured | Local disk + DB backup stays primary. |
 | Production database access | Not granted | Migrations are written and tested on PGlite; running them on production is the owner's call. |

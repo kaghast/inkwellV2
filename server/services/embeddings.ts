@@ -8,6 +8,7 @@ import { stripCode } from "../../src/lib/wikilinks";
 import { activeProvider } from "../ai";
 import { enqueue, registerQueue } from "../jobs/queue";
 import type { AiProvider } from "../ai/types";
+import { writeVector } from "./vectorStore";
 
 const QUEUE = "embed";
 
@@ -46,6 +47,7 @@ async function embedNote(key: string) {
       .update(notes)
       .set({ embedding: JSON.stringify(vec) as any, embeddingModel: emb.model })
       .where(and(eq(notes.noteId, noteId), eq(notes.userId, userId)));
+    await writeVector(userId, noteId, vec);
   } catch (e) {
     console.warn("[Embeddings] failed for", noteId, (e as Error).message);
   }

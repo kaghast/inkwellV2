@@ -36,7 +36,9 @@ import {
   Lightbulb,
   Link2,
   Loader2,
+  Box,
 } from "lucide-react";
+import { depthAlpha, project, rotateBy, type Rotation } from "@/lib/graph3d";
 
 interface GraphNode {
   id: string;
@@ -48,6 +50,14 @@ interface GraphNode {
   y: number;
   vx: number;
   vy: number;
+  /** Depth in the 3D view (0 in 2D). */
+  z?: number;
+  vz?: number;
+  /** Position and size on screen (world units) after the 3D projection; set every frame. */
+  px?: number;
+  py?: number;
+  pr?: number;
+  depth?: number;
   isDragging?: boolean;
   degree?: number;
   // Note specific
@@ -125,6 +135,9 @@ export default function GraphView() {
   const draggedNodeRef = useRef<GraphNode | null>(null);
   const animFrameIdRef = useRef<number | null>(null);
   const simNodesRef = useRef<GraphNode[]>([]);
+  // 2D or 3D view (?view=3d); in 3D, dragging the background rotates the scene
+  const [is3d, setIs3d] = useState(searchParams.get("view") === "3d");
+  const rotationRef = useRef<Rotation>({ yaw: 0.5, pitch: -0.3 });
 
   // Fetch graph data
   const fetchData = useCallback(async () => {
@@ -419,9 +432,11 @@ export default function GraphView() {
           y: existing.y,
           vx: existing.vx,
           vy: existing.vy,
+          z: existing.z ?? 0,
+          vz: existing.vz ?? 0,
         };
       }
-      return { ...n };
+      return { ...n, z: (Math.random() - 0.5) * 200, vz: 0 };
     });
   }, [filteredNodes]);
 
@@ -544,21 +559,25 @@ export default function GraphView() {
           const n2 = simNodes[j];
           const dx = n2.x - n1.x;
           const dy = n2.y - n1.y;
-          const distSq = dx * dx + dy * dy || 1;
+          const dz = is3d ? (n2.z || 0) - (n1.z || 0) : 0;
+          const distSq = dx * dx + dy * dy + dz * dz || 1;
           const dist = Math.sqrt(distSq);
 
           if (dist < 400) {
             const force = repulsion / distSq;
             const fx = (dx / dist) * force;
             const fy = (dy / dist) * force;
+            const fz = (dz / dist) * force;
 
             if (!n1.isDragging) {
               n1.vx -= fx;
               n1.vy -= fy;
+              n1.vz = (n1.vz || 0) - fz;
             }
             if (!n2.isDragging) {
               n2.vx += fx;
               n2.vy += fy;
+              n2.vz = (n2.vz || 0) + fz;
             }
           }
         }
@@ -572,20 +591,24 @@ export default function GraphView() {
 
         const dx = target.x - source.x;
         const dy = target.y - source.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const dz = is3d ? (target.z || 0) - (source.z || 0) : 0;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
         const idealDist = link.type === "wikilink" ? 90 : 60;
         const displacement = dist - idealDist;
         const force = displacement * k;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
+        const fz = (dz / dist) * force;
 
         if (!source.isDragging) {
           source.vx += fx;
           source.vy += fy;
+          source.vz = (source.vz || 0) + fz;
         }
         if (!target.isDragging) {
           target.vx -= fx;
           target.vy -= fy;
+          target.vz = (target.vz || 0) - fz;
         }
       }
 
@@ -600,6 +623,27 @@ export default function GraphView() {
 
           node.x += node.vx;
           node.y += node.vy;
+          if (is3d) {
+            node.vz = ((node.vz || 0) - (node.z || 0) * centerGravity) * 0.88;
+            node.z = (node.z || 0) + node.vz;
+          }
+        }
+      }
+
+      // Screen positions: the 3D projection, or the plain 2D position
+      const rot = rotationRef.current;
+      for (const node of simNodes) {
+        if (is3d) {
+          const p = project(node.x, node.y, node.z || 0, rot);
+          node.px = p.x;
+          node.py = p.y;
+          node.pr = Math.max(2, node.radius * p.scale);
+          node.depth = p.depth;
+        } else {
+          node.px = node.x;
+          node.py = node.y;
+          node.pr = node.radius;
+          node.depth = 0;
         }
       }
 
@@ -615,8 +659,8 @@ export default function GraphView() {
         const isDimmed = activeNodeId && !isHighlighted;
 
         ctx.beginPath();
-        ctx.moveTo(source.x, source.y);
-        ctx.lineTo(target.x, target.y);
+        ctx.moveTo(source.px!, source.py!);
+        ctx.lineTo(target.px!, target.py!);
 
         if (link.type === "wikilink") {
           ctx.strokeStyle = isHighlighted
@@ -669,14 +713,15 @@ export default function GraphView() {
           ctx.font = "11px Manrope, sans-serif";
           ctx.textAlign = "center";
           ctx.fillStyle = isDark ? "#fbbf24" : "#b45309";
-          ctx.fillText(link.label, (source.x + target.x) / 2, (source.y + target.y) / 2 - 4);
+          ctx.fillText(link.label, (source.px! + target.px!) / 2, (source.py! + target.py!) / 2 - 4);
           ctx.restore();
         }
         ctx.setLineDash([]);
       }
 
-      // DRAW NODES
-      for (const node of simNodes) {
+      // DRAW NODES (in 3D, far ones first so near ones cover them)
+      const drawOrder = is3d ? [...simNodes].sort((a, b) => (b.depth || 0) - (a.depth || 0)) : simNodes;
+      for (const node of drawOrder) {
         const isSelected = node.id === selectedNodeId;
         const isHovered = node.id === hoveredNodeId;
         const isNeighbor = activeNodeId && connectedNeighbors.has(node.id);
@@ -686,19 +731,19 @@ export default function GraphView() {
           node.label.toLowerCase().includes(searchQuery.toLowerCase().trim());
 
         ctx.save();
-        ctx.globalAlpha = isDimmed ? 0.22 : 1;
+        ctx.globalAlpha = (isDimmed ? 0.22 : 1) * (is3d && !isSelected && !isHovered ? depthAlpha(node.depth || 0) : 1);
 
         // Glow ring for selected or search matched node
         if (isSelected || matchesSearch) {
           ctx.beginPath();
-          ctx.arc(node.x, node.y, node.radius + 6, 0, 2 * Math.PI);
+          ctx.arc(node.px!, node.py!, node.pr! + 6, 0, 2 * Math.PI);
           ctx.fillStyle = isDark ? "rgba(96, 165, 250, 0.3)" : "rgba(59, 130, 246, 0.25)";
           ctx.fill();
         }
 
         // Node circle
         ctx.beginPath();
-        ctx.arc(node.x, node.y, node.radius, 0, 2 * Math.PI);
+        ctx.arc(node.px!, node.py!, node.pr!, 0, 2 * Math.PI);
         ctx.fillStyle = node.color || (isDark ? "#60a5fa" : "#3b82f6");
         ctx.fill();
 
@@ -728,7 +773,7 @@ export default function GraphView() {
             : "#334155";
           ctx.textAlign = "center";
           ctx.textBaseline = "top";
-          ctx.fillText(node.label, node.x, node.y + node.radius + 4);
+          ctx.fillText(node.label, node.px!, node.py! + node.pr! + 4);
         }
 
         ctx.restore();
@@ -753,6 +798,7 @@ export default function GraphView() {
     selectedNodeId,
     searchQuery,
     isDark,
+    is3d,
   ]);
 
   // Coordinate helper: Canvas screen coords to World graph coords
@@ -773,16 +819,15 @@ export default function GraphView() {
 
   // Find node under mouse cursor
   function findNodeAt(worldX: number, worldY: number): GraphNode | null {
-    const simNodes = simNodesRef.current;
-    for (let i = simNodes.length - 1; i >= 0; i--) {
-      const node = simNodes[i];
-      const dx = worldX - node.x;
-      const dy = worldY - node.y;
-      if (dx * dx + dy * dy <= (node.radius + 5) * (node.radius + 5)) {
-        return node;
-      }
+    // Hit-test against where the node is drawn; in 3D the nearest one wins
+    let best: GraphNode | null = null;
+    for (const node of simNodesRef.current) {
+      const r = (node.pr ?? node.radius) + 5;
+      const dx = worldX - (node.px ?? node.x);
+      const dy = worldY - (node.py ?? node.y);
+      if (dx * dx + dy * dy <= r * r && (!best || (node.depth || 0) <= (best.depth || 0))) best = node;
     }
-    return null;
+    return best;
   }
 
   // Mouse / Pointer Event Handlers
@@ -790,7 +835,10 @@ export default function GraphView() {
     const world = screenToWorld(e.clientX, e.clientY);
     const hitNode = findNodeAt(world.x, world.y);
 
-    if (hitNode) {
+    if (hitNode && is3d) {
+      // In 3D a click selects; nodes are not dragged (their depth is not on screen)
+      setSelectedNodeId(hitNode.id);
+    } else if (hitNode) {
       draggedNodeRef.current = hitNode;
       hitNode.isDragging = true;
       setSelectedNodeId(hitNode.id);
@@ -811,8 +859,12 @@ export default function GraphView() {
     } else if (isDraggingCanvasRef.current) {
       const dx = e.clientX - lastMousePosRef.current.x;
       const dy = e.clientY - lastMousePosRef.current.y;
-      transformRef.current.x += dx;
-      transformRef.current.y += dy;
+      if (is3d && !e.shiftKey) {
+        rotationRef.current = rotateBy(rotationRef.current, dx, dy);
+      } else {
+        transformRef.current.x += dx;
+        transformRef.current.y += dy;
+      }
       lastMousePosRef.current = { x: e.clientX, y: e.clientY };
     } else {
       const hit = findNodeAt(world.x, world.y);
@@ -845,6 +897,26 @@ export default function GraphView() {
 
   function resetView() {
     transformRef.current = { x: 0, y: 0, scale: 1 };
+    rotationRef.current = { yaw: 0.5, pitch: -0.3 };
+  }
+
+  function toggle3d() {
+    const next = !is3d;
+    setIs3d(next);
+    if (next) {
+      // Spread nodes in depth so the layout opens up instead of starting flat
+      for (const n of simNodesRef.current) {
+        n.z = (Math.random() - 0.5) * 240;
+        n.vz = 0;
+      }
+    } else {
+      for (const n of simNodesRef.current) n.z = n.vz = 0;
+    }
+    const p = new URLSearchParams(window.location.search);
+    if (next) p.set("view", "3d");
+    else p.delete("view");
+    const qs = p.toString();
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
   }
 
   // Node count stats
@@ -937,10 +1009,28 @@ export default function GraphView() {
             onMouseLeave={onMouseUp}
             onWheel={onWheel}
             className="flex-1 w-full h-full cursor-grab active:cursor-grabbing block"
+            data-testid="graph-canvas"
+            data-view={is3d ? "3d" : "2d"}
           />
+          {is3d && (
+            <div className="pointer-events-none absolute bottom-6 left-20 z-10 max-w-[calc(100%-6rem)] rounded-md bg-card/80 px-2 py-1 text-[11px] text-muted-foreground backdrop-blur">
+              3B · sürükle: döndür · Shift + sürükle: kaydır · tekerlek: yakınlaştır
+            </div>
+          )}
 
           {/* Floating Zoom & Action Controls */}
           <div className="absolute bottom-6 left-6 z-20 flex flex-col gap-1.5 bg-card/90 backdrop-blur-md p-1 rounded-lg border border-border shadow-md">
+            <Button
+              size="icon"
+              variant={is3d ? "secondary" : "ghost"}
+              onClick={toggle3d}
+              className="h-8 w-8 hover:bg-accent text-foreground"
+              title={is3d ? "2B görünüme geç" : "3B görünüme geç"}
+              aria-pressed={is3d}
+              data-testid="graph-3d-toggle"
+            >
+              <Box className="w-4 h-4" />
+            </Button>
             <Button
               size="icon"
               variant="ghost"

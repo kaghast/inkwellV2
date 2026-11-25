@@ -18,7 +18,7 @@ import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { eq, and, or, desc, sql } from "drizzle-orm";
 import type { DriveFileRef } from "./src/db/schema";
-import { db, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions, stickers, phrases, areas, googleIntegrations } from "./src/db/index";
+import { db, pool, initDatabaseSchema, users, notes, tags, people, locations, categories, itemGroups, reminders, files, noteTypes, kanbanColumns, noteVersions, stickers, phrases, areas, googleIntegrations } from "./src/db/index";
 import { generateTextEmbedding } from "./src/lib/embeddings";
 import { normalizePeriod, periodEnd, periodStart, type NotePeriod } from "./src/lib/period";
 import { setTaskStateInMarkdown, TASK_STATES, type TaskState } from "./src/lib/tasks";
@@ -28,6 +28,7 @@ import {
   sanitizeDriveFiles, extractNoteDates, slugify, generateSlugForNote,
 } from "./server/services/notesCore";
 import { runMigrations, runOnce } from "./src/db/migrations";
+import { initPgvector } from "./server/services/vectorStore";
 import { createWorkspaceRouter } from "./server/http/workspaceRoutes";
 import { initSecrets, encryptSecret, decryptSecret } from "./server/lib/secrets";
 import { backfillPersonalWorkspaces, resolveTargetSpace, AccessError } from "./server/services/workspaces";
@@ -4427,6 +4428,8 @@ async function startServer() {
     await runMigrations();
     await runOnce("2026_11_22_004_backfill_personal_workspaces", backfillPersonalWorkspaces);
     await runOnce("2026_11_22_005_backfill_wikilink_relations", backfillWikilinkRelations);
+    // Optional: pgvector on Postgres servers that have the extension
+    await initPgvector(Boolean(pool));
     configureCapture({
       linkPreview: async (url) => {
         const p = await getLinkPreview(url);

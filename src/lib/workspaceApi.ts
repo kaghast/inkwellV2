@@ -33,7 +33,7 @@ export interface Capture {
   file_id: string | null;
   file_text?: string | null;
   file_text_length?: number;
-  file_text_method?: "text" | "docx" | "pptx" | "xlsx" | "ocr" | "none" | null;
+  file_text_method?: "text" | "docx" | "pptx" | "xlsx" | "ocr" | "transcript" | "none" | null;
   space_id: string | null;
   suggestion: CaptureSuggestion;
   provider: string | null;
