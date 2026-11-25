@@ -487,3 +487,36 @@ describe("file text (office, zip, OCR clean-up)", () => {
     );
   });
 });
+
+describe("journal links (2.5f)", () => {
+  test("a task linked to a card stays open and gets the link once", async () => {
+    const { linkTaskInMarkdown, taskText } = await import("../src/lib/tasks");
+    const md = "## Kayıt\n- [x] bitti\n- [ ] ! [[Atlas]] sunumu\n- [ ] zaten → [[Kart A]]";
+    assert.deepEqual(taskText(md, 1), { text: "[[Atlas]] sunumu", state: "open", signifier: "priority" });
+    const r = linkTaskInMarkdown(md, 1, "Atlas sunumu");
+    assert.equal(r!.content, "## Kayıt\n- [x] bitti\n- [ ] ! [[Atlas]] sunumu → [[Atlas sunumu]]\n- [ ] zaten → [[Kart A]]");
+    assert.equal(r!.text, "[[Atlas]] sunumu");
+    assert.equal(linkTaskInMarkdown(md, 0, "x"), null, "done task");
+    assert.equal(linkTaskInMarkdown(md, 2, "x"), null, "already linked");
+    assert.equal(linkTaskInMarkdown(md, 9, "x"), null, "no such task");
+  });
+
+  test("bullet query filters by kind, state, signifier and text; newest page first", async () => {
+    const { queryBullets, cardTitleFromTask } = await import("../server/services/bulletQuery");
+    const pages = [
+      { noteId: "a", slug: null, title: "Gün 1", date: "2026-11-01T00:00:00", noteTypeId: "type_daily", content: "- [ ] süt al\n- [>] vergi → [[Gün 2]]\n- [o] dişçi\n- fikir\n```\n- [ ] kodda\n```" },
+      { noteId: "b", slug: "g2", title: "Gün 2", date: "2026-11-02T00:00:00", noteTypeId: "type_daily", content: "- [ ] ! vergi\n- [x] Süt ödemesi\n- ? araştır" },
+    ];
+    const q = (f: any, limit?: number) => queryBullets(pages, f, limit).items.map((i) => `${i.note_id}:${i.text}`);
+    assert.deepEqual(q({ states: ["open"] }), ["b:vergi", "a:süt al"]);
+    assert.deepEqual(q({ states: ["migrated", "scheduled"] }), ["a:vergi → [[Gün 2]]"]);
+    assert.deepEqual(q({ kind: "event" }), ["a:dişçi"]);
+    assert.deepEqual(q({ signifier: "explore" }), ["b:araştır"]);
+    assert.deepEqual(q({ q: "SÜT" }), ["b:Süt ödemesi", "a:süt al"]);
+    const lim = queryBullets(pages, {}, 2);
+    assert.equal(lim.items.length, 2);
+    assert.equal(lim.truncated, true);
+    assert.equal(queryBullets(pages, { states: ["open"] }).items[0].taskIndex, 0);
+    assert.equal(cardTitleFromTask("[[Atlas|Proje]] **sunum** [link](http://x)"), "Proje sunum link");
+  });
+});

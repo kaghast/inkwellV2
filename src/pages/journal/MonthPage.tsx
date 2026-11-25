@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, ExternalLink, Lock, Telescope } from "lucide-react";
 import PageShell, { Empty, Section } from "@/components/PageShell";
+import { taskToCard } from "@/components/journal/taskToCard";
 import MarkdownView from "@/components/MarkdownView";
 import QuickLog from "@/components/journal/QuickLog";
 import MigrationPanel from "@/components/journal/MigrationPanel";
@@ -143,7 +144,13 @@ export default function MonthPage() {
                   <Empty>Bu sayfa parola kilitli.</Empty>
                 ) : (
                   <div className="prose-sm max-w-none" data-testid="month-page">
-                    <MarkdownView content={data.monthly.content} onTaskToggle={toggleTask} />
+                    <MarkdownView
+                      content={data.monthly.content}
+                      onTaskToggle={toggleTask}
+                      onTaskToCard={async (i) => {
+                        if (data.monthly && (await taskToCard(data.monthly.note_id, i, data.monthly.content, navigate))) load();
+                      }}
+                    />
                   </div>
                 )
               ) : (

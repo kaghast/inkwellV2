@@ -11,6 +11,7 @@ import { DAILY_PROMPTS, WEEKLY_PROMPTS, weekdayOf } from "@/lib/journal";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import PageShell, { Empty, Section } from "@/components/PageShell";
+import { taskToCard } from "@/components/journal/taskToCard";
 import MarkdownView from "@/components/MarkdownView";
 import TypeIcon from "@/components/TypeIcon";
 import { Button } from "@/components/ui/button";
@@ -200,7 +201,13 @@ export default function TodayPage() {
             >
               {data.daily_note ? (
                 <div className="prose-sm max-w-none" data-testid="today-daily-note">
-                  <MarkdownView content={data.daily_note.content} onTaskToggle={(i, c) => toggleTask(data.daily_note!.note_id, i, c)} />
+                  <MarkdownView
+                    content={data.daily_note.content}
+                    onTaskToggle={(i, c) => toggleTask(data.daily_note!.note_id, i, c)}
+                    onTaskToCard={async (i) => {
+                      if (await taskToCard(data.daily_note!.note_id, i, undefined, navigate)) load();
+                    }}
+                  />
                 </div>
               ) : (
                 <div className="flex items-center justify-between gap-3">

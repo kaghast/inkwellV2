@@ -437,7 +437,7 @@ export const captures = pgTable(
     workspaceId: text('workspace_id'),
     spaceId: text('space_id'),
     status: text('status').default('new').notNull(), // new | processing | ready | processed | failed
-    resolution: text('resolution'), // accepted | saved_raw | rejected
+    resolution: text('resolution'), // accepted | saved_raw | rejected | logged
     source: text('source').default('quick').notNull(),
     rawText: text('raw_text').default('').notNull(),
     rawUrl: text('raw_url'),

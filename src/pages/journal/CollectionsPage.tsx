@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ExternalLink, Library, Loader2, Lock, Plus } from "lucide-react";
 import PageShell, { Empty, Section } from "@/components/PageShell";
+import { taskToCard } from "@/components/journal/taskToCard";
 import MarkdownView from "@/components/MarkdownView";
 import QuickLog from "@/components/journal/QuickLog";
 import TypeIcon from "@/components/TypeIcon";
@@ -147,7 +148,17 @@ export default function CollectionsPage() {
                 ) : (
                   <>
                     <div className="prose-sm max-w-none" data-testid="collection-content">
-                      <MarkdownView content={detail.content} onTaskToggle={detail.archived ? undefined : toggleTask} />
+                      <MarkdownView
+                        content={detail.content}
+                        onTaskToggle={detail.archived ? undefined : toggleTask}
+                        onTaskToCard={
+                          detail.archived
+                            ? undefined
+                            : async (i) => {
+                                if (await taskToCard(detail.note_id, i, detail.content, navigate)) loadDetail();
+                              }
+                        }
+                      />
                     </div>
                     {!detail.archived && (
                       <div className="mt-3 border-t border-border/60 pt-3">

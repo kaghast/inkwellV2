@@ -26,7 +26,7 @@ export interface CaptureSuggestion {
 export interface Capture {
   capture_id: string;
   status: CaptureStatus;
-  resolution: "accepted" | "saved_raw" | "rejected" | null;
+  resolution: "accepted" | "saved_raw" | "rejected" | "logged" | null;
   source: string;
   raw_text: string;
   raw_url: string | null;
@@ -199,6 +199,8 @@ export const wsApi = {
   acceptBatch: (ids: string[]) =>
     api.post("/inbox/accept-batch", { ids }).then((r) => r.data as { results: Array<{ capture_id: string; ok: boolean; error?: string }> }),
   saveRaw: (id: string) => api.post(`/inbox/${id}/save-raw`).then((r) => r.data as { object_id: string; slug: string }),
+  logCapture: (id: string, kind: EntryKind) =>
+    api.post(`/inbox/${id}/log`, { kind }).then((r) => r.data as { note_id: string; slug: string | null; line: string; date: string }),
   reject: (id: string) => api.post(`/inbox/${id}/reject`).then((r) => r.data),
   retry: (id: string) => api.post(`/inbox/${id}/retry`).then((r) => r.data),
 
@@ -410,7 +412,34 @@ export const journalApi = {
     api.post("/journal/collections", body).then((r) => r.data as { note_id: string; slug: string; title: string }),
   collection: (id: string) => api.get(`/journal/collections/${encodeURIComponent(id)}`).then((r) => r.data as CollectionDetail),
   index: () => api.get("/journal/index").then((r) => r.data as JournalIndexData),
+  bullets: (f: BulletSearch) => api.get("/journal/bullets", { params: f }).then((r) => r.data as { items: BulletHit[]; truncated: boolean }),
+  toCard: (note_id: string, index: number, content?: string) =>
+    api.post("/journal/to-card", { note_id, index, content }).then((r) => r.data as { card_id: string; card_slug: string | null; card_title: string; note_id: string; content: string }),
 };
+
+export interface BulletSearch {
+  kind?: "task" | "event" | "note";
+  /** Comma-separated task states, e.g. "open" or "migrated,scheduled". */
+  state?: string;
+  signifier?: "priority" | "explore";
+  q?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface BulletHit {
+  note_id: string;
+  slug: string | null;
+  title: string;
+  date: string;
+  note_type_id: string | null;
+  line: number;
+  text: string;
+  kind: "task" | "event" | "note";
+  state?: "open" | "done" | "migrated" | "scheduled" | "cancelled";
+  taskIndex?: number;
+  signifier?: "priority" | "explore";
+}
 
 // ---------------------------------------------------------------- habits & review (Phase 2.5d/e)
 

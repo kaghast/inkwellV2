@@ -286,6 +286,48 @@ export function closeTaskInMarkdown(
   return result;
 }
 
+/**
+ * Links the `index`-th open task to another page (" → [[Target]]") and keeps
+ * it open, e.g. when it becomes a Kanban card. Returns null when the index is
+ * not an open task or the task already points somewhere.
+ */
+export function linkTaskInMarkdown(md: string, index: number, linkTitle: string): { content: string; entry: string; text: string; signifier?: Signifier } | null {
+  const lines = (md || "").split("\n");
+  let count = 0;
+  let result: { content: string; entry: string; text: string; signifier?: Signifier } | null = null;
+  forEachTaskLine(lines, (i, m) => {
+    if (count++ !== index) return;
+    if (stateFromChar(m[2]) !== "open") return false;
+    const entry = lines[i].slice(m[0].length).trim();
+    if (!entry || /→\s*\[\[[^\]]+\]\]\s*$/.test(entry)) return false;
+    const sig = entry.match(SIGNIFIER)?.[1];
+    lines[i] = `${m[1]}[ ] ${entry} → [[${linkTitle}]]`;
+    result = {
+      content: lines.join("\n"),
+      entry,
+      text: entry.replace(SIGNIFIER, "").trim(),
+      signifier: sig === "!" ? "priority" : sig === "?" ? "explore" : undefined,
+    };
+    return false;
+  });
+  return result;
+}
+
+/** The text of the `index`-th task (signifier removed), or null. */
+export function taskText(md: string, index: number): { text: string; state: TaskState; signifier?: Signifier } | null {
+  const lines = (md || "").split("\n");
+  let count = 0;
+  let out: { text: string; state: TaskState; signifier?: Signifier } | null = null;
+  forEachTaskLine(lines, (i, m) => {
+    if (count++ !== index) return;
+    const entry = lines[i].slice(m[0].length).trim();
+    const sig = entry.match(SIGNIFIER)?.[1];
+    out = { text: entry.replace(SIGNIFIER, "").trim(), state: stateFromChar(m[2]), signifier: sig === "!" ? "priority" : sig === "?" ? "explore" : undefined };
+    return false;
+  });
+  return out;
+}
+
 /** Removes the last line equal to `line` (used to undo a half-done migration). */
 export function removeLastLine(content: string, line: string): string {
   const lines = (content || "").split("\n");

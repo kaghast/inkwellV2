@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { Link } from "react-router-dom";
 import { useFilter } from "@/contexts/FilterContext";
 import { BellRing, MapPin, Youtube, Check, Loader2, Maximize2, X, Clock, Calendar, ChevronRight, ChevronLeft, Circle, MoreHorizontal } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { isGmap, isYoutube, extractYoutubeId } from "@/lib/blocks";
 import { highlightText } from "@/lib/highlight";
 import { bulletLineMap, taskLineIndexMap, toggleTaskInMarkdown, type BulletInfo, type Signifier, type TaskState } from "@/lib/tasks";
@@ -546,7 +546,7 @@ const STATE_LABEL: Record<TaskState, string> = {
   cancelled: "İptal edildi",
 };
 
-function TaskStateMenu({ state, disabled, onPick, idx }: { state: TaskState; disabled: boolean; onPick: (s: TaskState) => void; idx: number }) {
+function TaskStateMenu({ state, disabled, onPick, idx, onCard }: { state: TaskState; disabled: boolean; onPick: (s: TaskState) => void; idx: number; onCard?: () => void }) {
   const items: Array<{ s: TaskState; label: string }> = [
     { s: "done", label: "Tamamlandı" },
     { s: "migrated", label: "Taşındı  ›" },
@@ -577,6 +577,14 @@ function TaskStateMenu({ state, disabled, onPick, idx }: { state: TaskState; dis
               {i.label}
             </DropdownMenuItem>
           ))}
+        {onCard && state === "open" && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="cursor-pointer text-xs" onClick={onCard} data-testid="task-to-card">
+              Kanban kartı yap
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -615,6 +623,8 @@ interface Props {
   content: string;
   /** `next` is a checkbox value, or a journal state chosen from the task menu. */
   onTaskToggle?: (index: number, next: boolean | TaskState) => void | Promise<void>;
+  /** Turns an open task into a Kanban card (shown in the task menu when given). */
+  onTaskToCard?: (index: number) => void | Promise<void>;
   highlight?: string;
 }
 
@@ -650,7 +660,7 @@ function isolateLinkLines(md: string): string {
   return out.join("\n");
 }
 
-export default function MarkdownView({ content, onTaskToggle, highlight }: Props) {
+export default function MarkdownView({ content, onTaskToggle, onTaskToCard, highlight }: Props) {
   const displayContent = useMemo(() => {
     if (!content) return "";
     let clean = content;
@@ -664,6 +674,14 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
 
   const taskLineToIdx = useMemo(() => taskLineIndexMap(displayContent || ""), [displayContent]);
   const bullets = useMemo(() => bulletLineMap(displayContent || ""), [displayContent]);
+  // Tasks that already point to a card or another page ("→ [[...]]") cannot become a card again
+  const linkedTaskLines = useMemo(() => {
+    const set = new Set<number>();
+    (displayContent || "").split("\n").forEach((l, i) => {
+      if (/→\s*\[\[[^\]]+\]\]\s*$/.test(l)) set.add(i + 1);
+    });
+    return set;
+  }, [displayContent]);
 
   const [pendingIdx, setPendingIdx] = useState<number | null>(null);
 
@@ -673,6 +691,16 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
     setPendingIdx(idx);
     try {
       await Promise.resolve(onTaskToggle(idx, next));
+    } finally {
+      setPendingIdx(null);
+    }
+  }
+
+  async function runCard(idx: number) {
+    if (pendingIdx !== null || !onTaskToCard) return;
+    setPendingIdx(idx);
+    try {
+      await Promise.resolve(onTaskToCard(idx));
     } finally {
       setPendingIdx(null);
     }
@@ -740,7 +768,13 @@ export default function MarkdownView({ content, onTaskToggle, highlight }: Props
                     {transformChildren(sig ? stripLead(rest_children, SIGNIFIER_RE) : rest_children)}
                   </span>
                   {interactive && (
-                    <TaskStateMenu state={checked ? "done" : "open"} disabled={pendingIdx !== null} onPick={(st) => handleTaskClick(myIdx, st)} idx={myIdx} />
+                    <TaskStateMenu
+                      state={checked ? "done" : "open"}
+                      disabled={pendingIdx !== null}
+                      onPick={(st) => handleTaskClick(myIdx, st)}
+                      idx={myIdx}
+                      onCard={onTaskToCard && !checked && !linkedTaskLines.has(line ?? -1) ? () => runCard(myIdx) : undefined}
+                    />
                   )}
                 </li>
               );

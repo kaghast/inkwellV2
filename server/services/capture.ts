@@ -17,6 +17,8 @@ import { AccessError, resolveTargetSpace } from "./workspaces";
 import { suggestRelated } from "./suggest";
 import { buildCaptureContent } from "./captureContent";
 import { readFileText } from "./fileText";
+import { logToDay } from "./today";
+import type { BulletKind } from "../../src/lib/tasks";
 
 export type CaptureStatus = "new" | "processing" | "ready" | "processed" | "failed";
 export const OPEN_STATUSES: CaptureStatus[] = ["new", "processing", "ready", "failed"];
@@ -383,6 +385,32 @@ export async function saveCaptureRaw(userId: string, captureId: string, opts: { 
     .where(eq(captures.captureId, captureId));
   return { capture: serializeCapture(await ownedCapture(userId, captureId)), object_id: obj.noteId, slug: obj.slug };
 }
+
+/**
+ * Puts a capture into the daily log of the day it was captured, as one
+ * bullet (task, event or note), instead of making an object of it. The raw
+ * text stays on the capture; the capture points at the daily note.
+ */
+export async function logCapture(userId: string, captureId: string, opts: { kind?: BulletKind } = {}) {
+  const cap = await ownedCapture(userId, captureId);
+  if (cap.status === "processed") throw new AccessError(409, "Bu yakalama zaten işlendi");
+  const s = (cap.suggestion || {}) as CaptureSuggestion;
+  const file = cap.fileId ? await fileMeta(userId, cap.fileId) : null;
+  let text = (cap.rawText || "").replace(/\s+/g, " ").trim();
+  if (!text) text = (s.title || "").trim();
+  if (text.length > LOG_TEXT_MAX) text = `${text.slice(0, LOG_TEXT_MAX - 1).trimEnd()}…`;
+  if (cap.rawUrl && !text.includes(cap.rawUrl)) text = text ? `${text} ${cap.rawUrl}` : cap.rawUrl;
+  if (file && cap.fileId) text = `${text ? `${text} ` : ""}[📎 ${file.name}](/api/files/${cap.fileId})`;
+  if (!text) throw new AccessError(400, "Boş yakalama günlüğe eklenemez");
+  const r = await logToDay(userId, cap.capturedOn, todayIso(), { text, kind: opts.kind || "note" });
+  await db
+    .update(captures)
+    .set({ status: "processed", resolution: "logged", objectId: r.note_id, processedAt: new Date(), updatedAt: new Date() })
+    .where(eq(captures.captureId, captureId));
+  return { capture: serializeCapture(await ownedCapture(userId, captureId)), note_id: r.note_id, slug: r.slug, line: r.line, date: cap.capturedOn };
+}
+
+const LOG_TEXT_MAX = 280;
 
 export async function rejectCapture(userId: string, captureId: string) {
   const cap = await ownedCapture(userId, captureId);

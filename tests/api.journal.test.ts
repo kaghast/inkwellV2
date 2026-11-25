@@ -207,4 +207,56 @@ describe("Habits, mood and monthly review API", { skip: !BASE }, () => {
     assert.equal(empty.body.mode, "empty");
     assert.equal((await a("POST", "/journal/review", { month: "2031-8" })).status, 400);
   });
+
+  test("2.5f: a capture goes into the day's log as one bullet", async () => {
+    const cap = (await a("POST", "/capture", { text: "Fuarda  Ali ile\nkonuştum", captured_on: "2031-08-14" })).body.capture;
+    const r = await a("POST", `/inbox/${cap.capture_id}/log`, { kind: "event" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.line, "- [o] Fuarda Ali ile konuştum");
+    assert.equal(r.body.date, "2031-08-14");
+    assert.equal(r.body.capture.status, "processed");
+    assert.equal(r.body.capture.resolution, "logged");
+    assert.equal(r.body.capture.object_id, r.body.note_id);
+    const daily = (await a("GET", `/notes/${r.body.note_id}`)).body;
+    assert.match(daily.content, /## Kayıt\n\n- \[o\] Fuarda Ali ile konuştum/);
+    assert.equal((await a("POST", `/inbox/${cap.capture_id}/log`, {})).status, 409, "only once");
+    assert.equal((await b("POST", `/inbox/${cap.capture_id}/log`, {})).status, 404, "other users cannot");
+    assert.equal((await a("POST", `/inbox/${cap.capture_id}/log`, { kind: "x" })).status, 400);
+  });
+
+  test("2.5f: bullet search across notes, per user, locked and archived notes left out", async () => {
+    await a("POST", "/today/log", { date: "2031-09-01", text: ". ! bullet-ara rapor" });
+    await a("POST", "/today/log", { date: "2031-09-02", text: "o bullet-ara toplantı" });
+    const arch = (await a("POST", "/notes", { title: "Arşiv", content: "- [ ] bullet-ara arşivdeki" })).body;
+    assert.equal((await a("PATCH", `/notes/${arch.note_id}/archive`, { archived: true })).status, 200);
+    const open = (await a("GET", "/journal/bullets?state=open&q=bullet-ara")).body;
+    assert.deepEqual(open.items.map((i: any) => i.text), ["bullet-ara rapor"]);
+    assert.equal(open.items[0].signifier, "priority");
+    assert.equal(open.items[0].date, "2031-09-01");
+    const ev = (await a("GET", "/journal/bullets?kind=event&q=bullet-ara")).body;
+    assert.deepEqual(ev.items.map((i: any) => i.text), ["bullet-ara toplantı"]);
+    const ranged = (await a("GET", "/journal/bullets?q=bullet-ara&from=2031-09-02&to=2031-09-30")).body;
+    assert.deepEqual(ranged.items.map((i: any) => i.text), ["bullet-ara toplantı"]);
+    assert.equal((await b("GET", "/journal/bullets?q=bullet-ara")).body.items.length, 0);
+    assert.equal((await a("GET", "/journal/bullets?state=bogus")).status, 400);
+  });
+
+  test("2.5f: an open task becomes a Kanban card and stays linked", async () => {
+    const log = (await a("POST", "/today/log", { date: "2031-10-05", text: ". ! Atlas sunumunu bitir" })).body;
+    const page = (await a("GET", `/notes/${log.note_id}`)).body;
+    const r = await a("POST", "/journal/to-card", { note_id: log.note_id, index: 0, content: page.content });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.card_title, "Atlas sunumunu bitir");
+    assert.match(r.body.content, /- \[ \] ! Atlas sunumunu bitir → \[\[Atlas sunumunu bitir\]\]/);
+    const card = (await a("GET", `/notes/${r.body.card_id}`)).body;
+    assert.equal(card.note_type_id, "type_card");
+    assert.equal(card.custom_fields.kanban_column, "todo");
+    assert.match(card.content, /^Öncelikli\. Defterdeki görev: \[\[/);
+    const rels = (await a("GET", `/objects/${log.note_id}/relations`)).body;
+    assert.ok(JSON.stringify(rels).includes(r.body.card_id), "the task's link is a relation");
+
+    assert.equal((await a("POST", "/journal/to-card", { note_id: log.note_id, index: 0 })).status, 409, "already linked");
+    assert.equal((await a("POST", "/journal/to-card", { note_id: log.note_id, index: 0, content: "stale" })).status, 409);
+    assert.equal((await b("POST", "/journal/to-card", { note_id: log.note_id, index: 0 })).status, 404);
+  });
 });

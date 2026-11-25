@@ -7,7 +7,7 @@ import { handle, parse, rateLimit, uid, isoDay, id } from "../lib/http";
 import { todayIso } from "../services/notesCore";
 import {
   createCapture, startCaptureProcessing, listInbox, inboxCounts, acceptCapture, saveCaptureRaw,
-  rejectCapture, retryCapture, serializeCapture,
+  rejectCapture, retryCapture, serializeCapture, logCapture,
 } from "../services/capture";
 import {
   listRelationTypes, createRelationType, createRelation, deleteRelation, acceptRelation, relationsForObject,
@@ -20,6 +20,7 @@ import {
   monthView, ensureMonthlyNote, futureLog, migrationCandidates, migrateTask, logToPage,
   listCollections, createCollection, collectionDetail, journalIndex, monthlyReview,
 } from "../services/journal";
+import { searchBullets, taskToCard } from "../services/journalTools";
 import { habitMonth, createHabit, updateHabit, deleteHabit, setHabitDay, setDayRating } from "../services/habits";
 import { MONTH_RE } from "../../src/lib/journal";
 import { applyTemplate } from "../services/templates";
@@ -95,6 +96,13 @@ export function createWorkspaceRouter(auth: RequestHandler) {
   });
   r.post("/inbox/:id/accept", handle(async (req) => acceptCapture(uid(req), req.params.id, parse(acceptBody, req.body))));
   r.post("/inbox/:id/save-raw", handle(async (req) => saveCaptureRaw(uid(req), req.params.id)));
+  r.post(
+    "/inbox/:id/log",
+    handle(async (req) => {
+      const b = parse(z.object({ kind: z.enum(["task", "event", "note"]).optional() }), req.body || {});
+      return logCapture(uid(req), req.params.id, b);
+    })
+  );
   r.post("/inbox/:id/reject", handle(async (req) => ({ capture: await rejectCapture(uid(req), req.params.id) })));
   r.post("/inbox/:id/retry", handle(async (req) => ({ capture: await retryCapture(uid(req), req.params.id) })));
   r.post(
@@ -222,6 +230,33 @@ export function createWorkspaceRouter(auth: RequestHandler) {
   r.get(
     "/journal/migration",
     handle(async (req) => ({ tasks: await migrationCandidates(uid(req), parse(isoDay.default(todayIso()), req.query.date) as string) }))
+  );
+  r.get(
+    "/journal/bullets",
+    handle(async (req) => {
+      const q = parse(
+        z.object({
+          kind: z.enum(["task", "event", "note"]).optional(),
+          state: z.string().regex(/^(open|done|migrated|scheduled|cancelled)(,(open|done|migrated|scheduled|cancelled))*$/).optional(),
+          signifier: z.enum(["priority", "explore"]).optional(),
+          q: z.string().trim().max(200).optional(),
+          from: isoDay.optional(),
+          to: isoDay.optional(),
+          limit: z.coerce.number().int().min(1).max(500).optional(),
+        }),
+        req.query
+      );
+      const states = q.state ? (q.state.split(",") as any) : undefined;
+      return searchBullets(uid(req), { ...q, kind: states ? "task" : q.kind, states, q: q.q || undefined });
+    })
+  );
+  r.post(
+    "/journal/to-card",
+    rateLimit("to-card", 60),
+    handle(async (req) => {
+      const b = parse(z.object({ note_id: z.string().min(1), index: z.number().int().min(0), content: z.string().max(2_000_000).optional() }), req.body);
+      return taskToCard(uid(req), b.note_id, b.index, b.content);
+    })
   );
   r.post(
     "/journal/migrate",

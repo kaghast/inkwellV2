@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Check, CheckCheck, FileText, Link2, Loader2, Paperclip, Pencil, RotateCw, Save, X, AlertTriangle, Inbox as InboxIcon } from "lucide-react";
+import { Check, CheckCheck, FileText, Link2, Loader2, NotebookPen, Paperclip, Pencil, RotateCw, Save, X, AlertTriangle, Inbox as InboxIcon } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import PageShell from "@/components/PageShell";
 import TypeIcon from "@/components/TypeIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { formatApiError } from "@/lib/api";
-import { INBOX_CHANGED, notifyInboxChanged, objectPath, wsApi, type Capture } from "@/lib/workspaceApi";
+import { INBOX_CHANGED, notifyInboxChanged, notifyJournalChanged, objectPath, wsApi, type Capture, type EntryKind } from "@/lib/workspaceApi";
 import { isJournalPageType } from "@/lib/objectTypes";
 
 const STATUS: Record<Capture["status"], { label: string; cls: string }> = {
@@ -20,7 +21,7 @@ const STATUS: Record<Capture["status"], { label: string; cls: string }> = {
 };
 
 const FILE_TEXT_METHOD: Record<string, string> = { text: "metin dosyası", docx: "Word", pptx: "PowerPoint", xlsx: "Excel", ocr: "OCR" };
-const RESOLUTION: Record<string, string> = { accepted: "Kabul edildi", saved_raw: "Yapay zekasız kaydedildi", rejected: "Reddedildi" };
+const RESOLUTION: Record<string, string> = { logged: "Günlüğe eklendi", accepted: "Kabul edildi", saved_raw: "Yapay zekasız kaydedildi", rejected: "Reddedildi" };
 
 function isEditable(el: EventTarget | null) {
   const t = el as HTMLElement | null;
@@ -114,6 +115,15 @@ export default function InboxPage() {
       "Nesne oluşturuldu"
     );
   const saveRaw = (c: Capture) => run(c.capture_id, () => wsApi.saveRaw(c.capture_id), "Yapay zekasız kaydedildi");
+  const logIt = (c: Capture, kind: EntryKind) =>
+    run(
+      c.capture_id,
+      () =>
+        wsApi.logCapture(c.capture_id, kind).then((r) => {
+          notifyJournalChanged();
+          return { object_id: r.note_id, slug: r.slug };
+        }),
+      kind === "task" ? "Günün kaydına görev olarak eklendi" : kind === "event" ? "Günün kaydına etkinlik olarak eklendi" : "Günün kaydına not olarak eklendi");
   const reject = (c: Capture) => run(c.capture_id, () => wsApi.reject(c.capture_id), "Reddedildi; ham metin saklandı");
   const retry = (c: Capture) => run(c.capture_id, () => wsApi.retry(c.capture_id), "Yeniden işleniyor");
 
@@ -144,6 +154,7 @@ export default function InboxPage() {
       else if (e.key === "e" && current.status === "ready") setEditing(true);
       else if (e.key === "s" && current.status !== "processed") saveRaw(current);
       else if (e.key === "r" && current.status !== "processed") reject(current);
+      else if (e.key === "l" && current.status !== "processed") logIt(current, "note");
       else return;
       e.preventDefault();
     };
@@ -380,7 +391,7 @@ export default function InboxPage() {
               {current.status === "processed" ? (
                 current.object_id && (
                   <Button asChild size="sm" variant="outline" className="mt-4">
-                    <Link to={`/note/${current.object_id}`}>Oluşan nesneyi aç</Link>
+                    <Link to={`/note/${current.object_id}`}>{current.resolution === "logged" ? "Günün kaydını aç" : "Oluşan nesneyi aç"}</Link>
                   </Button>
                 )
               ) : (
@@ -398,6 +409,21 @@ export default function InboxPage() {
                   <Button size="sm" variant="outline" onClick={() => saveRaw(current)} disabled={!!busy} data-testid="inbox-save-raw">
                     <Save className="w-3.5 h-3.5 mr-1" /> Yapay zekasız kaydet
                   </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" disabled={!!busy} data-testid="inbox-log">
+                        <NotebookPen className="w-3.5 h-3.5 mr-1" /> Günün kaydına
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      <div className="px-2 py-1 text-[11px] text-muted-foreground">
+                        {new Date(`${current.captured_on}T12:00:00`).toLocaleDateString("tr-TR", { day: "numeric", month: "long" })} günlüğüne tek satır olarak ekle
+                      </div>
+                      <DropdownMenuItem className="text-xs" onClick={() => logIt(current, "task")} data-testid="inbox-log-task">• Görev</DropdownMenuItem>
+                      <DropdownMenuItem className="text-xs" onClick={() => logIt(current, "event")} data-testid="inbox-log-event">○ Etkinlik</DropdownMenuItem>
+                      <DropdownMenuItem className="text-xs" onClick={() => logIt(current, "note")} data-testid="inbox-log-note">– Not</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   {(current.status === "failed" || current.status === "ready") && (
                     <Button size="sm" variant="ghost" onClick={() => retry(current)} disabled={!!busy}>
                       <RotateCw className="w-3.5 h-3.5 mr-1" /> Tekrar işle
@@ -408,7 +434,7 @@ export default function InboxPage() {
                   </Button>
                 </div>
               )}
-              <p className="mt-3 text-[11px] text-muted-foreground">Kısayollar: J/K gez · A kabul · E düzenle · S ham kaydet · R reddet</p>
+              <p className="mt-3 text-[11px] text-muted-foreground">Kısayollar: J/K gez · A kabul · E düzenle · S ham kaydet · L günlüğe not · R reddet</p>
             </aside>
           )}
         </div>

@@ -5,6 +5,7 @@ import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom"
 import api, { formatApiError } from "@/lib/api";
 import AppMenubar from "@/components/AppMenubar";
 import MarkdownEditor from "@/components/MarkdownEditor";
+import { taskToCard } from "@/components/journal/taskToCard";
 import MarkdownView from "@/components/MarkdownView";
 import { FilterProvider, type FilterCtx } from "@/contexts/FilterContext";
 import { useDrawerTabs } from "@/contexts/DrawerTabsContext";
@@ -1369,6 +1370,18 @@ export default function NoteDetail() {
                               } catch {}
                             }
                           }
+                        }
+                  }
+                  onTaskToCard={
+                    note.archived || note.is_encrypted
+                      ? undefined
+                      : async (idx) => {
+                          if (!(await taskToCard(note.note_id, idx, note.content, navigate))) return;
+                          try {
+                            const { data } = await api.get<Note>(`/notes/${note.note_id}`);
+                            setNote(data);
+                            setContent(extractCommentsFromContent(data.content).mainContent);
+                          } catch {}
                         }
                   }
                 />
