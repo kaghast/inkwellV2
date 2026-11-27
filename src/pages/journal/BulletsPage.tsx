@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Check, Kanban, Loader2, Search } from "lucide-react";
+import { AtSign, Check, Hash, Kanban, Loader2, Search, X } from "lucide-react";
 import PageShell, { Empty } from "@/components/PageShell";
 import BulletGlyph from "@/components/journal/BulletGlyph";
 import { taskToCard } from "@/components/journal/taskToCard";
@@ -43,6 +43,8 @@ export default function BulletsPage() {
   const navigate = useNavigate();
   const filterKey = FILTERS.some((x) => x.key === params.get("f")) ? (params.get("f") as string) : "open";
   const [q, setQ] = useState(params.get("q") || "");
+  const [tag, setTag] = useState(params.get("tag") || "");
+  const [person, setPerson] = useState(params.get("person") || "");
   const [from, setFrom] = useState(params.get("from") || "");
   const [to, setTo] = useState(params.get("to") || "");
   const [data, setData] = useState<{ items: BulletHit[]; truncated: boolean } | null>(null);
@@ -50,7 +52,14 @@ export default function BulletsPage() {
 
   const query = useMemo<BulletSearch>(() => {
     const base = FILTERS.find((x) => x.key === filterKey)!.f;
-    return { ...base, q: params.get("q") || undefined, from: params.get("from") || undefined, to: params.get("to") || undefined };
+    return {
+      ...base,
+      q: params.get("q") || undefined,
+      tag: params.get("tag") || undefined,
+      person: params.get("person") || undefined,
+      from: params.get("from") || undefined,
+      to: params.get("to") || undefined,
+    };
   }, [filterKey, params]);
 
   const load = useCallback(() => {
@@ -107,7 +116,7 @@ export default function BulletsPage() {
   }
 
   return (
-    <PageShell title="Kayıtlar" subtitle="Bütün notlardaki görev, etkinlik ve notlar: türe, duruma ve işarete göre" wide>
+    <PageShell title="Kayıtlar" subtitle="Bütün notlardaki satırlar: türe, duruma, işarete, #etikete ve @kişiye göre" wide>
       <div className="space-y-4" data-testid="bullets-page">
         <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Kayıt filtresi">
           {FILTERS.map((x) => (
@@ -131,12 +140,20 @@ export default function BulletsPage() {
           className="flex flex-wrap items-center gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            setParam({ q: q.trim(), from, to });
+            setParam({ q: q.trim(), tag: tag.trim().replace(/^#/, ""), person: person.trim().replace(/^@/, ""), from, to });
           }}
         >
           <div className="relative min-w-[12rem] flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Metinde ara" className="h-8 pl-8 text-sm" data-testid="bullets-q" />
+          </div>
+          <div className="relative w-32">
+            <Hash className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sky-500" />
+            <Input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="etiket" className="h-8 pl-7 text-sm" aria-label="Etiket" data-testid="bullets-tag" />
+          </div>
+          <div className="relative w-32">
+            <AtSign className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-emerald-500" />
+            <Input value={person} onChange={(e) => setPerson(e.target.value)} placeholder="kişi" className="h-8 pl-7 text-sm" aria-label="Kişi" data-testid="bullets-person" />
           </div>
           <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 w-auto text-xs" aria-label="Başlangıç tarihi" />
           <span className="text-xs text-muted-foreground">–</span>
@@ -144,6 +161,21 @@ export default function BulletsPage() {
           <Button type="submit" size="sm" variant="outline" className="h-8">
             Uygula
           </Button>
+          {(params.get("tag") || params.get("person")) && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-8 text-xs"
+              onClick={() => {
+                setTag("");
+                setPerson("");
+                setParam({ tag: "", person: "" });
+              }}
+            >
+              <X className="mr-1 h-3.5 w-3.5" /> Etiket/kişi filtresini kaldır
+            </Button>
+          )}
         </form>
 
         {!data ? (
@@ -171,7 +203,7 @@ export default function BulletsPage() {
                     return (
                       <li key={id} className="group flex items-start gap-2.5 px-3 py-1.5 text-sm" data-testid="bullet-row">
                         <span className="mt-1">
-                          <BulletGlyph kind={it.kind} state={it.state} signifier={it.signifier} />
+                          {it.plain ? <span className="inline-block w-3.5 text-center text-muted-foreground">¶</span> : <BulletGlyph kind={it.kind} state={it.state} signifier={it.signifier} />}
                         </span>
                         <span
                           className={`min-w-0 flex-1 break-words [overflow-wrap:anywhere] ${

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import TaggedLines from "@/components/journal/TaggedLines";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import api from "@/lib/api";
 import type { Note, Tag, Person, LocationItem, Category, ItemGroup, CalendarCounts, NoteType } from "@/types";
@@ -585,6 +586,10 @@ export default function Dashboard({ mode }: Props) {
 
             {/* 2. Header for current mode */}
             <HeaderForMode />
+
+            {/* Tags and people belong to lines: show the lines that carry them */}
+            {mode === "tag" && params.name && <TaggedLines tag={params.name} />}
+            {mode === "person" && params.name && <TaggedLines person={params.name} />}
 
             {/* 3. Note Composer (Shown on Day view when not searching) */}
             {mode === "day" &&

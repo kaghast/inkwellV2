@@ -354,6 +354,11 @@ const DDL_STEPS: Array<{ id: string; statements: string[] }> = [
       )`,
     ],
   },
+  {
+    // Habits become tags on daily-note lines; legacy habit_logs are moved into notes lazily.
+    id: "2026_11_27_012_habit_tags",
+    statements: [`ALTER TABLE habits ADD COLUMN IF NOT EXISTS tag TEXT`],
+  },
 ];
 
 function lit(value: string): string {

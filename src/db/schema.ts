@@ -509,13 +509,15 @@ export const userTemplates = pgTable(
   (table) => [index('utpl_user_idx').on(table.userId)]
 );
 
-// Phase 2.5d — habit tracker (one row per habit, one log row per done day)
+// Habit definitions. A habit is a tag: the done days are the daily-note
+// lines carrying it ("- [x] Okuma #okuma"), not rows of their own.
 export const habits = pgTable(
   'habits',
   {
     habitId: text('habit_id').primaryKey(),
     userId: text('user_id').references(() => users.userId, { onDelete: 'cascade' }).notNull(),
     name: text('name').notNull(),
+    tag: text('tag'),
     color: text('color'),
     position: integer('position').default(0).notNull(),
     archived: boolean('archived').default(false).notNull(),
@@ -524,6 +526,8 @@ export const habits = pgTable(
   (table) => [index('habits_user_idx').on(table.userId)]
 );
 
+// Legacy (before habits became note lines). Rows are moved into daily notes
+// the first time the user's habits are read, then deleted.
 export const habitLogs = pgTable(
   'habit_logs',
   {

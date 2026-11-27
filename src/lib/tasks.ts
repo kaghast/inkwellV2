@@ -35,7 +35,13 @@ export interface BulletInfo {
   /** Index used by PATCH /notes/:id/tasks; only for tasks. */
   taskIndex?: number;
   signifier?: Signifier;
+  /** Under the daily note's "## Alışkanlıklar" heading: a habit line, not a task to carry or count. */
+  habit?: boolean;
 }
+
+/** "## Alışkanlıklar" opens the habit section; the next # or ## heading closes it. */
+const HABIT_HEADING = /^#{1,2}\s+Alışkanlıklar\s*$/i;
+const TOP_HEADING = /^#{1,2}\s/;
 
 /** Calls `fn` for every content line that is not code, a comment or the comments block. */
 function forEachContentLine(lines: string[], fn: (lineIndex: number, line: string) => void | boolean) {
@@ -90,7 +96,9 @@ function forEachTaskLine(lines: string[], fn: (lineIndex: number, match: RegExpM
 export function bulletLineMap(md: string): Map<number, BulletInfo> {
   const map = new Map<number, BulletInfo>();
   let idx = 0;
+  let inHabits = false;
   forEachContentLine((md || "").split("\n"), (i, line) => {
+    if (TOP_HEADING.test(line.trim())) inHabits = HABIT_HEADING.test(line.trim());
     const task = line.match(TASK_LINE);
     const event = !task && line.match(EVENT_LINE);
     const list = !task && !event && line.match(LIST_LINE);
@@ -101,6 +109,7 @@ export function bulletLineMap(md: string): Map<number, BulletInfo> {
       ? { kind: "task", state: stateFromChar(task[2]), taskIndex: idx++ }
       : { kind: event ? "event" : "note" };
     if (sig) info.signifier = sig === "!" ? "priority" : "explore";
+    if (inHabits) info.habit = true;
     map.set(i + 1, info);
   });
   return map;
@@ -116,16 +125,19 @@ export function taskLineIndexMap(md: string): Map<number, number> {
   return map;
 }
 
-/** Progress counts open and done tasks; migrated, scheduled and cancelled ones are left out. */
+/**
+ * Progress counts open and done tasks; migrated, scheduled and cancelled ones
+ * are left out, and so are habit lines (the habit tracker counts those).
+ */
 export function countTasks(md: string): { total: number; done: number } {
   let total = 0;
   let done = 0;
-  forEachTaskLine((md || "").split("\n"), (_i, m) => {
-    const st = stateFromChar(m[2]);
-    if (st !== "open" && st !== "done") return;
+  for (const info of bulletLineMap(md).values()) {
+    if (info.kind !== "task" || info.habit) continue;
+    if (info.state !== "open" && info.state !== "done") continue;
     total++;
-    if (st === "done") done++;
-  });
+    if (info.state === "done") done++;
+  }
   return { total, done };
 }
 
@@ -348,4 +360,137 @@ export function ensureSection(content: string, name: string): string {
   const body = (marker >= 0 ? src.slice(0, marker) : src).replace(/\s+$/, "");
   const tail = marker >= 0 ? `\n\n${src.slice(marker)}` : "\n";
   return `${body}${body ? "\n\n" : ""}## ${name}${tail}`;
+}
+
+// ---------------------------------------------------------------- line tags
+
+// Same characters as the server's TAG_RE / MENTION_RE (server/services/notesCore.ts)
+const LINE_TAG_RE = /(?<!\S)#([a-zA-Z0-9_\-ğüşıöçĞÜŞİÖÇ]+)(?!\S)/gu;
+const LINE_MENTION_RE = /(?<!\S)@([a-zA-Z0-9_\-ğüşıöçĞÜŞİÖÇ]+)(?!\S)/gu;
+
+/** Lower case for comparing tags and names (Turkish casing, so "İ" → "i"). */
+export const normTag = (s: string) => (s || "").replace(/^[#@]/, "").trim().toLocaleLowerCase("tr-TR");
+
+function tokens(text: string, re: RegExp): string[] {
+  const out: string[] = [];
+  for (const m of (text || "").matchAll(new RegExp(re.source, "gu"))) {
+    const t = normTag(m[1]);
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
+/** "#tags" written on one line, normalized. */
+export const lineTags = (text: string) => tokens(text, LINE_TAG_RE);
+/** "@people" written on one line, normalized. */
+export const linePeople = (text: string) => tokens(text, LINE_MENTION_RE);
+
+export interface LineEntry extends BulletEntry {
+  /** True for a plain paragraph line (not a list item). */
+  plain?: boolean;
+  tags: string[];
+  people: string[];
+}
+
+/**
+ * Every content line with the tags and people written on it: bullets as
+ * listBullets gives them, plus plain paragraph lines (kind "note", plain).
+ * Headings, blank lines, code and the comments block are left out.
+ */
+export function listLines(md: string): LineEntry[] {
+  const lines = (md || "").split("\n");
+  const bullets = new Map(listBullets(md).map((b) => [b.line, b]));
+  const out: LineEntry[] = [];
+  forEachContentLine(lines, (i, line) => {
+    const b = bullets.get(i + 1);
+    if (b) {
+      out.push({ ...b, tags: lineTags(b.text), people: linePeople(b.text) });
+      return;
+    }
+    const text = line.trim();
+    if (!text || /^#{1,6}\s/.test(text) || LIST_LINE.test(line) || /^(\||>\s*$|---+$|\*\*\*+$)/.test(text)) return;
+    const body = text.replace(/^>\s*/, "");
+    out.push({ kind: "note", plain: true, line: i + 1, text: body, tags: lineTags(body), people: linePeople(body) });
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------- habits as lines
+
+/**
+ * A habit is a tag. On a day, the daily note's lines carrying that tag say
+ * whether it was done: a ticked task "- [x] … #tag" or any non-task line
+ * (a note, an event, a paragraph) is done; an unticked task is not yet.
+ */
+export function habitStateInMarkdown(md: string, tag: string): "done" | "open" | null {
+  const t = normTag(tag);
+  let state: "done" | "open" | null = null;
+  for (const l of listLines(md)) {
+    if (!l.tags.includes(t)) continue;
+    if (l.kind !== "task" || l.state === "done") return "done";
+    if (l.state === "open") state = "open";
+  }
+  return state;
+}
+
+export const HABIT_SECTION = "Alışkanlıklar";
+
+/** "- [ ] Okuma #okuma" — the tag is left out of the text when the name already carries it. */
+export function habitLine(name: string, tag: string, done = false): string {
+  const t = normTag(tag);
+  const text = lineTags(name).includes(t) ? name.trim() : `${name.trim()} #${t}`;
+  return `- [${done ? "x" : " "}] ${text}`;
+}
+
+/** Adds the "## Alışkanlıklar" section before "## Yansıma" (else at the end) when missing. */
+function ensureHabitSection(content: string): string {
+  const src = content || "";
+  if (new RegExp(`^##\\s+${HABIT_SECTION}\\s*$`, "im").test(src)) return src;
+  const lines = src.split("\n");
+  const at = lines.findIndex((l) => /^##\s+Yansıma\s*$/i.test(l.trim()));
+  if (at < 0) return ensureSection(src, HABIT_SECTION);
+  let prev = at;
+  while (prev > 0 && lines[prev - 1].trim() === "") prev--;
+  return [...lines.slice(0, prev), ...(prev > 0 ? [""] : []), `## ${HABIT_SECTION}`, "", ...lines.slice(at)].join("\n");
+}
+
+/** Adds an open line for every habit the note does not mention yet, under "## Alışkanlıklar". */
+export function addHabitLines(md: string, habits: Array<{ name: string; tag: string }>): string {
+  let out = md || "";
+  for (const h of habits) {
+    if (listLines(out).some((l) => l.tags.includes(normTag(h.tag)))) continue;
+    out = insertLogLine(ensureHabitSection(out), habitLine(h.name, h.tag), [HABIT_SECTION]);
+  }
+  return out;
+}
+
+/**
+ * Marks a habit done or not done on the note: its task lines are ticked or
+ * unticked, a missing line is added. Returns null when the note says done
+ * with a line that is not a task (the user wrote it; it is not rewritten).
+ */
+export function setHabitInMarkdown(md: string, habit: { name: string; tag: string }, done: boolean): string | null {
+  const t = normTag(habit.tag);
+  const entries = listLines(md).filter((l) => l.tags.includes(t));
+  const tasks = entries.filter((l) => l.kind === "task" && (l.state === "open" || l.state === "done"));
+  if (!done && entries.some((l) => l.kind !== "task")) return null;
+  if (!tasks.length) {
+    if (!done) return md;
+    if (entries.some((l) => l.kind !== "task")) return md; // already done by a note line
+    return insertLogLine(ensureHabitSection(md), habitLine(habit.name, habit.tag, true), [HABIT_SECTION]);
+  }
+  let out = md;
+  for (const l of tasks) out = setTaskStateInMarkdown(out, l.taskIndex!, done ? "done" : "open");
+  return out;
+}
+
+/** A tag for a habit name: "20 dk Okuma" → "20-dk-okuma". */
+export function habitTagFromName(name: string): string {
+  const own = lineTags(name);
+  if (own.length) return own[0];
+  return normTag(name)
+    .replace(/[^a-z0-9_\-ğüşıöç]+/gu, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
 }

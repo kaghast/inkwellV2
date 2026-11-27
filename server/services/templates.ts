@@ -7,8 +7,19 @@ import { applyCustomTemplate, builtinOverride } from "./userTemplates";
 import { createObject, deleteObjects, findByTitle } from "./objects";
 import { createRelation } from "./relations";
 import { AccessError } from "./workspaces";
-import { and, eq, sql } from "drizzle-orm";
-import { db, notes } from "../../src/db/index";
+import { and, asc, eq, sql } from "drizzle-orm";
+import { db, notes, habits } from "../../src/db/index";
+import { addHabitLines, habitTagFromName } from "../../src/lib/tasks";
+
+/** Active habits as daily-note lines ("- [ ] Okuma #okuma"), in tracker order. */
+export async function activeHabitTags(userId: string) {
+  const rows = await db
+    .select({ name: habits.name, tag: habits.tag })
+    .from(habits)
+    .where(and(eq(habits.userId, userId), eq(habits.archived, false)))
+    .orderBy(asc(habits.position), asc(habits.createdAt));
+  return (rows as Array<{ name: string; tag: string | null }>).map((h) => ({ name: h.name, tag: h.tag || habitTagFromName(h.name) })).filter((h) => h.tag);
+}
 
 export async function findDailyNote(userId: string, date: string) {
   const r = await db
@@ -30,6 +41,9 @@ export async function applyTemplate(userId: string, key: string, input: Template
   if (key === "daily") {
     const existing = await findDailyNote(userId, date);
     if (existing) return { primary_id: existing.noteId, slug: existing.slug, created: [], reused: [existing.noteId], relations: 0 };
+    // Habits live in the daily note: one open line per active habit
+    const list = await activeHabitTags(userId);
+    if (list.length) for (const o of plan.objects) if (o.ref === plan.primary) o.content = addHabitLines(o.content || "", list);
   }
 
   const ids = new Map<string, string>();

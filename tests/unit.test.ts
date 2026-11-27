@@ -731,3 +731,58 @@ describe("iyzico client", () => {
     assert.equal(iyzicoConfig({ IYZICO_API_KEY: "k", IYZICO_SECRET_KEY: "s" })!.baseUrl, "https://sandbox-api.iyzipay.com");
   });
 });
+
+// Lines carry tags and people; habits are tagged daily-note lines
+import { listLines, habitStateInMarkdown, setHabitInMarkdown, addHabitLines, habitTagFromName, habitLine } from "../src/lib/tasks";
+import { queryBullets } from "../server/services/bulletQuery";
+import { dailyContent } from "../server/services/templatePlans";
+
+describe("line tags and habits as lines", () => {
+  const md = "## Kayıt\n- [ ] ara @Ayşe #iş\nDüz paragraf #İş satırı\n## Başlık #iş\n```\n- [ ] kod #iş\n```\n- not @mehmet";
+  test("listLines: bullets and paragraphs with their tags and people, no headings or code", () => {
+    const l = listLines(md);
+    assert.deepEqual(l.map((x) => [x.kind, !!x.plain, x.tags, x.people]), [
+      ["task", false, ["iş"], ["ayşe"]],
+      ["note", true, ["iş"], []],
+      ["note", false, [], ["mehmet"]],
+    ]);
+  });
+  test("bullet query filters lines by tag and person (paragraphs included)", () => {
+    const pages = [{ noteId: "n1", slug: null, title: "T", content: md, date: "2026-11-27", noteTypeId: null }];
+    assert.equal(queryBullets(pages, { tag: "İŞ" }).items.length, 2);
+    assert.equal(queryBullets(pages, { person: "ayşe" }).items.length, 1);
+    assert.equal(queryBullets(pages, { tag: "iş", kind: "task" }).items[0].taskIndex, 0);
+    assert.equal(queryBullets(pages, {}).items.length, 2, "without a tag filter paragraphs stay out");
+  });
+  test("habit tag from name", () => {
+    assert.equal(habitTagFromName("20 dk Okuma"), "20-dk-okuma");
+    assert.equal(habitTagFromName("Koşu #spor"), "spor");
+    assert.equal(habitLine("Koşu #spor", "spor", true), "- [x] Koşu #spor");
+  });
+  test("daily note gets a habit section before Yansıma; tick, untick, free lines", () => {
+    const habits = [{ name: "Okuma", tag: "okuma" }, { name: "Koşu", tag: "kosu" }];
+    let c = addHabitLines(dailyContent("2026-11-27"), habits);
+    assert.match(c, /## Alışkanlıklar\n\n- \[ \] Okuma #okuma\n- \[ \] Koşu #kosu\n\n## Yansıma/);
+    assert.equal(addHabitLines(c, habits), c, "idempotent");
+    assert.equal(habitStateInMarkdown(c, "okuma"), "open");
+    c = setHabitInMarkdown(c, habits[0], true)!;
+    assert.equal(habitStateInMarkdown(c, "okuma"), "done");
+    assert.equal(habitStateInMarkdown(setHabitInMarkdown(c, habits[0], false)!, "okuma"), "open");
+    // A line the user wrote counts as done and is not rewritten
+    const free = "## Kayıt\n- 30 sayfa okudum #okuma\n";
+    assert.equal(habitStateInMarkdown(free, "okuma"), "done");
+    assert.equal(setHabitInMarkdown(free, habits[0], true), free);
+    assert.equal(setHabitInMarkdown(free, habits[0], false), null);
+    // Missing line is added under the section
+    assert.match(setHabitInMarkdown("## Kayıt\n", habits[1], true)!, /## Alışkanlıklar\n\n- \[x\] Koşu #kosu/);
+  });
+});
+
+describe("habit section", () => {
+  test("habit lines are not tasks to count, carry or list as open", () => {
+    const c = "## Kayıt\n- [ ] gerçek görev\n\n## Alışkanlıklar\n\n- [ ] Okuma #okuma\n- [x] Koşu #kosu\n\n## Yansıma\n- [ ] sonra\n";
+    assert.deepEqual(countTasks(c), { total: 2, done: 0 });
+    assert.deepEqual(openTasks("n", "T", c).map((t) => [t.text, t.task_index]), [["gerçek görev", 0], ["sonra", 3]]);
+    assert.deepEqual(listBullets(c).filter((b) => b.habit).map((b) => b.text), ["Okuma #okuma", "Koşu #kosu"]);
+  });
+});
