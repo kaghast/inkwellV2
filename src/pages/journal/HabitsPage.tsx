@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Archive, ArchiveRestore, ChevronLeft, ChevronRight, Flame, Loader2, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronLeft, ChevronRight, Flame, ListFilter, Loader2, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import PageShell, { Empty } from "@/components/PageShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatApiError } from "@/lib/api";
 import { addMonths, isMonthKey, monthLabel, WEEKDAY_SHORT, weekdayOf } from "@/lib/journal";
-import { habitApi, type HabitMonthData, type HabitRow } from "@/lib/workspaceApi";
+import { habitTagFromName } from "@/lib/tasks";
+import { habitApi, notifyJournalChanged, type HabitMonthData, type HabitRow } from "@/lib/workspaceApi";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const localDay = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -17,7 +18,10 @@ const SCALE_COLORS = ["", "bg-red-500/70", "bg-orange-400/70", "bg-yellow-400/70
 
 /**
  * Habit tracker: one row per habit, one cell per day of the month, plus mood
- * and energy rows (1–5). Future days cannot be ticked.
+ * and energy rows (1–5). A habit is a tag; a cell is that day's daily-note
+ * line carrying it, so ticking here ticks the line in the note and writing
+ * "- 30 sayfa okudum #okuma" in a daily note ticks the cell. Future days
+ * cannot be ticked.
  */
 export default function HabitsPage() {
   const { month: param } = useParams();
@@ -27,6 +31,7 @@ export default function HabitsPage() {
   const month = isMonthKey(param) ? param : current;
   const [data, setData] = useState<HabitMonthData | null>(null);
   const [name, setName] = useState("");
+  const [tag, setTag] = useState("");
   const [busy, setBusy] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
@@ -43,8 +48,9 @@ export default function HabitsPage() {
     if (!name.trim()) return;
     setBusy(true);
     try {
-      await habitApi.create(name.trim());
+      await habitApi.create(name.trim(), today, tag.trim() || undefined);
       setName("");
+      setTag("");
       load();
     } catch (err) {
       toast.error(formatApiError(err));
@@ -59,7 +65,8 @@ export default function HabitsPage() {
     // Optimistic: flip the cell at once, reload for streaks
     setData({ ...data, habits: data.habits.map((x) => (x.habit_id === h.habit_id ? { ...x, done_days: done ? [...x.done_days, day] : x.done_days.filter((d) => d !== day) } : x)) });
     try {
-      await habitApi.setDay(h.habit_id, day, done);
+      await habitApi.setDay(h.habit_id, day, done, today);
+      notifyJournalChanged();
       load();
     } catch (err) {
       toast.error(formatApiError(err));
@@ -90,10 +97,10 @@ export default function HabitsPage() {
   }
 
   async function remove(h: HabitRow) {
-    if (!window.confirm(`"${h.name}" ve tüm geçmişi kalıcı olarak silinsin mi? Geçmişi korumak için arşivleyebilirsin.`)) return;
+    if (!window.confirm(`"${h.name}" takipten kaldırılsın mı? Günlük notlardaki #${h.tag} satırları silinmez; geri eklersen aynı etiketle geçmiş yine görünür.`)) return;
     try {
       await habitApi.remove(h.habit_id);
-      toast.success("Alışkanlık silindi");
+      toast.success("Alışkanlık takipten kaldırıldı; satırlar notlarda duruyor");
       load();
     } catch (err) {
       toast.error(formatApiError(err));
@@ -117,8 +124,19 @@ export default function HabitsPage() {
     >
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
-          <form onSubmit={add} className="flex min-w-0 flex-1 items-center gap-2 sm:max-w-md" data-testid="habit-create">
+          <form onSubmit={add} className="flex min-w-0 flex-1 items-center gap-2 sm:max-w-xl" data-testid="habit-create">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Yeni alışkanlık, ör. 20 dk okuma" aria-label="Alışkanlık adı" />
+            <div className="relative w-36 shrink-0">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">#</span>
+              <Input
+                value={tag}
+                onChange={(e) => setTag(e.target.value.replace(/^#/, ""))}
+                placeholder={habitTagFromName(name) || "etiket"}
+                className="pl-6"
+                aria-label="Alışkanlık etiketi"
+                data-testid="habit-tag"
+              />
+            </div>
             <Button type="submit" size="sm" disabled={busy || !name.trim()}>
               {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
             </Button>
@@ -127,6 +145,11 @@ export default function HabitsPage() {
             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Arşivdekileri göster
           </label>
         </div>
+
+        <p className="text-xs text-muted-foreground">
+          Her alışkanlık bir etikettir. Günlük notta o etiketi taşıyan satır o günün kaydıdır: <code>- [x] Okuma #okuma</code> yapıldı,{" "}
+          <code>- [ ]</code> henüz değil. Yeni günlük notlarda “Alışkanlıklar” bölümü kendiliğinden gelir.
+        </p>
 
         {!data ? (
           <div className="text-sm text-muted-foreground">Yükleniyor…</div>
@@ -152,7 +175,7 @@ export default function HabitsPage() {
                 {data.habits.length === 0 && (
                   <tr>
                     <td colSpan={data.days.length + 2} className="py-3">
-                      <Empty>Henüz alışkanlık yok. Yukarıdan bir tane ekle; her gün yaptığında işaretle.</Empty>
+                      <Empty>Henüz alışkanlık yok. Yukarıdan bir tane ekle; günlük notuna satırı olarak gelir, yaptığında işaretle.</Empty>
                     </td>
                   </tr>
                 )}
@@ -161,7 +184,9 @@ export default function HabitsPage() {
                     <td className="sticky left-0 z-10 bg-card pr-2">
                       <div className="flex items-center gap-1.5">
                         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: h.color || "hsl(var(--primary))" }} />
-                        <span className="min-w-0 flex-1 truncate text-sm" title={h.name}>{h.name}</span>
+                        <span className="min-w-0 flex-1 truncate text-sm" title={`${h.name} · #${h.tag}`}>
+                          {h.name} <span className="text-[10px] text-muted-foreground">#{h.tag}</span>
+                        </span>
                         {h.current > 0 && (
                           <span className="inline-flex items-center text-[10px] text-orange-600 dark:text-orange-400" title={`Seri: ${h.current} gün · en uzun ${h.longest}`}>
                             <Flame className="h-3 w-3" />{h.current}
@@ -173,7 +198,12 @@ export default function HabitsPage() {
                               <MoreHorizontal className="h-3.5 w-3.5" />
                             </button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" className="w-44">
+                          <DropdownMenuContent align="start" className="w-48">
+                            <DropdownMenuItem asChild className="cursor-pointer text-xs">
+                              <Link to={`/journal/bullets?f=all&tag=${encodeURIComponent(h.tag)}`}>
+                                <ListFilter className="mr-2 h-3.5 w-3.5" /> Satırlarını göster
+                              </Link>
+                            </DropdownMenuItem>
                             <DropdownMenuItem className="cursor-pointer text-xs" onClick={() => archive(h)}>
                               {h.archived ? <ArchiveRestore className="mr-2 h-3.5 w-3.5" /> : <Archive className="mr-2 h-3.5 w-3.5" />}
                               {h.archived ? "Arşivden çıkar" : "Arşivle"}

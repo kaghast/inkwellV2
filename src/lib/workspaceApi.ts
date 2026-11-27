@@ -423,6 +423,10 @@ export interface BulletSearch {
   state?: string;
   signifier?: "priority" | "explore";
   q?: string;
+  /** Lines carrying "#tag" (any line, not only list items). */
+  tag?: string;
+  /** Lines mentioning "@person". */
+  person?: string;
   from?: string;
   to?: string;
 }
@@ -439,6 +443,8 @@ export interface BulletHit {
   state?: "open" | "done" | "migrated" | "scheduled" | "cancelled";
   taskIndex?: number;
   signifier?: "priority" | "explore";
+  /** A plain paragraph line, not a list item. */
+  plain?: boolean;
 }
 
 // ---------------------------------------------------------------- habits & review (Phase 2.5d/e)
@@ -446,6 +452,8 @@ export interface BulletHit {
 export interface HabitRow {
   habit_id: string;
   name: string;
+  /** The tag that marks this habit's lines in daily notes. */
+  tag: string;
   color: string | null;
   archived: boolean;
   done_days: string[];
@@ -486,10 +494,12 @@ export interface ReviewData {
 export const habitApi = {
   month: (month: string, today: string, all = false) =>
     api.get("/journal/habits", { params: { month, today, ...(all ? { all: "1" } : {}) } }).then((r) => r.data as HabitMonthData),
-  create: (name: string) => api.post("/journal/habits", { name }).then((r) => r.data as { habit_id: string; name: string }),
+  create: (name: string, today: string, tag?: string) =>
+    api.post("/journal/habits", { name, today, ...(tag ? { tag } : {}) }).then((r) => r.data as { habit_id: string; name: string; tag: string }),
   update: (id: string, body: { name?: string; archived?: boolean; color?: string | null }) => api.put(`/journal/habits/${id}`, body).then((r) => r.data),
   remove: (id: string) => api.delete(`/journal/habits/${id}`).then((r) => r.data),
-  setDay: (id: string, day: string, done: boolean) => api.put(`/journal/habits/${id}/days/${day}`, { done }).then((r) => r.data),
+  setDay: (id: string, day: string, done: boolean, today: string) =>
+    api.put(`/journal/habits/${id}/days/${day}`, { done, today }).then((r) => r.data as { habit_id: string; day: string; done: boolean; note_id: string }),
   rate: (day: string, body: { mood?: number | null; energy?: number | null }) => api.put(`/journal/ratings/${day}`, body).then((r) => r.data),
   review: (month: string, today: string) => api.post("/journal/review", { month, today }).then((r) => r.data as ReviewData),
 };

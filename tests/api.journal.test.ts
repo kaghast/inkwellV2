@@ -165,6 +165,37 @@ describe("Habits, mood and monthly review API", { skip: !BASE }, () => {
     assert.equal((await a("GET", "/journal/habits?month=2031-07&all=1")).body.habits.length, 0);
   });
 
+  test("habits are daily-note lines: tick writes the line, a free tagged line counts, line filter finds them", async () => {
+    const h = (await a("POST", "/journal/habits", { name: "Koşu", tag: "#kosu", today: "2032-03-01" })).body;
+    assert.equal(h.tag, "kosu");
+    assert.equal((await a("POST", "/journal/habits", { name: "Başka", tag: "kosu" })).status, 400, "tag is unique");
+    const yoga = (await a("POST", "/journal/habits", { name: "Yoga" })).body;
+    assert.equal(yoga.tag, "yoga");
+
+    const t = await a("PUT", `/journal/habits/${h.habit_id}/days/2032-03-01`, { done: true, today: "2032-03-01" });
+    assert.equal(t.status, 200, JSON.stringify(t.body));
+    const note = (await a("GET", `/notes/${t.body.note_id}`)).body;
+    assert.match(note.content, /## Alışkanlıklar\n\n(- \[[ x]\] .*\n)*- \[x\] Koşu #kosu/);
+    assert.match(note.content, /- \[ \] Yoga #yoga/, "every active habit gets a line in a new daily note");
+
+    // A day noted by hand: the line is the record
+    const d2 = (await a("PUT", `/journal/habits/${yoga.habit_id}/days/2032-03-02`, { done: true, today: "2032-03-02" })).body;
+    assert.equal((await a("POST", "/journal/log", { note_id: d2.note_id, text: "- 5 km koştum #kosu @ayşe" })).status, 200);
+    let row = (await a("GET", "/journal/habits?month=2032-03&today=2032-03-02")).body.habits.find((x: any) => x.habit_id === h.habit_id);
+    assert.deepEqual(row.done_days, ["2032-03-01", "2032-03-02"]);
+    assert.equal(row.current, 2);
+    assert.equal((await a("PUT", `/journal/habits/${h.habit_id}/days/2032-03-02`, { done: false })).status, 409);
+
+    const lines = (await a("GET", "/journal/bullets?tag=kosu&from=2032-03-01&to=2032-03-31")).body.items;
+    assert.equal(lines.length, 3, JSON.stringify(lines)); // 08-01 ticked, 08-02 open box + free line
+    assert.equal((await a("GET", "/journal/bullets?person=Ayşe&from=2032-03-01")).body.items.length, 1);
+
+    // Removing the habit leaves its lines in the notes
+    await a("DELETE", `/journal/habits/${h.habit_id}`);
+    assert.equal((await a("GET", "/journal/bullets?tag=kosu&from=2032-03-01&to=2032-03-31")).body.items.length, 3);
+    await a("DELETE", `/journal/habits/${yoga.habit_id}`);
+  });
+
   test("mood and energy: 1–5, partial updates, clearing", async () => {
     assert.equal((await a("PUT", "/journal/ratings/2031-07-10", { mood: 4 })).status, 200);
     await a("PUT", "/journal/ratings/2031-07-10", { energy: 2 });

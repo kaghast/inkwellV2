@@ -80,7 +80,7 @@ export async function monthView(userId: string, ym: string) {
     const d = byDay.get(day);
     if (!d) return { date: day, note_id: null, slug: null, events: [] as string[], open: 0, done: 0, entries: 0, locked: false };
     const content = readable(d);
-    const bullets = listBullets(content);
+    const bullets = listBullets(content).filter((b) => !b.habit);
     const tasks = countTasks(content);
     return {
       date: day,
@@ -140,7 +140,7 @@ export async function migrationCandidates(userId: string, date: string) {
   for (const [page, list] of [["daily", dailies], ["monthly", monthlies]] as const) {
     for (const p of list) {
       for (const b of listBullets(readable(p))) {
-        if (b.kind !== "task" || b.state !== "open") continue;
+        if (b.kind !== "task" || b.state !== "open" || b.habit) continue;
         out.push({
           note_id: p.noteId,
           note_title: p.title,
@@ -338,7 +338,7 @@ export async function journalIndex(userId: string) {
   for (const d of dailies as any[]) {
     const m = get(d.date.slice(0, 7));
     const content = d.isEncrypted ? "" : d.content || "";
-    const bullets = listBullets(content);
+    const bullets = listBullets(content).filter((b) => !b.habit);
     if (bullets.length === 0 && !d.isEncrypted) continue; // an empty auto-created day is not an entry
     m.days++;
     m.entries += bullets.length;
@@ -348,7 +348,7 @@ export async function journalIndex(userId: string) {
     const m = get(p.date.slice(0, 7));
     m.monthly_id = p.noteId;
     m.monthly_slug = p.slug;
-    m.open += listBullets(readable(p)).filter((b) => b.kind === "task" && b.state === "open").length;
+    m.open += listBullets(readable(p)).filter((b) => b.kind === "task" && b.state === "open" && !b.habit).length;
   }
   const tagRows = await db
     .select({ tags: notes.tags })

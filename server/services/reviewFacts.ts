@@ -51,7 +51,7 @@ export function reviewFacts(pages: ReviewPage[], habits: HabitStat[] = [], ratin
   const moved = new Map<string, { text: string; times: number }>();
   const tags = new Map<string, number>();
   for (const p of pages) {
-    const bullets = listBullets(p.content);
+    const bullets = listBullets(p.content).filter((b) => !b.habit); // habits are counted from the tracker
     if (p.date.length === 10 && bullets.length > 0) days++;
     entries += bullets.length;
     for (const b of bullets) {

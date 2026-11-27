@@ -240,6 +240,8 @@ export function createWorkspaceRouter(auth: RequestHandler) {
           state: z.string().regex(/^(open|done|migrated|scheduled|cancelled)(,(open|done|migrated|scheduled|cancelled))*$/).optional(),
           signifier: z.enum(["priority", "explore"]).optional(),
           q: z.string().trim().max(200).optional(),
+          tag: z.string().trim().max(80).optional(),
+          person: z.string().trim().max(80).optional(),
           from: isoDay.optional(),
           to: isoDay.optional(),
           limit: z.coerce.number().int().min(1).max(500).optional(),
@@ -247,7 +249,7 @@ export function createWorkspaceRouter(auth: RequestHandler) {
         req.query
       );
       const states = q.state ? (q.state.split(",") as any) : undefined;
-      return searchBullets(uid(req), { ...q, kind: states ? "task" : q.kind, states, q: q.q || undefined });
+      return searchBullets(uid(req), { ...q, kind: states ? "task" : q.kind, states, q: q.q || undefined, tag: q.tag || undefined, person: q.person || undefined });
     })
   );
   r.post(
@@ -319,8 +321,8 @@ export function createWorkspaceRouter(auth: RequestHandler) {
   r.post(
     "/journal/habits",
     handle(async (req) => {
-      const b = parse(z.object({ name: z.string().min(1).max(80), color: habitColor }), req.body);
-      return createHabit(uid(req), { name: b.name as string, color: b.color });
+      const b = parse(z.object({ name: z.string().min(1).max(80), color: habitColor, tag: z.string().trim().max(41).optional(), today: isoDay.optional() }), req.body);
+      return createHabit(uid(req), { name: b.name as string, color: b.color, tag: b.tag || null, today: (b.today as string) || todayIso() });
     })
   );
   r.put(
@@ -335,8 +337,8 @@ export function createWorkspaceRouter(auth: RequestHandler) {
     "/journal/habits/:id/days/:day",
     handle(async (req) => {
       const day = parse(isoDay, req.params.day) as string;
-      const b = parse(z.object({ done: z.boolean() }), req.body);
-      return setHabitDay(uid(req), req.params.id, day, b.done as boolean);
+      const b = parse(z.object({ done: z.boolean(), today: isoDay.optional() }), req.body);
+      return setHabitDay(uid(req), req.params.id, day, b.done as boolean, (b.today as string) || todayIso());
     })
   );
   r.put(

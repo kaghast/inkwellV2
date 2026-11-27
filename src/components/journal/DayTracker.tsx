@@ -3,12 +3,12 @@ import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Check, Flame } from "lucide-react";
 import { formatApiError } from "@/lib/api";
-import { habitApi, type HabitMonthData } from "@/lib/workspaceApi";
+import { habitApi, notifyJournalChanged, type HabitMonthData } from "@/lib/workspaceApi";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const localDay = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-/** Today's habits and mood/energy, ticked in place. */
+/** The day's habits and mood/energy. Ticking a habit ticks its "#tag" line in the daily note. */
 export default function DayTracker({ date }: { date: string }) {
   const today = localDay();
   const [data, setData] = useState<HabitMonthData | null>(null);
@@ -26,7 +26,8 @@ export default function DayTracker({ date }: { date: string }) {
 
   async function toggle(id: string, done: boolean) {
     try {
-      await habitApi.setDay(id, date, done);
+      await habitApi.setDay(id, date, done, today);
+      notifyJournalChanged();
       load();
     } catch (e) {
       toast.error(formatApiError(e));
@@ -64,6 +65,7 @@ export default function DayTracker({ date }: { date: string }) {
               >
                 {done ? <Check className="h-3 w-3" strokeWidth={3} /> : <span className="h-2 w-2 rounded-full" style={{ background: h.color || "hsl(var(--primary))" }} />}
                 {h.name}
+                <span className="opacity-60">#{h.tag}</span>
                 {h.current > 1 && (
                   <span className="inline-flex items-center opacity-80"><Flame className="h-3 w-3" />{h.current}</span>
                 )}

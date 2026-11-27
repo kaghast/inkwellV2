@@ -1,6 +1,6 @@
 // Bullet search across notes (Phase 2.5f), pure part: which bullets match a
 // filter. Unit tested; the database read lives in journalTools.ts.
-import { listBullets, type BulletEntry, type BulletKind, type Signifier, type TaskState } from "../../src/lib/tasks";
+import { lineTags, linePeople, listBullets, listLines, normTag, type BulletEntry, type BulletKind, type Signifier, type TaskState } from "../../src/lib/tasks";
 
 export interface BulletFilter {
   kind?: BulletKind;
@@ -9,9 +9,14 @@ export interface BulletFilter {
   signifier?: Signifier;
   /** Case-insensitive text match (Turkish casing). */
   q?: string;
+  /** Lines carrying this "#tag" (without "#"). Plain paragraph lines are searched too. */
+  tag?: string;
+  /** Lines mentioning this "@person" (without "@"). */
+  person?: string;
 }
 
 export interface BulletHit extends BulletEntry {
+  plain?: boolean;
   note_id: string;
   slug: string | null;
   title: string;
@@ -26,6 +31,8 @@ export function matchBullet(b: BulletEntry, f: BulletFilter): boolean {
   if (f.states && f.states.length && (b.kind !== "task" || !b.state || !f.states.includes(b.state))) return false;
   if (f.signifier && b.signifier !== f.signifier) return false;
   if (f.q && !lower(b.text).includes(lower(f.q.trim()))) return false;
+  if (f.tag && !lineTags(b.text).includes(normTag(f.tag))) return false;
+  if (f.person && !linePeople(b.text).includes(normTag(f.person))) return false;
   return true;
 }
 
@@ -42,8 +49,11 @@ export interface PageForBullets {
 export function queryBullets(pages: PageForBullets[], f: BulletFilter, limit = 300): { items: BulletHit[]; truncated: boolean } {
   const sorted = [...pages].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const items: BulletHit[] = [];
+  // A tag or person filter is a line filter: paragraphs count, not only list items
+  const byLine = Boolean(f.tag || f.person);
   for (const p of sorted) {
-    for (const b of listBullets(p.content)) {
+    for (const entry of byLine ? listLines(p.content) : listBullets(p.content)) {
+      const { tags: _t, people: _p, ...b } = entry as BulletEntry & { tags?: string[]; people?: string[]; plain?: boolean };
       if (!matchBullet(b, f)) continue;
       if (items.length >= limit) return { items, truncated: true };
       items.push({ ...b, note_id: p.noteId, slug: p.slug, title: p.title, date: (p.date || "").slice(0, 10), note_type_id: p.noteTypeId });
